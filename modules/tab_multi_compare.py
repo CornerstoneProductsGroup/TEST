@@ -1,2149 +1,1165 @@
 from __future__ import annotations
 
-import io
-import math
+import re
 
 import altair as alt
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
-from reportlab.lib.pagesizes import landscape, letter
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.units import inch
-from reportlab.platypus import (
-    Image as RLImage,
-    Paragraph,
-    SimpleDocTemplate,
-    Spacer,
-)
 
 from .shared_core import (
     money,
+    pct_fmt,
+    rename_ab_columns,
     render_df,
-    available_month_labels,
-    available_year_labels,
-    filter_by_period_labels,
+    count_sales_card,
     kpi_card,
+    selection_total_card,
+    top_two_card,
+    biggest_increase_card,
 )
-
-LINE_ACCENT = "#FF4FC3"
-RADAR_FILL = "#4CC9F0"
-RADAR_LINE = "#0077B6"
-TEXT_LIGHT = "#DCE6F2"
-TEXT_BLACK = "#111111"
-TEXT_AMBER = "#FFC857"
-TEXT_TEAL = "#7FDBFF"
-RING_GRAY = "#8A8F98"
-
-
-def _fmt_value(v: float, metric: str) -> str:
-    return money(v) if metric == "Sales" else f"{float(v):,.0f}"
-
-
-def _spark(values) -> str:
-    bars = "▁▂▃▄▅▆▇█"
-    vals = [float(v) if pd.notna(v) else 0.0 for v in values]
-    if not vals:
-        return ""
-    vmin = min(vals)
-    vmax = max(vals)
-    if math.isclose(vmax, vmin):
-        return " ".join([bars[3]] * len(vals))
-
-    out = []
-    for v in vals:
-        idx = int(round((v - vmin) / (vmax - vmin) * (len(bars) - 1)))
-        idx = max(0, min(idx, len(bars) - 1))
-        out.append(bars[idx])
-    return " ".join(out)
-
-
-def _safe_pct_change(cur: float, prev: float) -> float:
-    cur = float(cur)
-    prev = float(prev)
-    if prev == 0:
-        if cur == 0:
-            return 0.0
-        return np.nan
-    return (cur - prev) / prev
-
-
-def _table_height(n_rows: int, row_px: int = 35, header_px: int = 38, max_px: int = 1200) -> int:
-    return min(max_px, header_px + max(1, n_rows) * row_px)
-
-
-def _append_total_row(df: pd.DataFrame, row_dim: str, numeric_cols: list[str], trend_col: str | None = None) -> pd.DataFrame:
-    total_data = {row_dim: "TOTAL"}
-    for c in numeric_cols:
-        total_data[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).sum()
-    if trend_col and trend_col in df.columns:
-        total_data[trend_col] = ""
-    return pd.concat([df, pd.DataFrame([total_data])], ignore_index=True)
-
-
-def _build_matrix(df: pd.DataFrame, labels: list[str], granularity: str, row_dim: str, metric: str) -> pd.DataFrame:
-    pieces = []
-    for lbl in labels:
-        part = filter_by_period_labels(df, [lbl], granularity)
-        grp = part.groupby(row_dim, as_index=False).agg(Value=(metric, "sum"))
-        grp = grp.rename(columns={"Value": lbl})
-        pieces.append(grp)
-
-    if not pieces:
-        return pd.DataFrame(columns=[row_dim])
-
-    out = pieces[0].copy()
-    for p in pieces[1:]:
-        out = out.merge(p, on=row_dim, how="outer")
-
-    out = out.fillna(0.0)
-    period_cols = [c for c in labels if c in out.columns]
-
-    if period_cols:
-        out["Total"] = out[period_cols].sum(axis=1)
-        out["Average"] = out[period_cols].mean(axis=1)
-        out["Trend"] = out[period_cols].apply(lambda r: _spark(r.tolist()), axis=1)
-        out["Latest"] = out[period_cols[-1]]
-    else:
-        out["Total"] = 0.0
-        out["Average"] = 0.0
-        out["Trend"] = ""
-        out["Latest"] = 0.0
-
-    return out
-
-
-def _style_matrix(display_df: pd.DataFrame, numeric_df: pd.DataFrame, period_cols: list[str]):
-    def style_row(row):
-        idx = row.name
-        if str(display_df.iloc[idx, 0]) == "TOTAL":
-            return ["font-weight:800; border-top:2px solid rgba(128,128,128,0.4);" for _ in row.index]
-
-        vals = pd.to_numeric(numeric_df.loc[idx, period_cols], errors="coerce")
-        valid = vals.dropna()
-        styles = [""] * len(display_df.columns)
-
-        if valid.empty:
-            return styles
-
-        hi = valid.max()
-        lo = valid.min()
-
-        for j, col in enumerate(display_df.columns):
-            if col not in period_cols:
-                continue
-            val = pd.to_numeric(numeric_df.loc[idx, col], errors="coerce")
-            if pd.isna(val):
-                continue
-            if val == hi and hi != lo:
-                styles[j] = "background-color: rgba(46,125,50,0.20); font-weight:700;"
-            elif val == lo and hi != lo:
-                styles[j] = "background-color: rgba(198,40,40,0.20); font-weight:700;"
-        return styles
-
-    return display_df.style.apply(style_row, axis=1)
-
-
-def _render_base_metric_cards(df_scope: pd.DataFrame, labels: list[str], granularity: str):
-    df_sel = filter_by_period_labels(df_scope, labels, granularity)
-    if df_sel.empty:
-        st.info("No data for the selected periods.")
-        return
-
-    sales = float(df_sel["Sales"].sum()) if "Sales" in df_sel.columns else 0.0
-    units = float(df_sel["Units"].sum()) if "Units" in df_sel.columns else 0.0
-    asp = sales / units if units else 0.0
-    retailers = int(df_sel["Retailer"].dropna().nunique()) if "Retailer" in df_sel.columns else 0
-    vendors = int(df_sel["Vendor"].dropna().nunique()) if "Vendor" in df_sel.columns else 0
-    skus = int(df_sel["SKU"].dropna().nunique()) if "SKU" in df_sel.columns else 0
-
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
-    with c1:
-        kpi_card("Total Sales", money(sales), "")
-    with c2:
-        kpi_card("Total Units", f"{units:,.0f}", "")
-    with c3:
-        kpi_card("ASP", money(asp), "")
-    with c4:
-        kpi_card("Retailers", f"{retailers:,}", "")
-    with c5:
-        kpi_card("Vendors", f"{vendors:,}", "")
-    with c6:
-        kpi_card("SKUs", f"{skus:,}", "")
-
-
-def _period_entity_summary(
-    df_scope: pd.DataFrame,
-    labels: list[str],
-    granularity: str,
-    dim: str,
-    metric: str,
-) -> pd.DataFrame:
-    rows = []
-    for lbl in labels:
-        part = filter_by_period_labels(df_scope, [lbl], granularity)
-        if part.empty or dim not in part.columns or metric not in part.columns:
-            continue
-        grp = part.groupby(dim, as_index=False).agg(Value=(metric, "sum"))
-        total_value = float(grp["Value"].sum()) if not grp.empty else 0.0
-        if grp.empty:
-            continue
-        grp["Share"] = np.where(total_value != 0, grp["Value"] / total_value, 0.0)
-        grp["Period"] = lbl
-        rows.append(grp[[dim, "Period", "Value", "Share"]])
-
-    if not rows:
-        return pd.DataFrame(columns=[dim, "Period", "Value", "Share"])
-
-    out = pd.concat(rows, ignore_index=True)
-    out = out.rename(columns={dim: "Entity"})
-    return out.sort_values("Value", ascending=False).reset_index(drop=True)
-
-
-def _growth_entity_summary(
-    df_scope: pd.DataFrame,
-    labels: list[str],
-    granularity: str,
-    dim: str,
-    metric: str,
-) -> pd.DataFrame:
-    rows = []
-    if len(labels) < 2:
-        return pd.DataFrame(columns=[dim, "Period", "Growth", "Pct"])
-
-    matrices = {}
-    for lbl in labels:
-        part = filter_by_period_labels(df_scope, [lbl], granularity)
-        if part.empty or dim not in part.columns or metric not in part.columns:
-            matrices[lbl] = pd.DataFrame(columns=[dim, "Value"])
-            continue
-        grp = part.groupby(dim, as_index=False).agg(Value=(metric, "sum"))
-        matrices[lbl] = grp
-
-    for i in range(1, len(labels)):
-        prev_lbl = labels[i - 1]
-        cur_lbl = labels[i]
-        prev_df = matrices[prev_lbl].rename(columns={"Value": "PrevValue"})
-        cur_df = matrices[cur_lbl].rename(columns={"Value": "CurValue"})
-        m = cur_df.merge(prev_df, on=dim, how="outer").fillna(0.0)
-        if m.empty:
-            continue
-        m["Growth"] = m["CurValue"] - m["PrevValue"]
-        m["Pct"] = [
-            _safe_pct_change(cur, prev)
-            for cur, prev in zip(m["CurValue"].tolist(), m["PrevValue"].tolist())
-        ]
-        m["Period"] = f"{cur_lbl} vs {prev_lbl}"
-        rows.append(m[[dim, "Period", "Growth", "Pct"]])
-
-    if not rows:
-        return pd.DataFrame(columns=[dim, "Period", "Growth", "Pct"])
-
-    out = pd.concat(rows, ignore_index=True)
-    out = out.rename(columns={dim: "Entity"})
-    out = out.sort_values("Growth", ascending=False).reset_index(drop=True)
-    return out
-
-
-def _truncate_text(x: str, max_len: int = 30) -> str:
-    x = str(x)
-    return x if len(x) <= max_len else x[: max_len - 1] + "…"
-
-
-def _pack_period_item(df: pd.DataFrame, idx: int, metric: str):
-    if len(df) <= idx:
-        return None
-    row = df.iloc[idx]
-    return {
-        "name": row["Entity"],
-        "value": _fmt_value(float(row["Value"]), metric),
-        "detail": f"{row['Period']} • {float(row['Share']):.1%} share",
-    }
-
-
-def _pack_growth_item(df: pd.DataFrame, idx: int, metric: str):
-    if len(df) <= idx:
-        return None
-    row = df.iloc[idx]
-    pct_text = "—" if pd.isna(row["Pct"]) else f"{float(row['Pct']):.1%}"
-    return {
-        "name": row["Entity"],
-        "value": _fmt_value(float(row["Growth"]), metric),
-        "detail": f"{row['Period']} • {pct_text}",
-    }
-
-
-def _render_item_block(rank_label: str, item: dict | None):
-    st.markdown(
-        f"<div style='font-size:1.02rem; font-weight:800; line-height:1.1; margin-bottom:4px;'>{rank_label}</div>",
-        unsafe_allow_html=True,
-    )
-
-    if item is None:
-        st.markdown(
-            "<div style='font-size:1.06rem; font-weight:700; line-height:1.25; margin-bottom:10px;'>—</div>",
-            unsafe_allow_html=True,
-        )
-        return
-
-    st.markdown(
-        f"<div style='font-size:1.20rem; font-weight:800; line-height:1.18; margin-bottom:4px;'>{_truncate_text(item['name'])}</div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        f"<div style='font-size:1.14rem; font-weight:800; line-height:1.15; margin-bottom:4px;'>{item['value']}</div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        f"<div style='font-size:0.99rem; line-height:1.22; opacity:0.92; margin-bottom:10px;'>{item['detail']}</div>",
-        unsafe_allow_html=True,
-    )
-
-
-def _render_dual_kpi_box(
-    title: str,
-    left_label: str,
-    right_label: str,
-    left_first: dict | None,
-    left_second: dict | None,
-    right_first: dict | None,
-    right_second: dict | None,
-):
-    with st.container(border=True):
-        st.markdown(
-            f"<div style='font-size:0.96rem; font-weight:700; margin-top:2px; margin-bottom:12px;'>{title}</div>",
-            unsafe_allow_html=True,
-        )
-
-        c1, c2 = st.columns(2)
-
-        with c1:
-            st.markdown(
-                f"<div style='font-size:0.95rem; font-weight:800; margin-bottom:8px;'>{left_label}</div>",
-                unsafe_allow_html=True,
-            )
-            _render_item_block("#1", left_first)
-            _render_item_block("#2", left_second)
-
-        with c2:
-            st.markdown(
-                f"<div style='font-size:0.95rem; font-weight:800; margin-bottom:8px;'>{right_label}</div>",
-                unsafe_allow_html=True,
-            )
-            _render_item_block("#1", right_first)
-            _render_item_block("#2", right_second)
-
-        st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
-
-
-def _render_top2_peak_cards(df_scope: pd.DataFrame, labels: list[str], granularity: str):
-    st.markdown("### Biggest by Period")
-
-    retail_sales = _period_entity_summary(df_scope, labels, granularity, "Retailer", "Sales").head(2)
-    retail_units = _period_entity_summary(df_scope, labels, granularity, "Retailer", "Units").head(2)
-
-    vendor_sales = _period_entity_summary(df_scope, labels, granularity, "Vendor", "Sales").head(2)
-    vendor_units = _period_entity_summary(df_scope, labels, granularity, "Vendor", "Units").head(2)
-
-    sku_sales = _period_entity_summary(df_scope, labels, granularity, "SKU", "Sales").head(2)
-    sku_units = _period_entity_summary(df_scope, labels, granularity, "SKU", "Units").head(2)
-
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        _render_dual_kpi_box(
-            "Biggest Retailer",
-            "Sales",
-            "Units",
-            _pack_period_item(retail_sales, 0, "Sales"),
-            _pack_period_item(retail_sales, 1, "Sales"),
-            _pack_period_item(retail_units, 0, "Units"),
-            _pack_period_item(retail_units, 1, "Units"),
-        )
-    with c2:
-        _render_dual_kpi_box(
-            "Biggest Vendor",
-            "Sales",
-            "Units",
-            _pack_period_item(vendor_sales, 0, "Sales"),
-            _pack_period_item(vendor_sales, 1, "Sales"),
-            _pack_period_item(vendor_units, 0, "Units"),
-            _pack_period_item(vendor_units, 1, "Units"),
-        )
-    with c3:
-        _render_dual_kpi_box(
-            "Biggest SKU",
-            "Sales",
-            "Units",
-            _pack_period_item(sku_sales, 0, "Sales"),
-            _pack_period_item(sku_sales, 1, "Sales"),
-            _pack_period_item(sku_units, 0, "Units"),
-            _pack_period_item(sku_units, 1, "Units"),
-        )
-
-
-def _render_top2_growth_cards(df_scope: pd.DataFrame, labels: list[str], granularity: str):
-    st.markdown("### Biggest Growth")
-
-    retail_sales = _growth_entity_summary(df_scope, labels, granularity, "Retailer", "Sales").head(2)
-    retail_units = _growth_entity_summary(df_scope, labels, granularity, "Retailer", "Units").head(2)
-
-    vendor_sales = _growth_entity_summary(df_scope, labels, granularity, "Vendor", "Sales").head(2)
-    vendor_units = _growth_entity_summary(df_scope, labels, granularity, "Vendor", "Units").head(2)
-
-    sku_sales = _growth_entity_summary(df_scope, labels, granularity, "SKU", "Sales").head(2)
-    sku_units = _growth_entity_summary(df_scope, labels, granularity, "SKU", "Units").head(2)
-
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        _render_dual_kpi_box(
-            "Retailer Growth",
-            "Sales",
-            "Units",
-            _pack_growth_item(retail_sales, 0, "Sales"),
-            _pack_growth_item(retail_sales, 1, "Sales"),
-            _pack_growth_item(retail_units, 0, "Units"),
-            _pack_growth_item(retail_units, 1, "Units"),
-        )
-    with c2:
-        _render_dual_kpi_box(
-            "Vendor Growth",
-            "Sales",
-            "Units",
-            _pack_growth_item(vendor_sales, 0, "Sales"),
-            _pack_growth_item(vendor_sales, 1, "Sales"),
-            _pack_growth_item(vendor_units, 0, "Units"),
-            _pack_growth_item(vendor_units, 1, "Units"),
-        )
-    with c3:
-        _render_dual_kpi_box(
-            "SKU Growth",
-            "Sales",
-            "Units",
-            _pack_growth_item(sku_sales, 0, "Sales"),
-            _pack_growth_item(sku_sales, 1, "Sales"),
-            _pack_growth_item(sku_units, 0, "Units"),
-            _pack_growth_item(sku_units, 1, "Units"),
-        )
-
-
-def _render_multi_period_matrix(
-    df_scope: pd.DataFrame,
-    labels: list[str],
-    granularity: str,
-    row_dim: str,
-    metric: str,
-    sort_by: str,
-):
-    st.markdown("### Multi-Period Matrix")
-
-    matrix = _build_matrix(df_scope, labels, granularity, row_dim, metric)
-    if matrix.empty:
-        st.info("No data available for the selected periods.")
-        return
-
-    period_cols = [c for c in labels if c in matrix.columns]
-
-    if sort_by == "Latest Selected":
-        matrix = matrix.sort_values("Latest", ascending=False)
-    elif sort_by == "Total":
-        matrix = matrix.sort_values("Total", ascending=False)
-    elif sort_by == "Average":
-        matrix = matrix.sort_values("Average", ascending=False)
-    elif sort_by == "Alphabetical":
-        matrix = matrix.sort_values(row_dim, ascending=True)
-
-    show_numeric = matrix[[row_dim] + period_cols + ["Total", "Average", "Trend"]].copy()
-    show_numeric = _append_total_row(show_numeric, row_dim, period_cols + ["Total", "Average"], trend_col="Trend")
-
-    show = show_numeric.copy()
-    for c in period_cols + ["Total", "Average"]:
-        if c in show.columns:
-            show[c] = show[c].map(lambda v: _fmt_value(v, metric) if pd.notna(v) else "")
-
-    styled = _style_matrix(show, show_numeric, period_cols)
-
-    st.dataframe(
-        styled,
-        use_container_width=True,
-        height=_table_height(len(show), row_px=36, max_px=1350),
-        hide_index=True,
-    )
-
-
-def _render_yoy_growth_table(
-    df_scope: pd.DataFrame,
-    labels: list[str],
-    granularity: str,
-    row_dim: str,
-    metric: str,
-):
-    st.markdown("### Year-Over-Year Growth")
-
-    if len(labels) < 2:
-        st.info("Select at least two periods to calculate year-over-year growth.")
-        return
-
-    matrix = _build_matrix(df_scope, labels, granularity, row_dim, metric)
-    if matrix.empty:
-        st.info("No growth data available.")
-        return
-
-    out = matrix[[row_dim]].copy()
-    delta_col_names = []
-    delta_numeric = pd.DataFrame(index=matrix.index)
-
-    for i in range(1, len(labels)):
-        prev_lbl = labels[i - 1]
-        cur_lbl = labels[i]
-        delta_col = f"{cur_lbl} vs {prev_lbl}"
-        pct_col = f"{cur_lbl} vs {prev_lbl} %"
-
-        delta_vals = matrix[cur_lbl] - matrix[prev_lbl]
-        pct_vals = [
-            _safe_pct_change(cur, prev)
-            for cur, prev in zip(matrix[cur_lbl].tolist(), matrix[prev_lbl].tolist())
-        ]
-
-        if metric == "Sales":
-            out[delta_col] = delta_vals.map(money)
-        else:
-            out[delta_col] = delta_vals.map(lambda v: f"{v:,.0f}")
-
-        out[pct_col] = ["—" if pd.isna(v) else f"{v:.1%}" for v in pct_vals]
-
-        delta_col_names.append(delta_col)
-        delta_numeric[delta_col] = delta_vals
-
-    total_row = {row_dim: "TOTAL"}
-    for col in out.columns[1:]:
-        if col in delta_col_names:
-            summed = pd.to_numeric(delta_numeric[col], errors="coerce").fillna(0).sum()
-            total_row[col] = money(summed) if metric == "Sales" else f"{summed:,.0f}"
-        else:
-            total_row[col] = ""
-
-    out = pd.concat([out, pd.DataFrame([total_row])], ignore_index=True)
-
-    def style_row(row):
-        styles = [""] * len(out.columns)
-
-        if row[row_dim] == "TOTAL":
-            return ["font-weight:800; border-top:2px solid rgba(128,128,128,0.4);" for _ in row.index]
-
-        numeric_vals = pd.to_numeric(delta_numeric.loc[row.name, delta_col_names], errors="coerce")
-        valid = numeric_vals.dropna()
-        if valid.empty:
-            return styles
-
-        hi = valid.max()
-        lo = valid.min()
-
-        for j, col in enumerate(out.columns):
-            if col not in delta_col_names:
-                continue
-            val = pd.to_numeric(delta_numeric.loc[row.name, col], errors="coerce")
-            if pd.isna(val):
-                continue
-            if val == hi and hi != lo:
-                styles[j] = "background-color: rgba(46,125,50,0.18); font-weight:700;"
-            elif val == lo and hi != lo:
-                styles[j] = "background-color: rgba(198,40,40,0.18); font-weight:700;"
-        return styles
-
-    st.dataframe(
-        out.style.apply(style_row, axis=1),
-        use_container_width=True,
-        height=_table_height(len(out), row_px=36, max_px=1350),
-        hide_index=True,
-    )
-
-
-def _render_share_of_total_table(
-    df_scope: pd.DataFrame,
-    labels: list[str],
-    granularity: str,
-    row_dim: str,
-    metric: str,
-):
-    st.markdown("### Share of Total")
-
-    matrix = _build_matrix(df_scope, labels, granularity, row_dim, metric)
-    if matrix.empty:
-        st.info("No share data available.")
-        return
-
-    period_cols = [c for c in labels if c in matrix.columns]
-    share = matrix[[row_dim]].copy()
-
-    for col in period_cols:
-        total = float(matrix[col].sum())
-        if total == 0:
-            share[col] = "0.0%"
-        else:
-            share[col] = (matrix[col] / total).map(lambda v: f"{v:.1%}")
-
-    st.dataframe(
-        share,
-        use_container_width=True,
-        height=_table_height(len(share), row_px=36, max_px=1200),
-        hide_index=True,
-    )
-
-
-def _render_multi_year_seasonality(
-    df_scope: pd.DataFrame,
-    labels: list[str],
-    granularity: str,
-    metric: str,
-):
-    st.markdown("### Multi-Year Seasonality")
-
-    if granularity != "Year":
-        st.info("Multi-Year Seasonality is available when Analyze By is set to Year.")
-        return
-
-    if not labels:
-        st.info("Select one or more years.")
-        return
-
-    df_sel = filter_by_period_labels(df_scope, labels, "Year")
-    if df_sel.empty:
-        st.info("No seasonality data available.")
-        return
-
-    d = df_sel.copy()
-    date_col = "WeekEnd" if "WeekEnd" in d.columns else None
-    if date_col is None:
-        for c in ["Date", "Week", "Week End", "Week_End", "Week Ending", "WeekEnding"]:
-            if c in d.columns:
-                date_col = c
-                break
-
-    if date_col is None:
-        st.info("No date column available for seasonality.")
-        return
-
-    d[date_col] = pd.to_datetime(d[date_col], errors="coerce")
-    d = d[d[date_col].notna()].copy()
-    d["Year"] = d[date_col].dt.year.astype(str)
-    d["Quarter"] = d[date_col].dt.quarter.map(lambda q: f"Q{int(q)}")
-
-    q = d.groupby(["Quarter", "Year"], as_index=False).agg(Value=(metric, "sum"))
-
-    quarter_order = ["Q1", "Q2", "Q3", "Q4"]
-    q["Quarter"] = pd.Categorical(q["Quarter"], categories=quarter_order, ordered=True)
-
-    piv = q.pivot_table(
-        index="Quarter",
-        columns="Year",
-        values="Value",
-        aggfunc="sum",
-        fill_value=0.0,
-    ).reset_index()
-
-    ordered_years = []
-    for lbl in labels:
-        y = str(lbl)
-        if y in piv.columns:
-            ordered_years.append(y)
-
-    show = piv[["Quarter"] + ordered_years].copy()
-    for c in ordered_years:
-        show[c] = show[c].map(lambda v: _fmt_value(v, metric))
-
-    render_df(show, height=300)
-
-
-def _render_performance_score(
-    df_scope: pd.DataFrame,
-    labels: list[str],
-    granularity: str,
-    row_dim: str,
-    metric: str,
-):
-    st.markdown("### Retailer Performance Score" if row_dim == "Retailer" else "### Performance Score")
-
-    if len(labels) < 2:
-        st.info("Select at least two periods to calculate performance score.")
-        return
-
-    matrix = _build_matrix(df_scope, labels, granularity, row_dim, metric)
-    if matrix.empty:
-        st.info("No performance score data available.")
-        return
-
-    period_cols = [c for c in labels if c in matrix.columns]
-    latest_col = period_cols[-1]
-    first_col = period_cols[0]
-
-    total_max = float(matrix["Total"].max()) if not matrix.empty else 0.0
-
-    scores = []
-    for _, row in matrix.iterrows():
-        first_val = float(row[first_col])
-        latest_val = float(row[latest_col])
-        total_val = float(row["Total"])
-        vals = [float(row[c]) for c in period_cols]
-
-        growth_pct = _safe_pct_change(latest_val, first_val)
-        growth_score = 0.0 if pd.isna(growth_pct) else max(0.0, min(100.0, 50.0 + (growth_pct * 100.0)))
-        total_score = 0.0 if total_max == 0 else (total_val / total_max) * 100.0
-
-        diffs = np.diff(vals) if len(vals) >= 2 else np.array([0.0])
-        pos_moves = float((diffs > 0).sum())
-        momentum_score = 0.0 if len(diffs) == 0 else (pos_moves / len(diffs)) * 100.0
-
-        mean_val = np.mean(vals) if len(vals) else 0.0
-        std_val = np.std(vals) if len(vals) else 0.0
-        cv = 0.0 if mean_val == 0 else std_val / mean_val
-        stability_score = max(0.0, 100.0 - (cv * 100.0))
-
-        score = (
-            0.40 * growth_score +
-            0.30 * total_score +
-            0.20 * momentum_score +
-            0.10 * stability_score
-        )
-
-        if len(vals) >= 2:
-            if vals[-1] > vals[-2]:
-                momentum_label = "Rising"
-            elif vals[-1] < vals[-2]:
-                momentum_label = "Falling"
-            else:
-                momentum_label = "Flat"
-        else:
-            momentum_label = "Flat"
-
-        scores.append(
-            {
-                row_dim: row[row_dim],
-                "Score": score,
-                "Growth": "—" if pd.isna(growth_pct) else f"{growth_pct:.1%}",
-                "Total": total_val,
-                "Momentum": momentum_label,
-                "Trend": row["Trend"],
-            }
-        )
-
-    out = pd.DataFrame(scores).sort_values("Score", ascending=False).reset_index(drop=True)
-    out.insert(0, "Rank", range(1, len(out) + 1))
-    out["Score"] = out["Score"].map(lambda v: f"{v:.0f}")
-    out["Total"] = out["Total"].map(lambda v: _fmt_value(v, metric))
-
-    render_df(out, height=500)
-
-
-RADAR_MONTH_ORDER = [
-    ("Q1", "January", 1),
-    ("Q1", "February", 2),
-    ("Q1", "March", 3),
-    ("Q2", "April", 4),
-    ("Q2", "May", 5),
-    ("Q2", "June", 6),
-    ("Q3", "July", 7),
-    ("Q3", "August", 8),
-    ("Q3", "September", 9),
-    ("Q4", "October", 10),
-    ("Q4", "November", 11),
-    ("Q4", "December", 12),
-]
-
-
-def _find_date_column(df: pd.DataFrame) -> str | None:
-    if df is None or df.empty:
-        return None
-    for c in ["WeekEnd", "Date", "Week", "Week End", "Week_End", "Week Ending", "WeekEnding"]:
-        if c in df.columns:
-            return c
-    return None
-
-
-def _prepare_visual_base(df_scope: pd.DataFrame, labels: list[str], granularity: str) -> pd.DataFrame:
-    out = []
-    for lbl in labels:
-        part = filter_by_period_labels(df_scope, [lbl], granularity).copy()
-        if part.empty:
-            continue
-        part["PeriodLabel"] = str(lbl)
-        out.append(part)
-
-    if not out:
-        return pd.DataFrame()
-
-    df = pd.concat(out, ignore_index=True)
-
-    date_col = _find_date_column(df)
-    if date_col:
-        df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
-        df["MonthNum"] = df[date_col].dt.month
-        df["QuarterNum"] = df[date_col].dt.quarter
-        df["Quarter"] = df["QuarterNum"].map(lambda q: f"Q{int(q)}" if pd.notna(q) else None)
-    else:
-        if "Quarter" not in df.columns:
-            df["Quarter"] = None
-        if "MonthNum" not in df.columns:
-            df["MonthNum"] = np.nan
-
-    return df
-
-
-def _period_summary_df(df_vis: pd.DataFrame) -> pd.DataFrame:
-    if df_vis.empty:
-        return pd.DataFrame(
-            columns=[
-                "PeriodLabel",
-                "Sales",
-                "Units",
-                "ASP",
-                "AvgUnitsPerSKU",
-                "AvgSalesPerSKU",
-                "SKUs",
-                "SortOrder",
-            ]
-        )
-
-    grp = (
-        df_vis.groupby("PeriodLabel", as_index=False)
-        .agg(
-            Sales=("Sales", "sum"),
-            Units=("Units", "sum"),
-            SKUs=("SKU", pd.Series.nunique),
-        )
-        .copy()
-    )
-
-    grp["SKUs"] = pd.to_numeric(grp["SKUs"], errors="coerce").fillna(0.0)
-    grp["ASP"] = np.where(grp["Units"] != 0, grp["Sales"] / grp["Units"], 0.0)
-    grp["AvgUnitsPerSKU"] = np.where(grp["SKUs"] != 0, grp["Units"] / grp["SKUs"], 0.0)
-    grp["AvgSalesPerSKU"] = np.where(grp["SKUs"] != 0, grp["Sales"] / grp["SKUs"], 0.0)
-
-    order_map = {lbl: i for i, lbl in enumerate(df_vis["PeriodLabel"].drop_duplicates().tolist())}
-    grp["SortOrder"] = grp["PeriodLabel"].map(order_map)
-    grp = grp.sort_values(["SortOrder", "PeriodLabel"]).reset_index(drop=True)
-    return grp
-
-
-def _render_sales_asp_combo_chart(summary_df: pd.DataFrame):
-    if summary_df.empty:
-        st.info("No data available.")
-        return
-
-    work = summary_df[["PeriodLabel", "Sales", "ASP"]].copy()
-    order = work["PeriodLabel"].tolist()
-
-    max_sales = float(work["Sales"].max()) if not work.empty else 0.0
-    sales_domain_max = max(max_sales * 1.22, 1.0)
-
-    band_low = sales_domain_max * 0.80
-    band_high = sales_domain_max * 0.96
-
-    asp_min = float(work["ASP"].min()) if not work.empty else 0.0
-    asp_max = float(work["ASP"].max()) if not work.empty else 0.0
-    if math.isclose(asp_min, asp_max):
-        work["ASPDisplayY"] = (band_low + band_high) / 2.0
-    else:
-        work["ASPDisplayY"] = band_low + ((work["ASP"] - asp_min) / (asp_max - asp_min)) * (band_high - band_low)
-
-    work["SalesLabel"] = work["Sales"].map(lambda v: money(float(v)))
-    work["ASPLabel"] = work["ASP"].map(lambda v: money(float(v)))
-    work["ASPLabelY"] = work["ASPDisplayY"] + (sales_domain_max * 0.04)
-    work["SalesLabelY"] = work["Sales"] * 0.90
-
-    bars = (
-        alt.Chart(work)
-        .mark_bar()
-        .encode(
-            x=alt.X("PeriodLabel:N", title="Period", sort=order),
-            y=alt.Y("Sales:Q", title="Sales", scale=alt.Scale(domain=[0, sales_domain_max])),
-            tooltip=[
-                alt.Tooltip("PeriodLabel:N", title="Period"),
-                alt.Tooltip("Sales:Q", title="Sales", format=",.2f"),
-                alt.Tooltip("ASP:Q", title="ASP", format=",.2f"),
-            ],
-        )
-    )
-
-    sales_text = (
-        alt.Chart(work)
-        .mark_text(color=TEXT_BLACK, fontWeight="bold", fontSize=15)
-        .encode(
-            x=alt.X("PeriodLabel:N", sort=order),
-            y=alt.Y("SalesLabelY:Q", scale=alt.Scale(domain=[0, sales_domain_max])),
-            text="SalesLabel:N",
-        )
-    )
-
-    line = (
-        alt.Chart(work)
-        .mark_line(
-            point=alt.OverlayMarkDef(color=LINE_ACCENT, filled=True, size=80),
-            strokeWidth=3,
-            color=LINE_ACCENT,
-        )
-        .encode(
-            x=alt.X("PeriodLabel:N", sort=order),
-            y=alt.Y("ASPDisplayY:Q", title="Sales", scale=alt.Scale(domain=[0, sales_domain_max])),
-            tooltip=[
-                alt.Tooltip("PeriodLabel:N", title="Period"),
-                alt.Tooltip("ASP:Q", title="ASP", format=",.2f"),
-            ],
-        )
-    )
-
-    asp_text = (
-        alt.Chart(work)
-        .mark_text(color=LINE_ACCENT, fontWeight="bold", fontSize=13)
-        .encode(
-            x=alt.X("PeriodLabel:N", sort=order),
-            y=alt.Y("ASPLabelY:Q", scale=alt.Scale(domain=[0, sales_domain_max])),
-            text="ASPLabel:N",
-        )
-    )
-
-    chart = (
-        alt.layer(bars, sales_text, line, asp_text)
-        .properties(
-            height=500,
-            title="Sales and ASP by Selected Period",
-        )
-        .configure_title(
-            anchor="start",
-            fontSize=16,
-            offset=12,
-            color=TEXT_LIGHT,
-        )
-    )
-
-    st.altair_chart(chart, use_container_width=True)
-
-
-def _render_sales_units_combo_chart(summary_df: pd.DataFrame):
-    if summary_df.empty:
-        st.info("No data available.")
-        return
-
-    work = summary_df[["PeriodLabel", "Sales", "Units"]].copy()
-    order = work["PeriodLabel"].tolist()
-
-    max_sales = float(work["Sales"].max()) if not work.empty else 0.0
-    sales_domain_max = max(max_sales * 1.22, 1.0)
-
-    band_low = sales_domain_max * 0.80
-    band_high = sales_domain_max * 0.96
-
-    units_min = float(work["Units"].min()) if not work.empty else 0.0
-    units_max = float(work["Units"].max()) if not work.empty else 0.0
-    if math.isclose(units_min, units_max):
-        work["UnitsDisplayY"] = (band_low + band_high) / 2.0
-    else:
-        work["UnitsDisplayY"] = band_low + ((work["Units"] - units_min) / (units_max - units_min)) * (band_high - band_low)
-
-    work["SalesLabel"] = work["Sales"].map(lambda v: money(float(v)))
-    work["UnitsLabel"] = work["Units"].map(lambda v: f"{float(v):,.0f}")
-    work["UnitsLabelY"] = work["UnitsDisplayY"] + (sales_domain_max * 0.04)
-    work["SalesLabelY"] = work["Sales"] * 0.90
-
-    bars = (
-        alt.Chart(work)
-        .mark_bar()
-        .encode(
-            x=alt.X("PeriodLabel:N", title="Period", sort=order),
-            y=alt.Y("Sales:Q", title="Sales", scale=alt.Scale(domain=[0, sales_domain_max])),
-            tooltip=[
-                alt.Tooltip("PeriodLabel:N", title="Period"),
-                alt.Tooltip("Sales:Q", title="Sales", format=",.2f"),
-                alt.Tooltip("Units:Q", title="Units", format=",.0f"),
-            ],
-        )
-    )
-
-    sales_text = (
-        alt.Chart(work)
-        .mark_text(color=TEXT_BLACK, fontWeight="bold", fontSize=15)
-        .encode(
-            x=alt.X("PeriodLabel:N", sort=order),
-            y=alt.Y("SalesLabelY:Q", scale=alt.Scale(domain=[0, sales_domain_max])),
-            text="SalesLabel:N",
-        )
-    )
-
-    line = (
-        alt.Chart(work)
-        .mark_line(
-            point=alt.OverlayMarkDef(color=LINE_ACCENT, filled=True, size=80),
-            strokeWidth=3,
-            color=LINE_ACCENT,
-        )
-        .encode(
-            x=alt.X("PeriodLabel:N", sort=order),
-            y=alt.Y("UnitsDisplayY:Q", title="Sales", scale=alt.Scale(domain=[0, sales_domain_max])),
-            tooltip=[
-                alt.Tooltip("PeriodLabel:N", title="Period"),
-                alt.Tooltip("Units:Q", title="Units", format=",.0f"),
-            ],
-        )
-    )
-
-    units_text = (
-        alt.Chart(work)
-        .mark_text(color=LINE_ACCENT, fontWeight="bold", fontSize=13)
-        .encode(
-            x=alt.X("PeriodLabel:N", sort=order),
-            y=alt.Y("UnitsLabelY:Q", scale=alt.Scale(domain=[0, sales_domain_max])),
-            text="UnitsLabel:N",
-        )
-    )
-
-    chart = (
-        alt.layer(bars, sales_text, line, units_text)
-        .properties(
-            height=500,
-            title="Sales and Units by Selected Period",
-        )
-        .configure_title(
-            anchor="start",
-            fontSize=16,
-            offset=12,
-            color=TEXT_LIGHT,
-        )
-    )
-
-    st.altair_chart(chart, use_container_width=True)
-
-
-def _render_avg_sales_units_per_sku_combo_chart(summary_df: pd.DataFrame):
-    if summary_df.empty:
-        st.info("No data available.")
-        return
-
-    work = summary_df[["PeriodLabel", "AvgSalesPerSKU", "AvgUnitsPerSKU"]].copy()
-    order = work["PeriodLabel"].tolist()
-
-    max_sales = float(work["AvgSalesPerSKU"].max()) if not work.empty else 0.0
-    sales_domain_max = max(max_sales * 1.22, 1.0)
-
-    band_low = sales_domain_max * 0.80
-    band_high = sales_domain_max * 0.96
-
-    units_min = float(work["AvgUnitsPerSKU"].min()) if not work.empty else 0.0
-    units_max = float(work["AvgUnitsPerSKU"].max()) if not work.empty else 0.0
-    if math.isclose(units_min, units_max):
-        work["UnitsDisplayY"] = (band_low + band_high) / 2.0
-    else:
-        work["UnitsDisplayY"] = band_low + (
-            (work["AvgUnitsPerSKU"] - units_min) / (units_max - units_min)
-        ) * (band_high - band_low)
-
-    work["SalesLabel"] = work["AvgSalesPerSKU"].map(lambda v: money(float(v)))
-    work["UnitsLabel"] = work["AvgUnitsPerSKU"].map(lambda v: f"{float(v):,.2f}")
-    work["UnitsLabelY"] = work["UnitsDisplayY"] + (sales_domain_max * 0.04)
-    work["SalesLabelY"] = work["AvgSalesPerSKU"] * 0.90
-
-    bars = (
-        alt.Chart(work)
-        .mark_bar()
-        .encode(
-            x=alt.X("PeriodLabel:N", title="Period", sort=order),
-            y=alt.Y(
-                "AvgSalesPerSKU:Q",
-                title="Average Sales per SKU",
-                scale=alt.Scale(domain=[0, sales_domain_max]),
-            ),
-            tooltip=[
-                alt.Tooltip("PeriodLabel:N", title="Period"),
-                alt.Tooltip("AvgSalesPerSKU:Q", title="Average Sales per SKU", format=",.2f"),
-                alt.Tooltip("AvgUnitsPerSKU:Q", title="Average Units per SKU", format=",.2f"),
-            ],
-        )
-    )
-
-    sales_text = (
-        alt.Chart(work)
-        .mark_text(color=TEXT_BLACK, fontWeight="bold", fontSize=15)
-        .encode(
-            x=alt.X("PeriodLabel:N", sort=order),
-            y=alt.Y("SalesLabelY:Q", scale=alt.Scale(domain=[0, sales_domain_max])),
-            text="SalesLabel:N",
-        )
-    )
-
-    line = (
-        alt.Chart(work)
-        .mark_line(
-            point=alt.OverlayMarkDef(color=LINE_ACCENT, filled=True, size=80),
-            strokeWidth=3,
-            color=LINE_ACCENT,
-        )
-        .encode(
-            x=alt.X("PeriodLabel:N", sort=order),
-            y=alt.Y(
-                "UnitsDisplayY:Q",
-                title="Average Sales per SKU",
-                scale=alt.Scale(domain=[0, sales_domain_max]),
-            ),
-            tooltip=[
-                alt.Tooltip("PeriodLabel:N", title="Period"),
-                alt.Tooltip("AvgUnitsPerSKU:Q", title="Average Units per SKU", format=",.2f"),
-            ],
-        )
-    )
-
-    units_text = (
-        alt.Chart(work)
-        .mark_text(color=LINE_ACCENT, fontWeight="bold", fontSize=13)
-        .encode(
-            x=alt.X("PeriodLabel:N", sort=order),
-            y=alt.Y("UnitsLabelY:Q", scale=alt.Scale(domain=[0, sales_domain_max])),
-            text="UnitsLabel:N",
-        )
-    )
-
-    chart = (
-        alt.layer(bars, sales_text, line, units_text)
-        .properties(
-            height=500,
-            title="Average Sales per SKU and Average Units per SKU",
-        )
-        .configure_title(
-            anchor="start",
-            fontSize=16,
-            offset=12,
-            color=TEXT_LIGHT,
-        )
-    )
-
-    st.altair_chart(chart, use_container_width=True)
-
-
-def _quarterly_stacked_df(df: pd.DataFrame, metric: str) -> pd.DataFrame:
-    if df.empty or metric not in df.columns or "Quarter" not in df.columns:
-        return pd.DataFrame(columns=["PeriodLabel", "Quarter", "Value", "ValueLabel", "PeriodOrder", "Start", "LabelY"])
-
-    out = (
-        df.dropna(subset=["Quarter"])
-        .groupby(["PeriodLabel", "Quarter"], as_index=False)[metric]
-        .sum()
-        .rename(columns={metric: "Value"})
-    )
-
-    q_order = ["Q1", "Q2", "Q3", "Q4"]
-    out["Quarter"] = pd.Categorical(out["Quarter"], categories=q_order, ordered=True)
-    p_order = {lbl: i for i, lbl in enumerate(df["PeriodLabel"].drop_duplicates().tolist())}
-    out["PeriodOrder"] = out["PeriodLabel"].map(p_order)
-    out = out.sort_values(["PeriodOrder", "Quarter"]).reset_index(drop=True)
-
-    if metric == "Sales":
-        out["ValueLabel"] = out["Value"].map(lambda v: money(float(v)))
-    else:
-        out["ValueLabel"] = out["Value"].map(lambda v: f"{float(v):,.0f}")
-
-    out["Start"] = out.groupby("PeriodLabel")["Value"].cumsum() - out["Value"]
-    out["LabelY"] = out["Start"] + (out["Value"] * 0.18)
-
-    return out
-
-
-def _render_quarterly_stacked_altair(df: pd.DataFrame, metric: str):
-    if df.empty:
-        st.info("No quarterly stacked data available.")
-        return
-
-    order = df["PeriodLabel"].drop_duplicates().tolist()
-
-    bars = (
-        alt.Chart(df)
-        .mark_bar()
-        .encode(
-            x=alt.X("PeriodLabel:N", title="Period", sort=order),
-            y=alt.Y("Value:Q", title=metric, stack="zero"),
-            color=alt.Color("Quarter:N", title="", sort=["Q1", "Q2", "Q3", "Q4"]),
-            order=alt.Order("Quarter:N", sort="ascending"),
-            tooltip=[
-                alt.Tooltip("PeriodLabel:N", title="Period"),
-                alt.Tooltip("Quarter:N", title="Quarter"),
-                alt.Tooltip("Value:Q", title=metric, format=",.2f" if metric == "Sales" else ",.0f"),
-            ],
-        )
-    )
-
-    text = (
-        alt.Chart(df)
-        .mark_text(size=10, color=TEXT_BLACK, fontWeight="bold")
-        .encode(
-            x=alt.X("PeriodLabel:N", sort=order),
-            y=alt.Y("LabelY:Q", title=metric, stack=None),
-            detail="Quarter:N",
-            text="ValueLabel:N",
-        )
-    )
-
-    chart = (bars + text).properties(
-        height=440,
-        title=f"{metric} by Quarter, stacked within each selected year",
-    ).configure_title(
-        anchor="start",
-        fontSize=15,
-        offset=12,
-        color=TEXT_LIGHT,
-    )
-
-    st.altair_chart(chart, use_container_width=True)
-
-
-def _make_single_metric_bar_figure(
-    summary_df: pd.DataFrame,
-    value_col: str,
-    title: str,
-    label_mode: str = "money",
-):
-    fig, ax = plt.subplots(figsize=(10.0, 4.8))
-
-    if summary_df.empty or value_col not in summary_df.columns:
-        ax.text(0.5, 0.5, "No data available", ha="center", va="center")
-        ax.axis("off")
-        fig.suptitle(title, fontsize=14, fontweight="bold")
-        return fig
-
-    labels = summary_df["PeriodLabel"].astype(str).tolist()
-    vals = pd.to_numeric(summary_df[value_col], errors="coerce").fillna(0.0).to_numpy()
-
-    x = np.arange(len(labels))
-    bars = ax.bar(x, vals)
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels)
-    ax.set_title(title, fontsize=14, fontweight="bold")
-
-    if label_mode == "money":
-        txt = [money(float(v)) for v in vals]
-    elif label_mode == "int":
-        txt = [f"{float(v):,.0f}" for v in vals]
-    else:
-        txt = [f"{float(v):,.2f}" for v in vals]
-
-    for rect, label in zip(bars, txt):
-        height = rect.get_height()
-        if height <= 0:
-            continue
-        ax.annotate(
-            label,
-            xy=(rect.get_x() + rect.get_width() / 2, height),
-            xytext=(0, 4),
-            textcoords="offset points",
-            ha="center",
-            va="bottom",
-            fontsize=8,
-        )
-
-    fig.tight_layout()
-    return fig
-
-
-def _make_sales_asp_combo_figure(summary_df: pd.DataFrame, title: str = "Sales and ASP by Selected Period"):
-    fig, ax1 = plt.subplots(figsize=(10.4, 5.2))
-
-    if summary_df.empty:
-        ax1.text(0.5, 0.5, "No data available", ha="center", va="center")
-        ax1.axis("off")
-        fig.suptitle(title, fontsize=14, fontweight="bold")
-        return fig
-
-    labels = summary_df["PeriodLabel"].astype(str).tolist()
-    sales = pd.to_numeric(summary_df["Sales"], errors="coerce").fillna(0.0).to_numpy()
-    asp = pd.to_numeric(summary_df["ASP"], errors="coerce").fillna(0.0).to_numpy()
-
-    x = np.arange(len(labels))
-    bars = ax1.bar(x, sales, width=0.55, label="Sales")
-    ax1.set_xticks(x)
-    ax1.set_xticklabels(labels)
-    ax1.set_ylabel("Sales")
-    ax1.set_title(title, fontsize=14, fontweight="bold")
-
-    max_sales = float(np.max(sales)) if len(sales) else 0.0
-    sales_domain_max = max(max_sales * 1.22, 1.0)
-    ax1.set_ylim(0, sales_domain_max)
-
-    for rect, val in zip(bars, sales):
-        if val <= 0:
-            continue
-        ax1.text(
-            rect.get_x() + rect.get_width() / 2,
-            rect.get_height() * 0.90,
-            money(float(val)),
-            ha="center",
-            va="top",
-            fontsize=10,
-            color="black",
-            fontweight="bold",
-        )
-
-    band_low = sales_domain_max * 0.80
-    band_high = sales_domain_max * 0.96
-    asp_min = float(np.min(asp)) if len(asp) else 0.0
-    asp_max = float(np.max(asp)) if len(asp) else 0.0
-
-    if math.isclose(asp_min, asp_max):
-        asp_display = np.full(len(asp), (band_low + band_high) / 2.0)
-    else:
-        asp_display = band_low + ((asp - asp_min) / (asp_max - asp_min)) * (band_high - band_low)
-
-    ax2 = ax1.twinx()
-    ax2.set_ylim(0, sales_domain_max)
-    ax2.plot(x, asp_display, marker="o", linewidth=2.5, color=LINE_ACCENT, label="ASP")
-    ax2.set_yticks([])
-
-    for xi, disp_y, raw_val in zip(x, asp_display, asp):
-        ax2.text(
-            xi,
-            disp_y + (sales_domain_max * 0.04),
-            money(float(raw_val)),
-            ha="center",
-            va="bottom",
-            fontsize=9,
-            color=LINE_ACCENT,
-            fontweight="bold",
-        )
-
-    handles1, labels1 = ax1.get_legend_handles_labels()
-    handles2, labels2 = ax2.get_legend_handles_labels()
-    fig.legend(handles1 + handles2, labels1 + labels2, loc="upper left", bbox_to_anchor=(0.84, 0.92), frameon=False)
-    fig.tight_layout(rect=[0, 0, 0.86, 1])
-    return fig
-
-
-def _make_sales_units_combo_figure(summary_df: pd.DataFrame, title: str = "Sales and Units by Selected Period"):
-    fig, ax1 = plt.subplots(figsize=(10.4, 5.2))
-
-    if summary_df.empty:
-        ax1.text(0.5, 0.5, "No data available", ha="center", va="center")
-        ax1.axis("off")
-        fig.suptitle(title, fontsize=14, fontweight="bold")
-        return fig
-
-    labels = summary_df["PeriodLabel"].astype(str).tolist()
-    sales = pd.to_numeric(summary_df["Sales"], errors="coerce").fillna(0.0).to_numpy()
-    units = pd.to_numeric(summary_df["Units"], errors="coerce").fillna(0.0).to_numpy()
-
-    x = np.arange(len(labels))
-    bars = ax1.bar(x, sales, width=0.55, label="Sales")
-    ax1.set_xticks(x)
-    ax1.set_xticklabels(labels)
-    ax1.set_ylabel("Sales")
-    ax1.set_title(title, fontsize=14, fontweight="bold")
-
-    max_sales = float(np.max(sales)) if len(sales) else 0.0
-    sales_domain_max = max(max_sales * 1.22, 1.0)
-    ax1.set_ylim(0, sales_domain_max)
-
-    for rect, val in zip(bars, sales):
-        if val <= 0:
-            continue
-        ax1.text(
-            rect.get_x() + rect.get_width() / 2,
-            rect.get_height() * 0.90,
-            money(float(val)),
-            ha="center",
-            va="top",
-            fontsize=10,
-            color="black",
-            fontweight="bold",
-        )
-
-    band_low = sales_domain_max * 0.80
-    band_high = sales_domain_max * 0.96
-    units_min = float(np.min(units)) if len(units) else 0.0
-    units_max = float(np.max(units)) if len(units) else 0.0
-
-    if math.isclose(units_min, units_max):
-        units_display = np.full(len(units), (band_low + band_high) / 2.0)
-    else:
-        units_display = band_low + ((units - units_min) / (units_max - units_min)) * (band_high - band_low)
-
-    ax2 = ax1.twinx()
-    ax2.set_ylim(0, sales_domain_max)
-    ax2.plot(x, units_display, marker="o", linewidth=2.5, color=LINE_ACCENT, label="Units")
-    ax2.set_yticks([])
-
-    for xi, disp_y, raw_val in zip(x, units_display, units):
-        ax2.text(
-            xi,
-            disp_y + (sales_domain_max * 0.04),
-            f"{float(raw_val):,.0f}",
-            ha="center",
-            va="bottom",
-            fontsize=9,
-            color=LINE_ACCENT,
-            fontweight="bold",
-        )
-
-    handles1, labels1 = ax1.get_legend_handles_labels()
-    handles2, labels2 = ax2.get_legend_handles_labels()
-    fig.legend(handles1 + handles2, labels1 + labels2, loc="upper left", bbox_to_anchor=(0.84, 0.92), frameon=False)
-    fig.tight_layout(rect=[0, 0, 0.86, 1])
-    return fig
-
-
-def _make_avg_sales_units_per_sku_combo_figure(
-    summary_df: pd.DataFrame,
-    title: str = "Average Sales per SKU and Average Units per SKU",
-):
-    fig, ax1 = plt.subplots(figsize=(10.4, 5.2))
-
-    if summary_df.empty:
-        ax1.text(0.5, 0.5, "No data available", ha="center", va="center")
-        ax1.axis("off")
-        fig.suptitle(title, fontsize=14, fontweight="bold")
-        return fig
-
-    labels = summary_df["PeriodLabel"].astype(str).tolist()
-    avg_sales = pd.to_numeric(summary_df["AvgSalesPerSKU"], errors="coerce").fillna(0.0).to_numpy()
-    avg_units = pd.to_numeric(summary_df["AvgUnitsPerSKU"], errors="coerce").fillna(0.0).to_numpy()
-
-    x = np.arange(len(labels))
-    bars = ax1.bar(x, avg_sales, width=0.55, label="Average Sales per SKU")
-    ax1.set_xticks(x)
-    ax1.set_xticklabels(labels)
-    ax1.set_ylabel("Average Sales per SKU")
-    ax1.set_title(title, fontsize=14, fontweight="bold")
-
-    max_sales = float(np.max(avg_sales)) if len(avg_sales) else 0.0
-    sales_domain_max = max(max_sales * 1.22, 1.0)
-    ax1.set_ylim(0, sales_domain_max)
-
-    for rect, val in zip(bars, avg_sales):
-        if val <= 0:
-            continue
-        ax1.text(
-            rect.get_x() + rect.get_width() / 2,
-            rect.get_height() * 0.90,
-            money(float(val)),
-            ha="center",
-            va="top",
-            fontsize=10,
-            color="black",
-            fontweight="bold",
-        )
-
-    band_low = sales_domain_max * 0.80
-    band_high = sales_domain_max * 0.96
-    avg_units_min = float(np.min(avg_units)) if len(avg_units) else 0.0
-    avg_units_max = float(np.max(avg_units)) if len(avg_units) else 0.0
-
-    if math.isclose(avg_units_min, avg_units_max):
-        avg_units_display = np.full(len(avg_units), (band_low + band_high) / 2.0)
-    else:
-        avg_units_display = band_low + (
-            (avg_units - avg_units_min) / (avg_units_max - avg_units_min)
-        ) * (band_high - band_low)
-
-    ax2 = ax1.twinx()
-    ax2.set_ylim(0, sales_domain_max)
-    ax2.plot(x, avg_units_display, marker="o", linewidth=2.5, color=LINE_ACCENT, label="Average Units per SKU")
-    ax2.set_yticks([])
-
-    for xi, disp_y, raw_val in zip(x, avg_units_display, avg_units):
-        ax2.text(
-            xi,
-            disp_y + (sales_domain_max * 0.04),
-            f"{float(raw_val):,.2f}",
-            ha="center",
-            va="bottom",
-            fontsize=9,
-            color=LINE_ACCENT,
-            fontweight="bold",
-        )
-
-    handles1, labels1 = ax1.get_legend_handles_labels()
-    handles2, labels2 = ax2.get_legend_handles_labels()
-    fig.legend(handles1 + handles2, labels1 + labels2, loc="upper left", bbox_to_anchor=(0.74, 0.92), frameon=False)
-    fig.tight_layout(rect=[0, 0, 0.86, 1])
-    return fig
-
-
-def _make_quarterly_stacked_figure(df: pd.DataFrame, metric: str):
-    title = f"{metric} by Quarter, stacked within each selected year"
-    fig, ax = plt.subplots(figsize=(9.8, 5.4))
-
-    if df.empty:
-        ax.text(0.5, 0.5, "No quarterly stacked data available", ha="center", va="center")
-        ax.axis("off")
-        fig.suptitle(title, fontsize=14, fontweight="bold")
-        return fig
-
-    work = df.copy()
-    work["Value"] = pd.to_numeric(work["Value"], errors="coerce").fillna(0.0)
-
-    periods = list(work["PeriodLabel"].drop_duplicates())
-    quarters = ["Q1", "Q2", "Q3", "Q4"]
-
-    pivot = (
-        work.pivot_table(index="PeriodLabel", columns="Quarter", values="Value", aggfunc="sum", fill_value=0.0)
-        .reindex(index=periods, columns=quarters, fill_value=0.0)
-    )
-
-    x = np.arange(len(pivot.index))
-    bottom = np.zeros(len(pivot.index))
-
-    for q in quarters:
-        vals = pivot[q].to_numpy(dtype=float)
-        bars = ax.bar(x, vals, bottom=bottom, label=q)
-
-        for rect, v, b in zip(bars, vals, bottom):
-            if v <= 0:
-                continue
-            label = money(float(v)) if metric == "Sales" else f"{float(v):,.0f}"
-            ax.text(
-                rect.get_x() + rect.get_width() / 2,
-                b + (v * 0.18),
-                label,
-                ha="center",
-                va="bottom",
-                fontsize=8,
-                color="black",
-            )
-
-        bottom += vals
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(pivot.index.tolist(), rotation=0)
-    ax.set_xlabel("Period")
-    ax.set_ylabel(metric)
-    ax.set_title(title, fontsize=14, fontweight="bold")
-    ax.legend(
-        loc="upper left",
-        bbox_to_anchor=(1.02, 1.0),
-        borderaxespad=0.0,
-        frameon=False,
-        title="",
-    )
-
-    fig.tight_layout(rect=[0, 0, 0.84, 1])
-    return fig
-
-
-def _top2_per_period(df: pd.DataFrame, dim: str, metric: str = "Sales") -> pd.DataFrame:
-    if df.empty or dim not in df.columns or metric not in df.columns:
-        return pd.DataFrame(columns=["PeriodLabel", "Entity", "Value", "Rank", "YLabel"])
-
-    grp = (
-        df.groupby(["PeriodLabel", dim], as_index=False)[metric]
-        .sum()
-        .rename(columns={dim: "Entity", metric: "Value"})
-    )
-    grp["Rank"] = grp.groupby("PeriodLabel")["Value"].rank(method="first", ascending=False)
-
-    out = grp[grp["Rank"] <= 2].copy()
-    out["Rank"] = out["Rank"].astype(int)
-
-    p_order = {lbl: i for i, lbl in enumerate(df["PeriodLabel"].drop_duplicates().tolist())}
-    out["PeriodOrder"] = out["PeriodLabel"].map(p_order)
-
-    out = out.sort_values(["PeriodOrder", "Rank", "Value"], ascending=[True, True, False]).reset_index(drop=True)
-    out["YLabel"] = out["PeriodLabel"].astype(str) + " • #" + out["Rank"].astype(str) + " • " + out["Entity"].astype(str)
-    out["ValueLabel"] = out["Value"].map(money)
-    return out
-
-
-def _render_lollipop(df: pd.DataFrame, title: str):
-    if df.empty:
-        st.info(f"No data available for {title.lower()}.")
-        return
-
-    xmax = float(df["Value"].max()) if not df.empty else 0.0
-    xmax = xmax * 1.20 if xmax > 0 else 1.0
-    df = df.copy()
-    df["Zero"] = 0.0
-
-    rules = (
-        alt.Chart(df)
-        .mark_rule(strokeWidth=2.5)
-        .encode(
-            y=alt.Y("YLabel:N", sort=None, title=""),
-            x=alt.X("Zero:Q", scale=alt.Scale(domain=[0, xmax]), title="Sales"),
-            x2="Value:Q",
-            color=alt.Color("PeriodLabel:N", title=""),
-            tooltip=[
-                alt.Tooltip("PeriodLabel:N", title="Period"),
-                alt.Tooltip("Entity:N", title="Name"),
-                alt.Tooltip("Rank:O", title="Rank"),
-                alt.Tooltip("Value:Q", title="Sales", format=",.2f"),
-            ],
-        )
-    )
-
-    dots = (
-        alt.Chart(df)
-        .mark_circle(size=140)
-        .encode(
-            y=alt.Y("YLabel:N", sort=None, title=""),
-            x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax]), title="Sales"),
-            color=alt.Color("PeriodLabel:N", title=""),
-        )
-    )
-
-    text = (
-        alt.Chart(df)
-        .mark_text(align="left", dx=8, size=11)
-        .encode(
-            y=alt.Y("YLabel:N", sort=None, title=""),
-            x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax]), title="Sales"),
-            text="ValueLabel:N",
-            color=alt.Color("PeriodLabel:N", legend=None),
-        )
-    )
-
-    st.altair_chart(
-        (rules + dots + text).properties(height=max(260, len(df) * 34), title=title),
-        use_container_width=True,
-    )
-
-
-def _all_years_radar_month_df(df_hist: pd.DataFrame) -> pd.DataFrame:
-    if df_hist is None or df_hist.empty or "Sales" not in df_hist.columns:
-        return pd.DataFrame()
-
-    work = df_hist.copy()
-
-    if "MonthNum" not in work.columns:
-        date_col = _find_date_column(work)
-        if date_col is None:
-            return pd.DataFrame()
-        work[date_col] = pd.to_datetime(work[date_col], errors="coerce")
-        work = work.dropna(subset=[date_col]).copy()
-        work["MonthNum"] = work[date_col].dt.month
-
-    work = work.dropna(subset=["MonthNum"]).copy()
-    work["MonthNum"] = work["MonthNum"].astype(int)
-
-    out = (
-        work.groupby("MonthNum", as_index=False)["Sales"]
-        .sum()
-        .rename(columns={"Sales": "TotalSales"})
-    )
-
-    order_df = pd.DataFrame(RADAR_MONTH_ORDER, columns=["Quarter", "Month", "MonthNum"])
-    out = order_df.merge(out, on="MonthNum", how="left").fillna({"TotalSales": 0.0})
-
-    max_sales = float(out["TotalSales"].max()) if not out.empty else 0.0
-    out["ScaledSales"] = out["TotalSales"] / max_sales if max_sales > 0 else 0.0
-
-    out["ScaledSalesOuter"] = 0.18 + (out["ScaledSales"] * 1.00)
-    out["ScaledSalesOuter"] = out["ScaledSalesOuter"].clip(upper=1.18)
-
-    out["StartDeg"] = (out["MonthNum"] - 1) * 30
-    out["EndDeg"] = out["MonthNum"] * 30
-    out["MidDeg"] = out["StartDeg"] + 15
-
-    out["MonthLabelR"] = 1.30
-    out["QuarterLabelR"] = 1.44
-    out["ValueLabelR"] = np.where(
-        out["ScaledSalesOuter"] > 0.22,
-        out["ScaledSalesOuter"] * 0.62,
-        0.18,
-    )
-
-    out["SalesLabel"] = out["TotalSales"].map(lambda v: money(float(v)))
-
-    return out
-
-
-def _render_radar_altair(df: pd.DataFrame):
-    if df.empty:
-        st.info("No radar data available.")
-        return
-
-    work = df.copy()
-    work["RadarValue"] = work["ScaledSalesOuter"] if "ScaledSalesOuter" in work.columns else work["ScaledSales"]
-    work["PointOrder"] = range(len(work))
-
-    radius_scale = alt.Scale(domain=[0, 1.35], rangeMin=0, rangeMax=320)
-
-    rings = pd.DataFrame({"r": [0.30, 0.60, 0.90, 1.20]})
-
-    ring_chart = (
-        alt.Chart(rings)
-        .mark_arc(fillOpacity=0, stroke=RING_GRAY, strokeOpacity=0.60, strokeWidth=1.1)
-        .encode(
-            theta=alt.Theta(value=360),
-            radius=alt.Radius("r:Q", scale=radius_scale),
-        )
-    )
-
-    spoke_rows = []
-    for _, row in work.iterrows():
-        spoke_rows.append(
-            {
-                "Month": row["Month"],
-                "SpokeID": row["Month"],
-                "Deg": row["MidDeg"],
-                "Radius": 0.0,
-                "PointOrder": 0,
-            }
-        )
-        spoke_rows.append(
-            {
-                "Month": row["Month"],
-                "SpokeID": row["Month"],
-                "Deg": row["MidDeg"],
-                "Radius": 1.20,
-                "PointOrder": 1,
-            }
-        )
-    spokes = pd.DataFrame(spoke_rows)
-
-    spoke_chart = (
-        alt.Chart(spokes)
-        .mark_line(stroke=RING_GRAY, strokeOpacity=0.55, strokeWidth=1.0)
-        .encode(
-            theta=alt.Theta("Deg:Q", scale=alt.Scale(domain=[0, 360])),
-            radius=alt.Radius("Radius:Q", scale=radius_scale),
-            detail="SpokeID:N",
-            order=alt.Order("PointOrder:Q", sort="ascending"),
-        )
-    )
-
-    radar_fill = (
-        alt.Chart(work)
-        .mark_area(
-            interpolate="linear-closed",
-            color=RADAR_FILL,
-            opacity=0.28,
-            line=False,
-        )
-        .encode(
-            theta=alt.Theta("MidDeg:Q", scale=alt.Scale(domain=[0, 360])),
-            radius=alt.Radius("RadarValue:Q", scale=radius_scale),
-            order=alt.Order("PointOrder:Q", sort="ascending"),
-            tooltip=[
-                alt.Tooltip("Quarter:N", title="Quarter"),
-                alt.Tooltip("Month:N", title="Month"),
-                alt.Tooltip("TotalSales:Q", title="Sales", format=",.2f"),
-            ],
-        )
-    )
-
-    radar_outline = (
-        alt.Chart(work)
-        .mark_line(
-            interpolate="linear-closed",
-            stroke=RADAR_LINE,
-            strokeWidth=2.5,
-            point=alt.OverlayMarkDef(filled=True, size=85, color=LINE_ACCENT),
-        )
-        .encode(
-            theta=alt.Theta("MidDeg:Q", scale=alt.Scale(domain=[0, 360])),
-            radius=alt.Radius("RadarValue:Q", scale=radius_scale),
-            order=alt.Order("PointOrder:Q", sort="ascending"),
-            tooltip=[
-                alt.Tooltip("Quarter:N", title="Quarter"),
-                alt.Tooltip("Month:N", title="Month"),
-                alt.Tooltip("TotalSales:Q", title="Sales", format=",.2f"),
-            ],
-        )
-    )
-
-    quarter_labels = pd.DataFrame(
-        {
-            "Quarter": ["Q1", "Q2", "Q3", "Q4"],
-            "Deg": [45, 135, 225, 315],
-            "r": [1.30, 1.30, 1.30, 1.30],
-        }
-    )
-
-    month_names = (
-        alt.Chart(work)
-        .mark_text(fontSize=14, fontWeight="bold", color=TEXT_TEAL)
-        .encode(
-            theta=alt.Theta("MidDeg:Q", scale=alt.Scale(domain=[0, 360])),
-            radius=alt.Radius("MonthLabelR:Q", scale=radius_scale),
-            text="Month:N",
-        )
-    )
-
-    quarter_names = (
-        alt.Chart(quarter_labels)
-        .mark_text(fontSize=15, fontWeight="bold", color=TEXT_AMBER)
-        .encode(
-            theta=alt.Theta("Deg:Q", scale=alt.Scale(domain=[0, 360])),
-            radius=alt.Radius("r:Q", scale=radius_scale),
-            text="Quarter:N",
-        )
-    )
-
-    value_labels = (
-        alt.Chart(work)
-        .mark_text(fontSize=11, color=TEXT_BLACK, fontWeight="bold")
-        .encode(
-            theta=alt.Theta("MidDeg:Q", scale=alt.Scale(domain=[0, 360])),
-            radius=alt.Radius("ValueLabelR:Q", scale=radius_scale),
-            text="SalesLabel:N",
-        )
-    )
-
-    chart = alt.layer(
-        ring_chart,
-        spoke_chart,
-        radar_fill,
-        radar_outline,
-        value_labels,
-        month_names,
-        quarter_names,
-    ).properties(
-        width=820,
-        height=820,
-        title="All-Years Sales Seasonality Radar (January at top, clockwise)",
-    ).configure_title(
-        anchor="start",
-        fontSize=16,
-        offset=12,
-        color=TEXT_LIGHT,
-    )
-
-    st.altair_chart(chart, use_container_width=True)
-
-
-def _make_pdf_radar_figure(df: pd.DataFrame):
-    if df.empty:
-        fig, ax = plt.subplots(figsize=(8.5, 8.5))
-        ax.text(0.5, 0.5, "No radar data available", ha="center", va="center")
-        ax.axis("off")
-        fig.suptitle("All-Years Sales Seasonality Radar", fontsize=14, fontweight="bold")
-        return fig
-
-    labels = df["Month"].tolist()
-    values = df["ScaledSalesOuter"].tolist() if "ScaledSalesOuter" in df.columns else df["ScaledSales"].tolist()
-
-    angles = [n / float(len(labels)) * 2 * math.pi for n in range(len(labels))]
-    angles += angles[:1]
-    values += values[:1]
-
-    fig = plt.figure(figsize=(8.5, 8.5))
-    ax = plt.subplot(111, polar=True)
-    ax.set_theta_offset(math.pi / 2)
-    ax.set_theta_direction(-1)
-
-    plt.xticks(angles[:-1], labels, fontsize=11)
-    ax.set_rlabel_position(0)
-    ax.set_yticks([0.30, 0.60, 0.90, 1.20])
-    ax.set_yticklabels(["25%", "50%", "75%", "100%"], fontsize=9)
-    ax.set_ylim(0, 1.20)
-
-    ax.plot(angles, values, linewidth=2, color=RADAR_LINE)
-    ax.fill(angles, values, alpha=0.35, color=RADAR_FILL)
-
-    quarter_midpoints = [1, 4, 7, 10]
-    quarter_names = ["Q1", "Q2", "Q3", "Q4"]
-    for idx, qn in zip(quarter_midpoints, quarter_names):
-        angle = angles[idx]
-        ax.text(angle, 1.30, qn, ha="center", va="center", fontsize=12, fontweight="bold")
-
-    ax.set_title("All-Years Sales Seasonality Radar (January at top, clockwise)", pad=24, fontsize=14, fontweight="bold")
-    return fig
-
-
-def _fig_to_rl_image(fig, width_inches: float = 9.6) -> RLImage:
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=180, bbox_inches="tight")
-    plt.close(fig)
-    buf.seek(0)
-
-    img = RLImage(buf)
-    aspect = img.imageHeight / float(img.imageWidth) if img.imageWidth else 0.6
-    img.drawWidth = width_inches * inch
-    img.drawHeight = img.drawWidth * aspect
-    return img
-
-
-def _make_pdf_top2_bar_figure(df: pd.DataFrame, title: str):
-    fig, ax = plt.subplots(figsize=(10.2, max(4.2, 0.45 * max(len(df), 4))))
-
-    if df.empty:
-        ax.text(0.5, 0.5, "No data available", ha="center", va="center")
-        ax.axis("off")
-        fig.suptitle(title, fontsize=14, fontweight="bold")
-        return fig
-
-    work = df.copy()
-    work["Value"] = pd.to_numeric(work["Value"], errors="coerce").fillna(0.0)
-    work = work.sort_values(["PeriodOrder", "Rank", "Value"], ascending=[True, True, False]).reset_index(drop=True)
-
-    labels = work["YLabel"].astype(str).tolist()
-    values = work["Value"].tolist()
-    y = np.arange(len(work))
-
-    ax.barh(y, values)
-    ax.set_yticks(y)
-    ax.set_yticklabels(labels, fontsize=9)
-    ax.invert_yaxis()
-    ax.set_xlabel("Sales")
-    ax.set_title(title, fontsize=14, fontweight="bold")
-
-    xmax = max(values) if values else 0
-    pad = xmax * 0.02 if xmax > 0 else 1.0
-    for yi, v in zip(y, values):
-        ax.text(v + pad, yi, money(float(v)), va="center", fontsize=9)
-
-    fig.tight_layout()
-    return fig
-
-
-def build_visual_analytics_pdf_bytes(
-    df_scope: pd.DataFrame,
-    df_vis: pd.DataFrame,
-    df_hist_all: pd.DataFrame,
-    granularity: str,
-    labels: list[str],
-) -> bytes:
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buf,
-        pagesize=landscape(letter),
-        leftMargin=18,
-        rightMargin=18,
-        topMargin=18,
-        bottomMargin=18,
-    )
-
-    styles = getSampleStyleSheet()
-    story = []
-
-    title = Paragraph("Multi Month / Year Compare — Visual Analytics", styles["Title"])
-    subtitle = Paragraph(
-        f"Analyze By: {granularity} &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp; Selected: {', '.join(labels)}",
-        styles["Normal"],
-    )
-    story.extend([title, Spacer(1, 6), subtitle, Spacer(1, 12)])
-
-    summary_df = _period_summary_df(df_vis)
-
-    story.append(Paragraph("Sales and ASP by Selected Period", styles["Heading2"]))
-    story.append(_fig_to_rl_image(_make_sales_asp_combo_figure(summary_df, "Sales and ASP by Selected Period"), width_inches=9.8))
-    story.append(Spacer(1, 10))
-
-    story.append(Paragraph("Sales and Units by Selected Period", styles["Heading2"]))
-    story.append(_fig_to_rl_image(_make_sales_units_combo_figure(summary_df, "Sales and Units by Selected Period"), width_inches=9.8))
-    story.append(Spacer(1, 10))
-
-    story.append(Paragraph("Average Sales per SKU and Average Units per SKU", styles["Heading2"]))
-    story.append(
-        _fig_to_rl_image(
-            _make_avg_sales_units_per_sku_combo_figure(
-                summary_df,
-                "Average Sales per SKU and Average Units per SKU",
-            ),
-            width_inches=9.8,
-        )
-    )
-    story.append(Spacer(1, 10))
-
-    if granularity == "Year":
-        q_sales = _quarterly_stacked_df(df_vis, "Sales")
-        q_units = _quarterly_stacked_df(df_vis, "Units")
-
-        story.append(Paragraph("Quarterly Stacked Bars — Sales", styles["Heading2"]))
-        story.append(_fig_to_rl_image(_make_quarterly_stacked_figure(q_sales, "Sales"), width_inches=9.8))
-        story.append(Spacer(1, 10))
-
-        story.append(Paragraph("Quarterly Stacked Bars — Units", styles["Heading2"]))
-        story.append(_fig_to_rl_image(_make_quarterly_stacked_figure(q_units, "Units"), width_inches=9.8))
-        story.append(Spacer(1, 10))
-
-    top_retailer = _top2_per_period(df_vis, "Retailer", "Sales")
-    top_vendor = _top2_per_period(df_vis, "Vendor", "Sales")
-    top_sku = _top2_per_period(df_vis, "SKU", "Sales")
-
-    story.append(Paragraph("Biggest 2 Retailers by Selected Period", styles["Heading2"]))
-    story.append(_fig_to_rl_image(_make_pdf_top2_bar_figure(top_retailer, "Biggest 2 Retailers by Selected Period"), width_inches=9.8))
-    story.append(Spacer(1, 10))
-
-    story.append(Paragraph("Biggest 2 Vendors by Selected Period", styles["Heading2"]))
-    story.append(_fig_to_rl_image(_make_pdf_top2_bar_figure(top_vendor, "Biggest 2 Vendors by Selected Period"), width_inches=9.8))
-    story.append(Spacer(1, 10))
-
-    story.append(Paragraph("Biggest 2 SKUs by Selected Period", styles["Heading2"]))
-    story.append(_fig_to_rl_image(_make_pdf_top2_bar_figure(top_sku, "Biggest 2 SKUs by Selected Period"), width_inches=9.8))
-    story.append(Spacer(1, 10))
-
-    radar_df = _all_years_radar_month_df(df_hist_all)
-    story.append(Paragraph("All-Years Seasonality Radar", styles["Heading2"]))
-    story.append(_fig_to_rl_image(_make_pdf_radar_figure(radar_df), width_inches=6.8))
-
-    doc.build(story)
-    return buf.getvalue()
-
-
-def render_visual_only(ctx: dict):
-    st.subheader("Multi Month / Year Compare • Visual Analytics")
-    st.caption("Chart-first view for selected years or months.")
-
-    df_scope = ctx["df_scope"].copy()
-    df_hist_all = ctx.get("df_hist_for_new", pd.DataFrame()).copy()
-
-    if df_scope.empty:
-        st.info("No data available with the current filters.")
-        return
-
-    c1, c2, c3 = st.columns([1.2, 2.4, 1.0])
-
-    with c1:
-        granularity = st.selectbox(
-            "Analyze By",
-            ["Year", "Month"],
-            index=0,
-            key="multi_compare_visual_granularity",
-        )
-
-    options = available_year_labels(df_scope) if granularity == "Year" else available_month_labels(df_scope)
-    default_sel = options[-4:] if len(options) >= 4 else options
-
-    with c2:
-        labels = st.multiselect(
-            f"Select {granularity}s",
-            options=options,
-            default=default_sel,
-            key="multi_compare_visual_labels",
-        )
-
-    with c3:
-        st.selectbox(
-            "Radar Source",
-            ["All Filtered History"],
-            index=0,
-            key="multi_compare_visual_radar_source",
-        )
-
-    if not labels:
-        st.info(f"Select one or more {granularity.lower()}s to continue.")
-        return
-
-    ordered_labels = [x for x in options if x in labels]
-    df_vis = _prepare_visual_base(df_scope, ordered_labels, granularity)
-
-    if df_vis.empty:
-        st.info("No data available for the selected visual periods.")
-        return
-
-    try:
-        pdf_bytes = build_visual_analytics_pdf_bytes(
-            df_scope=df_scope,
-            df_vis=df_vis,
-            df_hist_all=df_hist_all,
-            granularity=granularity,
-            labels=ordered_labels,
-        )
-        st.download_button(
-            "Download Visual Analytics PDF",
-            data=pdf_bytes,
-            file_name=f"multi_compare_visual_analytics_{granularity.lower()}.pdf",
-            mime="application/pdf",
-            key="download_multi_compare_visual_pdf",
-            use_container_width=False,
-        )
-    except Exception as e:
-        st.warning(f"PDF export unavailable: {e}")
-
-    summary_df = _period_summary_df(df_vis)
-
-    st.markdown("### Sales and ASP by Selected Period")
-    _render_sales_asp_combo_chart(summary_df)
-
-    st.markdown("### Sales and Units by Selected Period")
-    _render_sales_units_combo_chart(summary_df)
-
-    st.markdown("### Average Sales per SKU and Average Units per SKU")
-    _render_avg_sales_units_per_sku_combo_chart(summary_df)
-
-    if granularity == "Year":
-        st.markdown("### Quarterly Stacked Bars")
-        q_sales, q_units = st.columns(2)
-        with q_sales:
-            _render_quarterly_stacked_altair(_quarterly_stacked_df(df_vis, "Sales"), "Sales")
-        with q_units:
-            _render_quarterly_stacked_altair(_quarterly_stacked_df(df_vis, "Units"), "Units")
-
-    st.markdown("### Biggest 2 by Selected Period")
-    rv1, rv2 = st.columns(2)
-    with rv1:
-        _render_lollipop(_top2_per_period(df_vis, "Retailer", "Sales"), "Biggest 2 Retailers by Selected Period")
-    with rv2:
-        _render_lollipop(_top2_per_period(df_vis, "Vendor", "Sales"), "Biggest 2 Vendors by Selected Period")
-
-    _render_lollipop(_top2_per_period(df_vis, "SKU", "Sales"), "Biggest 2 SKUs by Selected Period")
-
-    st.markdown("### All-Years Seasonality Radar")
-    st.caption("Uses all filtered history in the app across all years for the current scope filter.")
-
-    radar_df = _all_years_radar_month_df(df_hist_all)
-    _render_radar_altair(radar_df)
 
 
 def render(ctx: dict):
-    df_scope = ctx["df_scope"].copy()
+    st.markdown(
+        """
+        <style>
+        .kpi-card .kpi-title{font-size:13px !important;}
+        .kpi-card .kpi-value{font-size:31px !important;}
+        .kpi-card .kpi-delta{font-size:15px !important;}
+        .kpi-card .kpi-sub{font-size:15px !important;}
+        .kpi-card .top-two-item .kpi-big-name{font-size:22px !important;}
+        .kpi-card .top-two-item .kpi-value{font-size:30px !important;}
+        .kpi-card .top-two-item .kpi-delta{font-size:14px !important;}
+        .kpi-card .top-two-item .kpi-sub{font-size:14px !important;}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    st.subheader("Multi Month / Year Compare")
-    st.caption("Analyze multiple months or years together in one view.")
+    render_standard_view(
+        dfA=ctx["dfA"],
+        dfB=ctx["dfB"],
+        kA=ctx["kA"],
+        kB=ctx["kB"],
+        a_lbl=ctx["a_lbl"],
+        b_lbl=ctx["b_lbl"],
+        compare_mode=ctx["compare_mode"],
+        min_sales=ctx["min_sales"],
+    )
 
-    if df_scope.empty:
-        st.info("No data available with the current filters.")
-        return
 
-    c1, c2, c3, c4, c5 = st.columns([1.0, 2.2, 1.2, 1.0, 1.0])
+def render_visual_only(ctx: dict):
+    st.markdown(
+        """
+        <style>
+        .kpi-card .kpi-title{font-size:13px !important;}
+        .kpi-card .kpi-value{font-size:31px !important;}
+        .kpi-card .kpi-delta{font-size:15px !important;}
+        .kpi-card .kpi-sub{font-size:15px !important;}
+        .kpi-card .top-two-item .kpi-big-name{font-size:22px !important;}
+        .kpi-card .top-two-item .kpi-value{font-size:30px !important;}
+        .kpi-card .top-two-item .kpi-delta{font-size:14px !important;}
+        .kpi-card .top-two-item .kpi-sub{font-size:14px !important;}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    with c1:
-        granularity = st.selectbox(
-            "Analyze By",
-            ["Year", "Month"],
-            index=0,
-            key="multi_compare_granularity_single",
+    render_visual_executive_dashboard(
+        dfA=ctx["dfA"],
+        dfB=ctx["dfB"],
+        kA=ctx["kA"],
+        kB=ctx["kB"],
+        a_lbl=ctx["a_lbl"],
+        b_lbl=ctx["b_lbl"],
+        min_sales=ctx["min_sales"],
+    )
+
+
+def render_visual_executive_dashboard(
+    dfA: pd.DataFrame,
+    dfB: pd.DataFrame,
+    kA: dict,
+    kB: dict,
+    a_lbl: str,
+    b_lbl: str,
+    min_sales: float,
+):
+    PERIOD_DOMAIN = [a_lbl, b_lbl]
+    PERIOD_RANGE = ["#1f77b4", "#ff7f0e"]
+
+    Q_DOMAIN = ["Q1", "Q2", "Q3", "Q4"]
+    Q_RANGE = ["#dbe7f5", "#a8c4e5", "#6f9fd1", "#2f6fb3"]
+
+    POSITIVE_BAR = "#2e7d32"
+    NEGATIVE_BAR = "#c62828"
+    NEUTRAL_BAR = "#808080"
+
+    TOTAL_BLOCK_VALUE = 25000.0
+    CHANGE_BLOCK_VALUE = 1000.0
+
+    def is_year_label(lbl: str) -> bool:
+        return bool(re.fullmatch(r"\d{4}", str(lbl or "").strip()))
+
+    def year_compare_mode() -> bool:
+        return is_year_label(a_lbl) and is_year_label(b_lbl)
+
+    def pct_change(cur: float, prev: float):
+        if prev == 0:
+            return np.nan if cur == 0 else np.inf
+        return (cur - prev) / prev
+
+    def delta_html(cur: float, prev: float, is_money: bool):
+        d = float(cur) - float(prev)
+        pc = pct_change(float(cur), float(prev))
+        color = POSITIVE_BAR if d > 0 else (NEGATIVE_BAR if d < 0 else "var(--text-color)")
+        arrow = "▲ " if d > 0 else ("▼ " if d < 0 else "")
+        abs_s = money(d) if is_money else f"{d:,.0f}"
+        return (
+            f"<span class='delta-abs' style='color:{color}'>{arrow}{abs_s}</span>"
+            f"<span class='delta-pct' style='color:{color}'>({pct_fmt(pc)})</span>"
         )
 
-    options = available_year_labels(df_scope) if granularity == "Year" else available_month_labels(df_scope)
-    default_sel = options[-4:] if len(options) >= 4 else options
+    def prep_compare_metric(
+        df_cur: pd.DataFrame,
+        df_cmp: pd.DataFrame,
+        level: str,
+        metric: str = "Sales",
+        top_n: int = 10,
+    ) -> pd.DataFrame:
+        cur = df_cur.groupby(level, dropna=False, as_index=False).agg(Current=(metric, "sum"))
+        cmp = df_cmp.groupby(level, dropna=False, as_index=False).agg(Compare=(metric, "sum"))
+        out = cur.merge(cmp, on=level, how="outer").fillna(0.0)
+        out[level] = out[level].astype(str)
+        out["Delta"] = out["Current"] - out["Compare"]
+        out["Total"] = out["Current"] + out["Compare"]
+        out = out.sort_values(["Total", level], ascending=[False, True]).head(top_n).copy()
+        return out
 
-    with c2:
-        labels = st.multiselect(
-            f"Select {granularity}s",
-            options=options,
-            default=default_sel,
-            key="multi_compare_labels_single",
+    def prep_quarter_stacked(df_cur: pd.DataFrame, df_cmp: pd.DataFrame, metric: str) -> pd.DataFrame:
+        if "Quarter" not in df_cur.columns or "Quarter" not in df_cmp.columns:
+            return pd.DataFrame()
+
+        cur = df_cur.copy()
+        cmp = df_cmp.copy()
+
+        cur["Quarter"] = cur["Quarter"].astype(str).str.upper().str.strip()
+        cmp["Quarter"] = cmp["Quarter"].astype(str).str.upper().str.strip()
+
+        cur = cur[cur["Quarter"].isin(Q_DOMAIN)]
+        cmp = cmp[cmp["Quarter"].isin(Q_DOMAIN)]
+
+        if cur.empty or cmp.empty:
+            return pd.DataFrame()
+
+        a = cur.groupby("Quarter", as_index=False)[metric].sum()
+        b = cmp.groupby("Quarter", as_index=False)[metric].sum()
+
+        a["Period"] = a_lbl
+        b["Period"] = b_lbl
+        a.rename(columns={metric: "Value"}, inplace=True)
+        b.rename(columns={metric: "Value"}, inplace=True)
+
+        out = pd.concat([a, b], ignore_index=True)
+        out["Quarter"] = pd.Categorical(out["Quarter"], categories=Q_DOMAIN, ordered=True)
+        out = out.sort_values(["Period", "Quarter"]).copy()
+
+        out["Label"] = out["Value"].map(lambda v: f"{v:,.0f}" if metric == "Units" else money(v))
+        out["Start"] = out.groupby("Period")["Value"].cumsum() - out["Value"]
+        out["LabelX"] = out["Start"] + (out["Value"] * 0.50)
+
+        total_by_period = out.groupby("Period")["Value"].transform("sum")
+        out["ShowLabel"] = np.where(
+            (out["Value"] > 0) & (out["Value"] / total_by_period >= 0.08),
+            out["Label"],
+            "",
+        )
+        return out
+
+    def stacked_total_chart(
+        metric_name: str,
+        df_cur: pd.DataFrame,
+        df_cmp: pd.DataFrame,
+        fallback_cur: float,
+        fallback_cmp: float,
+    ):
+        metric = "Units" if metric_name == "Units" else "Sales"
+
+        color_cur = POSITIVE_BAR if float(fallback_cur) >= float(fallback_cmp) else NEGATIVE_BAR
+        color_cmp = POSITIVE_BAR if float(fallback_cmp) > float(fallback_cur) else NEGATIVE_BAR
+
+        stacked = pd.DataFrame()
+        if year_compare_mode():
+            stacked = prep_quarter_stacked(df_cur, df_cmp, metric)
+
+        if stacked.empty:
+            chart_df = pd.DataFrame(
+                [
+                    {"Period": a_lbl, "Value": float(fallback_cur), "ColorHex": color_cur},
+                    {"Period": b_lbl, "Value": float(fallback_cmp), "ColorHex": color_cmp},
+                ]
+            )
+
+            xmax = float(chart_df["Value"].max()) if not chart_df.empty else 0.0
+            xmax = xmax * 1.03 if xmax > 0 else 1.0
+
+            bars = (
+                alt.Chart(chart_df)
+                .mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5)
+                .encode(
+                    y=alt.Y("Period:N", title="", sort=[a_lbl, b_lbl]),
+                    x=alt.X("Value:Q", title=metric_name, scale=alt.Scale(domain=[0, xmax])),
+                    color=alt.Color("ColorHex:N", scale=None, legend=None),
+                    tooltip=[
+                        alt.Tooltip("Period:N", title="Period"),
+                        alt.Tooltip("Value:Q", title=metric_name, format=",.0f" if metric == "Units" else ",.2f"),
+                    ],
+                )
+                .properties(height=150)
+            )
+
+            label_df = chart_df.copy()
+            label_df["Label"] = label_df["Value"].map(lambda v: f"{v:,.0f}" if metric == "Units" else money(v))
+            label_df["LabelX"] = label_df["Value"] / 2.0
+
+            labels = (
+                alt.Chart(label_df)
+                .mark_text(
+                    align="center",
+                    baseline="middle",
+                    fontSize=14,
+                    fontWeight="bold",
+                    color="#000000",
+                )
+                .encode(
+                    y=alt.Y("Period:N", sort=[a_lbl, b_lbl]),
+                    x=alt.X("LabelX:Q", scale=alt.Scale(domain=[0, xmax])),
+                    text="Label:N",
+                )
+            )
+
+            return bars + labels
+
+        totals = (
+            stacked.groupby("Period", as_index=False)
+            .agg(Value=("Value", "sum"))
+            .assign(
+                ColorHex=lambda d: d["Period"].map({
+                    a_lbl: color_cur,
+                    b_lbl: color_cmp,
+                })
+            )
         )
 
-    with c3:
-        row_dim = st.selectbox(
-            "Rows By",
-            ["Retailer", "Vendor", "SKU"],
-            index=0,
-            key="multi_compare_row_dim_single",
+        xmax = float(totals["Value"].max()) if not totals.empty else 0.0
+        xmax = xmax * 1.03 if xmax > 0 else 1.0
+
+        bars = (
+            alt.Chart(totals)
+            .mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5)
+            .encode(
+                y=alt.Y("Period:N", title="", sort=[a_lbl, b_lbl]),
+                x=alt.X("Value:Q", title=metric_name, scale=alt.Scale(domain=[0, xmax])),
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+                tooltip=[
+                    alt.Tooltip("Period:N", title="Period"),
+                    alt.Tooltip("Value:Q", title=metric_name, format=",.0f" if metric == "Units" else ",.2f"),
+                ],
+            )
+            .properties(height=150)
         )
 
-    with c4:
-        metric = st.selectbox(
-            "Metric",
-            ["Sales", "Units"],
-            index=0,
-            key="multi_compare_metric_single",
+        totals["Label"] = totals["Value"].map(lambda v: f"{v:,.0f}" if metric == "Units" else money(v))
+        totals["LabelX"] = totals["Value"] / 2.0
+
+        labels = (
+            alt.Chart(totals)
+            .mark_text(
+                align="center",
+                baseline="middle",
+                fontSize=14,
+                fontWeight="bold",
+                color="#000000",
+            )
+            .encode(
+                y=alt.Y("Period:N", sort=[a_lbl, b_lbl]),
+                x=alt.X("LabelX:Q", scale=alt.Scale(domain=[0, xmax])),
+                text="Label:N",
+            )
         )
 
-    with c5:
-        sort_by = st.selectbox(
-            "Sort By",
-            ["Latest Selected", "Total", "Average", "Alphabetical"],
-            index=0,
-            key="multi_compare_sort_single",
+        return bars + labels
+
+    def collect_change_contributors(df_cur: pd.DataFrame, df_cmp: pd.DataFrame) -> pd.DataFrame:
+        if "Retailer" not in df_cur.columns or "Retailer" not in df_cmp.columns:
+            return pd.DataFrame(columns=["Label", "Delta", "ColorHex", "Side", "Direction"])
+
+        cur = df_cur.groupby("Retailer", as_index=False).agg(Current=("Sales", "sum"))
+        cmp = df_cmp.groupby("Retailer", as_index=False).agg(Compare=("Sales", "sum"))
+        out = cur.merge(cmp, on="Retailer", how="outer").fillna(0.0)
+        out["Label"] = out["Retailer"].astype(str)
+        out["Delta"] = out["Current"] - out["Compare"]
+        out = out[["Label", "Delta"]].copy()
+        out = out[np.isfinite(out["Delta"])].copy()
+        out = out[out["Delta"] != 0].copy()
+
+        out["ColorHex"] = np.where(out["Delta"] > 0, POSITIVE_BAR, NEGATIVE_BAR)
+        out["Side"] = np.where(out["Delta"] > 0, "right", "left")
+        out["Direction"] = np.where(out["Delta"] > 0, "right", "left")
+
+        pos = out[out["Delta"] > 0].sort_values(["Delta", "Label"], ascending=[False, True]).copy()
+        neg = out[out["Delta"] < 0].sort_values(["Delta", "Label"], ascending=[True, True]).copy()
+
+        return pd.concat([pos, neg], ignore_index=True)
+
+    def simple_period_block_chart(
+        current_value: float,
+        compare_value: float,
+        current_label: str,
+        compare_label: str,
+        changes_df: pd.DataFrame,
+    ):
+        def full_total_label(v: float) -> str:
+            return money(float(v))
+
+        def abs_change_label(v: float) -> str:
+            return money(abs(float(v)))
+
+        current_value = float(max(current_value, 0.0))
+        compare_value = float(max(compare_value, 0.0))
+
+        if current_value > compare_value:
+            current_color = POSITIVE_BAR
+            compare_color = NEGATIVE_BAR
+        elif current_value < compare_value:
+            current_color = NEGATIVE_BAR
+            compare_color = POSITIVE_BAR
+        else:
+            current_color = NEUTRAL_BAR
+            compare_color = NEUTRAL_BAR
+
+        rows = [
+            {
+                "Period": compare_label,
+                "Kind": "total",
+                "Value": compare_value,
+                "Direction": "right",
+                "ColorHex": compare_color,
+                "Side": "right",
+                "Text": full_total_label(compare_value),
+                "BlockValue": TOTAL_BLOCK_VALUE,
+            }
+        ]
+
+        if changes_df is not None and not changes_df.empty:
+            for _, r in changes_df.iterrows():
+                delta = float(r["Delta"])
+                rows.append(
+                    {
+                        "Period": str(r["Label"]),
+                        "Kind": "change",
+                        "Value": abs(delta),
+                        "Direction": str(r["Direction"]),
+                        "ColorHex": str(r["ColorHex"]),
+                        "Side": str(r["Side"]),
+                        "Text": abs_change_label(delta),
+                        "BlockValue": CHANGE_BLOCK_VALUE,
+                    }
+                )
+
+        rows.append(
+            {
+                "Period": current_label,
+                "Kind": "total",
+                "Value": current_value,
+                "Direction": "right",
+                "ColorHex": current_color,
+                "Side": "right",
+                "Text": full_total_label(current_value),
+                "BlockValue": TOTAL_BLOCK_VALUE,
+            }
         )
 
-    if not labels:
-        st.info(f"Select one or more {granularity.lower()}s to continue.")
-        return
+        row_df = pd.DataFrame(rows)
 
-    ordered_labels = [x for x in options if x in labels]
+        total_max = float(max(compare_value, current_value, TOTAL_BLOCK_VALUE))
+        if (row_df["Kind"] == "change").any():
+            change_max = float(row_df.loc[row_df["Kind"] == "change", "Value"].max())
+        else:
+            change_max = CHANGE_BLOCK_VALUE
 
-    _render_base_metric_cards(df_scope, ordered_labels, granularity)
-    _render_top2_peak_cards(df_scope, ordered_labels, granularity)
-    _render_top2_growth_cards(df_scope, ordered_labels, granularity)
-    _render_multi_period_matrix(df_scope, ordered_labels, granularity, row_dim, metric, sort_by)
-    _render_yoy_growth_table(df_scope, ordered_labels, granularity, row_dim, metric)
-    _render_share_of_total_table(df_scope, ordered_labels, granularity, row_dim, metric)
-    _render_multi_year_seasonality(df_scope, ordered_labels, granularity, metric)
-    _render_performance_score(df_scope, ordered_labels, granularity, row_dim, metric)
+        change_max = max(change_max, CHANGE_BLOCK_VALUE)
+
+        center_from_compare = compare_value / 2.0
+        min_center_needed = change_max + max(CHANGE_BLOCK_VALUE * 2, change_max * 0.04)
+        center_x = max(center_from_compare, min_center_needed)
+        center_x = float(np.ceil(center_x / CHANGE_BLOCK_VALUE) * CHANGE_BLOCK_VALUE)
+
+        right_needed_for_changes = center_x + change_max + max(CHANGE_BLOCK_VALUE * 2, change_max * 0.04)
+        right_needed_for_totals = total_max + max(TOTAL_BLOCK_VALUE, total_max * 0.02)
+
+        xmax = float(max(right_needed_for_changes, right_needed_for_totals))
+        xmax = float(np.ceil(xmax / CHANGE_BLOCK_VALUE) * CHANGE_BLOCK_VALUE)
+
+        block_rows = []
+        total_label_rows = []
+
+        for _, r in row_df.iterrows():
+            value = float(max(r["Value"], 0.0))
+            block_value = float(r["BlockValue"])
+
+            if r["Kind"] == "total":
+                if value <= 0:
+                    block_rows.append(
+                        {
+                            "Period": r["Period"],
+                            "X0": 0.0,
+                            "X1": 0.0,
+                            "ColorHex": r["ColorHex"],
+                        }
+                    )
+                    total_label_rows.append(
+                        {
+                            "Period": r["Period"],
+                            "X": 0.0,
+                            "Text": r["Text"],
+                            "ColorHex": r["ColorHex"],
+                            "Side": r["Side"],
+                        }
+                    )
+                else:
+                    n_blocks = int(np.ceil(value / block_value))
+                    for i in range(n_blocks):
+                        x0 = i * block_value
+                        x1 = min((i + 1) * block_value, value)
+                        block_rows.append(
+                            {
+                                "Period": r["Period"],
+                                "X0": x0,
+                                "X1": x1,
+                                "ColorHex": r["ColorHex"],
+                            }
+                        )
+                    total_label_rows.append(
+                        {
+                            "Period": r["Period"],
+                            "X": value,
+                            "Text": r["Text"],
+                            "ColorHex": r["ColorHex"],
+                            "Side": "right",
+                        }
+                    )
+            else:
+                if value <= 0:
+                    block_rows.append(
+                        {
+                            "Period": r["Period"],
+                            "X0": center_x,
+                            "X1": center_x,
+                            "ColorHex": r["ColorHex"],
+                        }
+                    )
+                    total_label_rows.append(
+                        {
+                            "Period": r["Period"],
+                            "X": center_x,
+                            "Text": r["Text"],
+                            "ColorHex": r["ColorHex"],
+                            "Side": r["Side"],
+                        }
+                    )
+                else:
+                    n_blocks = int(np.ceil(value / block_value))
+                    for i in range(n_blocks):
+                        piece_start = i * block_value
+                        piece_end = min((i + 1) * block_value, value)
+
+                        if r["Direction"] == "right":
+                            x0 = center_x + piece_start
+                            x1 = center_x + piece_end
+                        else:
+                            x0 = center_x - piece_end
+                            x1 = center_x - piece_start
+
+                        block_rows.append(
+                            {
+                                "Period": r["Period"],
+                                "X0": x0,
+                                "X1": x1,
+                                "ColorHex": r["ColorHex"],
+                            }
+                        )
+
+                    total_label_rows.append(
+                        {
+                            "Period": r["Period"],
+                            "X": center_x + value if r["Direction"] == "right" else center_x - value,
+                            "Text": r["Text"],
+                            "ColorHex": r["ColorHex"],
+                            "Side": r["Side"],
+                        }
+                    )
+
+        block_df = pd.DataFrame(block_rows)
+        totals_df = pd.DataFrame(total_label_rows)
+        order = row_df["Period"].tolist()
+
+        chart_height = max(230, 44 * len(order))
+
+        def _layer(df_sub: pd.DataFrame, color_hex: str):
+            if df_sub.empty:
+                return None
+            return (
+                alt.Chart(df_sub)
+                .mark_bar(color=color_hex, stroke="white", strokeWidth=1)
+                .encode(
+                    y=alt.Y("Period:N", sort=order, title=""),
+                    x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, xmax])),
+                    x2="X1:Q",
+                    tooltip=[alt.Tooltip("Period:N", title="Period")],
+                )
+            )
+
+        layers = []
+
+        green_df = block_df[block_df["ColorHex"] == POSITIVE_BAR].copy()
+        red_df = block_df[block_df["ColorHex"] == NEGATIVE_BAR].copy()
+        gray_df = block_df[block_df["ColorHex"] == NEUTRAL_BAR].copy()
+
+        green_layer = _layer(green_df, POSITIVE_BAR)
+        red_layer = _layer(red_df, NEGATIVE_BAR)
+        gray_layer = _layer(gray_df, NEUTRAL_BAR)
+
+        for lyr in (green_layer, red_layer, gray_layer):
+            if lyr is not None:
+                layers.append(lyr)
+
+        center_rule = (
+            alt.Chart(pd.DataFrame([{"Center": center_x}]))
+            .mark_rule(color="#7a7a7a", strokeDash=[4, 4], strokeWidth=1.5)
+            .encode(x=alt.X("Center:Q", scale=alt.Scale(domain=[0, xmax])))
+        )
+        layers.append(center_rule)
+
+        right_labels = (
+            alt.Chart(totals_df[totals_df["Side"] == "right"])
+            .mark_text(align="left", dx=10, fontSize=14, fontWeight="bold", clip=False)
+            .encode(
+                y=alt.Y("Period:N", sort=order),
+                x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
+                text="Text:N",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+            )
+        )
+        layers.append(right_labels)
+
+        left_labels = (
+            alt.Chart(totals_df[totals_df["Side"] == "left"])
+            .mark_text(align="right", dx=-10, fontSize=14, fontWeight="bold", clip=False)
+            .encode(
+                y=alt.Y("Period:N", sort=order),
+                x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
+                text="Text:N",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+            )
+        )
+        layers.append(left_labels)
+
+        chart = alt.layer(*layers).properties(height=chart_height)
+        return chart
+
+    def prep_grouped_share(df: pd.DataFrame, dim_name: str) -> pd.DataFrame:
+        if df.empty:
+            return pd.DataFrame(
+                columns=[dim_name, "Series", "Value", "SharePct", "Label", "SortTotal", "Start", "RowColor"]
+            )
+
+        long_df = df[[dim_name, "Current", "Compare", "Total"]].melt(
+            id_vars=[dim_name, "Total"],
+            value_vars=["Current", "Compare"],
+            var_name="Series",
+            value_name="Value",
+        )
+
+        color_base = df[[dim_name, "Current", "Compare", "Total"]].copy()
+        color_base["CurrentColor"] = np.where(
+            color_base["Current"] > color_base["Compare"],
+            "green",
+            np.where(color_base["Current"] < color_base["Compare"], "red", "neutral"),
+        )
+        color_base["CompareColor"] = np.where(
+            color_base["Compare"] > color_base["Current"],
+            "green",
+            np.where(color_base["Compare"] < color_base["Current"], "red", "neutral"),
+        )
+
+        long_df = long_df.merge(
+            color_base[[dim_name, "CurrentColor", "CompareColor"]],
+            on=dim_name,
+            how="left",
+        )
+
+        long_df["Series"] = long_df["Series"].replace({"Current": a_lbl, "Compare": b_lbl})
+        long_df["RowColor"] = np.where(
+            long_df["Series"] == a_lbl,
+            long_df["CurrentColor"],
+            long_df["CompareColor"],
+        )
+
+        long_df["SharePct"] = np.where(long_df["Total"] > 0, long_df["Value"] / long_df["Total"], 0.0)
+        long_df["Label"] = long_df.apply(
+            lambda r: f'{money(r["Value"])} • {r["SharePct"]:.0%}' if r["Value"] > 0 else "",
+            axis=1,
+        )
+        long_df["SortTotal"] = long_df["Total"]
+        long_df["Start"] = 0.0
+        return long_df
+
+    def grouped_lollipop_chart(long_df: pd.DataFrame, dim_name: str, height: int = 760):
+        if long_df.empty:
+            return None
+
+        xmax = float(long_df["Value"].max()) if not long_df.empty else 0.0
+        xmax = xmax * 1.40 if xmax > 0 else 1.0
+
+        color_enc = alt.Color(
+            "RowColor:N",
+            scale=alt.Scale(
+                domain=["green", "red", "neutral"],
+                range=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR],
+            ),
+            legend=None,
+        )
+
+        y_enc = alt.Y(
+            f"{dim_name}:N",
+            sort=alt.SortField(field="SortTotal", order="descending"),
+            title="",
+            scale=alt.Scale(paddingInner=0.10, paddingOuter=0.08),
+        )
+
+        yoff_enc = alt.YOffset(
+            "Series:N",
+            sort=[a_lbl, b_lbl],
+            scale=alt.Scale(paddingInner=0.00, paddingOuter=0.85),
+        )
+
+        rules = (
+            alt.Chart(long_df)
+            .mark_rule(strokeWidth=2.5)
+            .encode(
+                y=y_enc,
+                yOffset=yoff_enc,
+                x=alt.X("Start:Q", scale=alt.Scale(domain=[0, xmax], nice=True), title="Sales"),
+                x2="Value:Q",
+                color=color_enc,
+                tooltip=[
+                    alt.Tooltip(f"{dim_name}:N", title=dim_name),
+                    alt.Tooltip("Series:N", title="Series"),
+                    alt.Tooltip("Value:Q", title="Sales", format=",.2f"),
+                    alt.Tooltip("SharePct:Q", title="% of row total", format=".0%"),
+                ],
+            )
+        )
+
+        dots = (
+            alt.Chart(long_df)
+            .mark_circle(size=150)
+            .encode(
+                y=y_enc,
+                yOffset=yoff_enc,
+                x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax], nice=True), title="Sales"),
+                color=color_enc,
+                tooltip=[
+                    alt.Tooltip(f"{dim_name}:N", title=dim_name),
+                    alt.Tooltip("Series:N", title="Series"),
+                    alt.Tooltip("Value:Q", title="Sales", format=",.2f"),
+                    alt.Tooltip("SharePct:Q", title="% of row total", format=".0%"),
+                ],
+            )
+        )
+
+        labels = (
+            alt.Chart(long_df[long_df["Label"] != ""])
+            .mark_text(
+                align="left",
+                dx=10,
+                baseline="middle",
+                fontSize=15,
+                fontWeight="bold",
+            )
+            .encode(
+                y=y_enc,
+                yOffset=yoff_enc,
+                x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax], nice=True)),
+                text="Label:N",
+                color=color_enc,
+            )
+        )
+
+        return (rules + dots + labels).properties(height=height)
+
+    def prep_sku_movers():
+        sA = dfA.groupby("SKU", as_index=False).agg(Current=("Sales", "sum"))
+        sB = dfB.groupby("SKU", as_index=False).agg(Compare=("Sales", "sum"))
+        sku = sA.merge(sB, on="SKU", how="outer").fillna(0.0)
+        sku["Delta"] = sku["Current"] - sku["Compare"]
+        sku = sku[(sku["Current"] >= min_sales) | (sku["Compare"] >= min_sales)].copy()
+
+        inc = sku.sort_values(["Delta", "SKU"], ascending=[False, True]).head(10).copy()
+        dec = sku.sort_values(["Delta", "SKU"], ascending=[True, True]).head(10).copy()
+        inc["Start"] = 0.0
+        dec["Start"] = 0.0
+        return inc, dec
+
+    def mover_lollipop_chart(df: pd.DataFrame, metric_title: str, positive: bool, height: int = 430):
+        if df.empty:
+            return None
+
+        df = df.copy()
+        df["DeltaLabel"] = df["Delta"].map(money)
+
+        xmax = float(df["Delta"].max()) if positive else float(df["Delta"].abs().max())
+        xmax = xmax * 1.40 if xmax > 0 else 1.0
+
+        if positive:
+            order = alt.SortField(field="Delta", order="descending")
+            x_scale = alt.Scale(domain=[0, xmax], nice=True)
+            color = POSITIVE_BAR
+            align = "left"
+            dx = 10
+        else:
+            order = alt.SortField(field="Delta", order="ascending")
+            x_scale = alt.Scale(domain=[-xmax, 0], nice=True)
+            color = NEGATIVE_BAR
+            align = "right"
+            dx = -10
+
+        y_enc = alt.Y(
+            "SKU:N",
+            sort=order,
+            title="",
+            scale=alt.Scale(paddingInner=0.35, paddingOuter=0.18),
+        )
+
+        rules = (
+            alt.Chart(df)
+            .mark_rule(strokeWidth=2.5, color=color)
+            .encode(
+                y=y_enc,
+                x=alt.X("Start:Q", scale=x_scale, title=metric_title),
+                x2="Delta:Q",
+            )
+        )
+
+        dots = (
+            alt.Chart(df)
+            .mark_circle(size=150, color=color)
+            .encode(
+                y=y_enc,
+                x=alt.X("Delta:Q", scale=x_scale, title=metric_title),
+                tooltip=[
+                    alt.Tooltip("SKU:N", title="SKU"),
+                    alt.Tooltip("Current:Q", title=a_lbl, format=",.2f"),
+                    alt.Tooltip("Compare:Q", title=b_lbl, format=",.2f"),
+                    alt.Tooltip("Delta:Q", title="Change", format=",.2f"),
+                ],
+            )
+        )
+
+        labels = (
+            alt.Chart(df)
+            .mark_text(
+                align=align,
+                dx=dx,
+                color=color,
+                fontSize=15,
+                fontWeight="bold",
+            )
+            .encode(
+                y=y_enc,
+                x=alt.X("Delta:Q", scale=x_scale),
+                text="DeltaLabel:N",
+            )
+        )
+
+        return (rules + dots + labels).properties(height=height)
+
+    sales_col, units_col = st.columns(2)
+
+    with sales_col:
+        st.markdown(f"#### Sales Total ({a_lbl} vs {b_lbl})")
+        sales_chart = stacked_total_chart(
+            metric_name="Sales",
+            df_cur=dfA,
+            df_cmp=dfB,
+            fallback_cur=float(kA["Sales"]),
+            fallback_cmp=float(kB["Sales"]),
+        )
+        st.altair_chart(sales_chart, use_container_width=True)
+
+    with units_col:
+        st.markdown(f"#### Units Total ({a_lbl} vs {b_lbl})")
+        units_chart = stacked_total_chart(
+            metric_name="Units",
+            df_cur=dfA,
+            df_cmp=dfB,
+            fallback_cur=float(kA["Units"]),
+            fallback_cmp=float(kB["Units"]),
+        )
+        st.altair_chart(units_chart, use_container_width=True)
+
+    st.write("")
+
+    change_rows = collect_change_contributors(dfA, dfB)
+
+    st.markdown("#### Sales Change Compare")
+    st.caption("Totals: 1 block = $25,000 • Retailer changes: 1 block = $1,000")
+
+    block_chart = simple_period_block_chart(
+        current_value=float(kA["Sales"]),
+        compare_value=float(kB["Sales"]),
+        current_label=a_lbl,
+        compare_label=b_lbl,
+        changes_df=change_rows,
+    )
+    st.altair_chart(block_chart, use_container_width=True)
+
+    st.write("")
+
+    retailer = prep_compare_metric(dfA, dfB, "Retailer", metric="Sales", top_n=10)
+    vendor = prep_compare_metric(dfA, dfB, "Vendor", metric="Sales", top_n=10)
+
+    left, right = st.columns(2)
+
+    with left:
+        st.markdown("#### Top Retailers")
+        retailer_long = prep_grouped_share(retailer, "Retailer")
+        if retailer_long.empty:
+            st.caption("No retailer data available.")
+        else:
+            retailer_chart = grouped_lollipop_chart(retailer_long, "Retailer", height=760)
+            st.altair_chart(retailer_chart, use_container_width=True)
+
+    with right:
+        st.markdown("#### Top Vendors")
+        vendor_long = prep_grouped_share(vendor, "Vendor")
+        if vendor_long.empty:
+            st.caption("No vendor data available.")
+        else:
+            vendor_chart = grouped_lollipop_chart(vendor_long, "Vendor", height=760)
+            st.altair_chart(vendor_chart, use_container_width=True)
+
+    st.write("")
+
+    inc, dec = prep_sku_movers()
+
+    left2, right2 = st.columns(2)
+
+    with left2:
+        st.markdown("#### Top SKU Increases")
+        if inc.empty:
+            st.caption("No increasing SKUs found.")
+        else:
+            inc_chart = mover_lollipop_chart(inc, "Sales Change", positive=True, height=430)
+            st.altair_chart(inc_chart, use_container_width=True)
+
+    with right2:
+        st.markdown("#### Top SKU Decreases")
+        if dec.empty:
+            st.caption("No declining SKUs found.")
+        else:
+            dec_chart = mover_lollipop_chart(dec, "Sales Change", positive=False, height=430)
+            st.altair_chart(dec_chart, use_container_width=True)
+
+
+def render_standard_view(
+    dfA: pd.DataFrame,
+    dfB: pd.DataFrame,
+    kA: dict,
+    kB: dict,
+    a_lbl: str,
+    b_lbl: str,
+    compare_mode: str,
+    min_sales: float,
+):
+    def render_shaded_total_table(df: pd.DataFrame, height: int = 760):
+        st.dataframe(df, use_container_width=True, hide_index=True, height=height)
+
+    def pct_change(cur, prev):
+        if prev == 0:
+            return np.nan if cur == 0 else np.inf
+        return (cur - prev) / prev
+
+    def _delta_html(cur: float, prev: float, is_money: bool):
+        d = cur - prev
+        pc = pct_change(cur, prev)
+        color = "#2e7d32" if d > 0 else ("#c62828" if d < 0 else "var(--text-color)")
+        arrow = "▲ " if d > 0 else ("▼ " if d < 0 else "")
+        abs_s = money(d) if is_money else (f"{d:,.0f}" if abs(d) >= 1 else f"{d:,.2f}")
+        return (
+            f"<span class='delta-abs' style='color:{color}'>{arrow}{abs_s}</span>"
+            f"<span class='delta-pct' style='color:{color}'>({pct_fmt(pc)})</span>"
+        )
+
+    def kdelta(key: str) -> str:
+        cur = float(kA.get(key, 0.0))
+        prev = float(kB.get(key, 0.0))
+        return _delta_html(cur, prev, is_money=(key in ("Sales", "ASP")))
+
+    def _top_by_increase(level: str):
+        a = dfA.groupby(level, as_index=False).agg(Sales_A=("Sales", "sum"))
+        b = dfB.groupby(level, as_index=False).agg(Sales_B=("Sales", "sum"))
+        m = a.merge(b, on=level, how="outer").fillna(0.0)
+        m["Δ"] = m["Sales_A"] - m["Sales_B"]
+        if m.empty:
+            return None
+        r = m.sort_values("Δ", ascending=False).iloc[0]
+        return str(r[level]), float(r["Sales_A"]), float(r["Sales_B"])
+
+    def _top_decrease(level: str):
+        a = dfA.groupby(level, as_index=False).agg(Sales_A=("Sales", "sum"))
+        b = dfB.groupby(level, as_index=False).agg(Sales_B=("Sales", "sum"))
+        m = a.merge(b, on=level, how="outer").fillna(0.0)
+        m["Δ"] = m["Sales_A"] - m["Sales_B"]
+        if m.empty:
+            return None
+        r = m.sort_values("Δ", ascending=True).iloc[0]
+        return str(r[level]), float(r["Sales_A"]), float(r["Sales_B"])
+
+    def _top_two_with_compare(df_sel: pd.DataFrame, df_other: pd.DataFrame, level: str):
+        if df_sel.empty:
+            return []
+        cur = df_sel.groupby(level, as_index=False).agg(Sales=("Sales", "sum"), Units=("Units", "sum"))
+        if not df_other.empty:
+            oth = df_other.groupby(level, as_index=False).agg(
+                Other_Sales=("Sales", "sum"),
+                Other_Units=("Units", "sum"),
+            )
+        else:
+            oth = pd.DataFrame(columns=[level, "Other_Sales", "Other_Units"])
+        m = cur.merge(oth, on=level, how="left").fillna(0.0)
+        total_sales = float(m["Sales"].sum())
+        total_units = float(m["Units"].sum())
+        out = []
+        for _, r in m.sort_values(["Sales", level], ascending=[False, True]).head(2).iterrows():
+            sales = float(r["Sales"])
+            units = float(r["Units"])
+            out.append(
+                {
+                    "name": str(r[level]),
+                    "sales": sales,
+                    "other_sales": float(r["Other_Sales"]),
+                    "share": (sales / total_sales) if total_sales else np.nan,
+                    "units": units,
+                    "other_units": float(r["Other_Units"]),
+                    "unit_share": (units / total_units) if total_units else np.nan,
+                }
+            )
+        return out
+
+    cur_sku = dfA.groupby("SKU", as_index=False).agg(Sales=("Sales", "sum"), Units=("Units", "sum"))
+    cmp_sku = dfB.groupby("SKU", as_index=False).agg(Sales=("Sales", "sum"), Units=("Units", "sum"))
+
+    cur_only = cur_sku.merge(
+        cmp_sku[["SKU", "Sales"]].rename(columns={"Sales": "Compare_Sales"}),
+        on="SKU",
+        how="left",
+    ).fillna(0.0)
+    cur_only = cur_only[(cur_only["Sales"] > 0) & (cur_only["Compare_Sales"] <= 0)].copy()
+
+    cmp_only = cmp_sku.merge(
+        cur_sku[["SKU", "Sales"]].rename(columns={"Sales": "Current_Sales"}),
+        on="SKU",
+        how="left",
+    ).fillna(0.0)
+    cmp_only = cmp_only[(cmp_only["Sales"] > 0) & (cmp_only["Current_Sales"] <= 0)].copy()
+
+    new_count = int(len(cur_only))
+    new_sales = float(cur_only["Sales"].sum())
+    lost_count = int(len(cmp_only))
+    lost_sales = float(cmp_only["Sales"].sum())
+    net_count = new_count - lost_count
+    net_sales = new_sales - lost_sales
+    net_pct = (net_sales / lost_sales) if lost_sales != 0 else (np.nan if net_sales == 0 else np.inf)
+
+    n1, n2, n3 = st.columns(3)
+    with n1:
+        count_sales_card("New SKUs", new_count, new_sales, color="#2e7d32", signed_sales=True)
+    with n2:
+        count_sales_card("Lost SKUs", lost_count, -lost_sales, color="#c62828", signed_sales=True)
+    with n3:
+        count_sales_card(
+            "Net New vs Lost",
+            net_count,
+            net_sales,
+            color=("#2e7d32" if net_sales > 0 else ("#c62828" if net_sales < 0 else "var(--text-color)")),
+            signed_sales=True,
+            pct=net_pct,
+        )
+
+    st.write("")
+    g1, g2, g3, g4 = st.columns(4)
+    with g1:
+        selection_total_card(f"{a_lbl} Total", kA, kB)
+        st.write("")
+        selection_total_card(f"{b_lbl} Total", kB, kA)
+    with g2:
+        top_two_card(f"Top 2 Retailers ({a_lbl})", _top_two_with_compare(dfA, dfB, "Retailer"))
+        st.write("")
+        top_two_card(f"Top 2 Retailers ({b_lbl})", _top_two_with_compare(dfB, dfA, "Retailer"))
+    with g3:
+        top_two_card(f"Top 2 Vendors ({a_lbl})", _top_two_with_compare(dfA, dfB, "Vendor"))
+        st.write("")
+        top_two_card(f"Top 2 Vendors ({b_lbl})", _top_two_with_compare(dfB, dfA, "Vendor"))
+    with g4:
+        top_two_card(f"Top 2 SKUs ({a_lbl})", _top_two_with_compare(dfA, dfB, "SKU"))
+        st.write("")
+        top_two_card(f"Top 2 SKUs ({b_lbl})", _top_two_with_compare(dfB, dfA, "SKU"))
+
+    st.write("")
+    i1, i2, i3 = st.columns(3)
+    iR = _top_by_increase("Retailer")
+    iV = _top_by_increase("Vendor")
+    iS = _top_by_increase("SKU")
+    with i1:
+        if iR:
+            biggest_increase_card("Retailer w/ Biggest Increase", iR[0], iR[1], iR[2])
+    with i2:
+        if iV:
+            biggest_increase_card("Vendor w/ Biggest Increase", iV[0], iV[1], iV[2])
+    with i3:
+        if iS:
+            biggest_increase_card("SKU w/ Biggest Increase", iS[0], iS[1], iS[2])
+
+    d1, d2, d3 = st.columns(3)
+    decR = _top_decrease("Retailer")
+    decV = _top_decrease("Vendor")
+    decS = _top_decrease("SKU")
+    with d1:
+        if decR:
+            biggest_increase_card("Retailer w/ Biggest Decrease", decR[0], decR[1], decR[2])
+    with d2:
+        if decV:
+            biggest_increase_card("Vendor w/ Biggest Decrease", decV[0], decV[1], decV[2])
+    with d3:
+        if decS:
+            biggest_increase_card("SKU w/ Biggest Decrease", decS[0], decS[1], decS[2])
+
+    st.divider()
+    st.subheader("Current Only / Compare Only Activity")
+
+    cur_s = dfA.groupby("SKU", as_index=False).agg(Current_Units=("Units", "sum"), Current_Sales=("Sales", "sum"))
+    cmp_s = dfB.groupby("SKU", as_index=False).agg(Compare_Units=("Units", "sum"), Compare_Sales=("Sales", "sum"))
+
+    lost = cmp_s.merge(cur_s, on="SKU", how="left").fillna(0.0)
+    lost = lost[(lost["Compare_Sales"] > 0) & (lost["Current_Sales"] <= 0)].copy().sort_values(
+        "Compare_Sales", ascending=False
+    )
+
+    new_act = cur_s.merge(cmp_s, on="SKU", how="left").fillna(0.0)
+    new_act = new_act[(new_act["Current_Sales"] > 0) & (new_act["Compare_Sales"] <= 0)].copy().sort_values(
+        "Current_Sales", ascending=False
+    )
+
+    lcol, rcol = st.columns(2)
+    with lcol:
+        st.markdown("**Lost Activity — sold in compare, zero in current**")
+        if lost.empty:
+            st.caption("None.")
+        else:
+            show_lost = lost[["SKU", "Compare_Units", "Compare_Sales"]].rename(
+                columns={"Compare_Units": "Units", "Compare_Sales": "Sales"}
+            ).copy()
+            show_lost["Units"] = -show_lost["Units"]
+            show_lost["Sales"] = -show_lost["Sales"]
+            total_row = pd.DataFrame(
+                [{"SKU": "Total", "Units": show_lost["Units"].sum(), "Sales": show_lost["Sales"].sum()}]
+            )
+            show_lost = pd.concat([show_lost, total_row], ignore_index=True)
+            show_lost["Units"] = show_lost["Units"].map(lambda v: f"{v:,.0f}")
+            show_lost["Sales"] = show_lost["Sales"].map(money)
+            render_df(show_lost, height=360)
+
+    with rcol:
+        st.markdown("**New Activity — sold in current, zero in compare**")
+        if new_act.empty:
+            st.caption("None.")
+        else:
+            show_new = new_act[["SKU", "Current_Units", "Current_Sales"]].rename(
+                columns={"Current_Units": "Units", "Current_Sales": "Sales"}
+            ).copy()
+            total_row = pd.DataFrame(
+                [{"SKU": "Total", "Units": show_new["Units"].sum(), "Sales": show_new["Sales"].sum()}]
+            )
+            show_new = pd.concat([show_new, total_row], ignore_index=True)
+            show_new["Units"] = show_new["Units"].map(lambda v: f"{v:,.0f}")
+            show_new["Sales"] = show_new["Sales"].map(money)
+            render_df(show_new, height=360)
+
+    st.divider()
+    st.subheader("Comparison Detail")
+
+    pivot_dim = st.selectbox("Compare rows by", options=["Retailer", "Vendor"], index=0, key="mod_compare_dim")
+    comp_a = dfA.groupby(pivot_dim, as_index=False).agg(Sales_A=("Sales", "sum"))
+    comp_b = dfB.groupby(pivot_dim, as_index=False).agg(Sales_B=("Sales", "sum"))
+    comp = comp_a.merge(comp_b, on=pivot_dim, how="outer").fillna(0.0)
+    comp["Difference"] = comp["Sales_A"] - comp["Sales_B"]
+    comp["% Change"] = np.where(comp["Sales_B"] != 0, comp["Difference"] / comp["Sales_B"], np.nan)
+    comp = comp.sort_values("Sales_A", ascending=False)
+
+    total = pd.DataFrame(
+        [
+            {
+                pivot_dim: "Total",
+                "Sales_A": comp["Sales_A"].sum(),
+                "Sales_B": comp["Sales_B"].sum(),
+                "Difference": comp["Difference"].sum(),
+                "% Change": np.nan if comp["Sales_B"].sum() == 0 else comp["Difference"].sum() / comp["Sales_B"].sum(),
+            }
+        ]
+    )
+    comp_show = pd.concat([comp, total], ignore_index=True)
+    show = rename_ab_columns(comp_show.copy(), a_lbl, b_lbl)
+    sales_a_col = f"Sales ({a_lbl})"
+    sales_b_col = f"Sales ({b_lbl})" if b_lbl else "Sales (Comparison)"
+    show[sales_a_col] = show[sales_a_col].map(money)
+    show[sales_b_col] = show[sales_b_col].map(money)
+    show["Difference"] = show["Difference"].map(money)
+    show["% Change"] = show["% Change"].map(pct_fmt)
+    render_shaded_total_table(show[[pivot_dim, sales_a_col, sales_b_col, "Difference", "% Change"]], height=900)
+
+    st.divider()
+    st.subheader("Movers")
+
+    a = dfA.groupby("SKU", as_index=False).agg(Sales_A=("Sales", "sum"))
+    b = dfB.groupby("SKU", as_index=False).agg(Sales_B=("Sales", "sum"))
+    m = a.merge(b, on="SKU", how="outer").fillna(0.0)
+    m["Difference"] = m["Sales_A"] - m["Sales_B"]
+    m["% Change"] = np.where(m["Sales_B"] != 0, m["Difference"] / m["Sales_B"], np.nan)
+    m = m[(m["Sales_A"] >= min_sales) | (m["Sales_B"] >= min_sales)].copy()
+
+    inc = m[m["Difference"] > 0].sort_values("Difference", ascending=False).head(15).copy()
+    dec = m[m["Difference"] < 0].sort_values("Difference", ascending=True).head(15).copy()
+
+    for ddf in (inc, dec):
+        ddf.rename(columns={"Sales_A": f"Sales ({a_lbl})", "Sales_B": f"Sales ({b_lbl})"}, inplace=True)
+        ddf[f"Sales ({a_lbl})"] = ddf[f"Sales ({a_lbl})"].map(money)
+        ddf[f"Sales ({b_lbl})"] = ddf[f"Sales ({b_lbl})"].map(money)
+        ddf["Difference"] = ddf["Difference"].map(money)
+        ddf["% Change"] = ddf["% Change"].map(pct_fmt)
+
+    x, y = st.columns(2)
+    with x:
+        st.markdown("**Top Increasing**")
+        if not inc.empty:
+            render_df(inc[["SKU", f"Sales ({a_lbl})", f"Sales ({b_lbl})", "Difference", "% Change"]], height=360)
+        else:
+            st.caption("None.")
+    with y:
+        st.markdown("**Top Declining**")
+        if not dec.empty:
+            render_df(dec[["SKU", f"Sales ({a_lbl})", f"Sales ({b_lbl})", "Difference", "% Change"]], height=360)
+        else:
+            st.caption("None.")
