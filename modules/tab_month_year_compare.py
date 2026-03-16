@@ -616,7 +616,7 @@ def render_visual_executive_dashboard(
         long_df["Start"] = 0.0
         return long_df
 
-    def grouped_lollipop_chart(long_df: pd.DataFrame, dim_name: str, height: int = 620):
+    def grouped_lollipop_chart(long_df: pd.DataFrame, dim_name: str, height: int = 760):
         if long_df.empty:
             return None
 
@@ -632,7 +632,6 @@ def render_visual_executive_dashboard(
             legend=None,
         )
 
-        # Tighter retailer/vendor grouping
         y_enc = alt.Y(
             f"{dim_name}:N",
             sort=alt.SortField(field="SortTotal", order="descending"),
@@ -640,7 +639,6 @@ def render_visual_executive_dashboard(
             scale=alt.Scale(paddingInner=0.10, paddingOuter=0.08),
         )
 
-        # Much larger space between current vs compare inside each retailer/vendor
         yoff_enc = alt.YOffset(
             "Series:N",
             sort=[a_lbl, b_lbl],
@@ -841,7 +839,7 @@ def render_visual_executive_dashboard(
         if retailer_long.empty:
             st.caption("No retailer data available.")
         else:
-            retailer_chart = grouped_lollipop_chart(retailer_long, "Retailer", height=620)
+            retailer_chart = grouped_lollipop_chart(retailer_long, "Retailer", height=760)
             st.altair_chart(retailer_chart, use_container_width=True)
 
     with right:
@@ -850,7 +848,7 @@ def render_visual_executive_dashboard(
         if vendor_long.empty:
             st.caption("No vendor data available.")
         else:
-            vendor_chart = grouped_lollipop_chart(vendor_long, "Vendor", height=620)
+            vendor_chart = grouped_lollipop_chart(vendor_long, "Vendor", height=760)
             st.altair_chart(vendor_chart, use_container_width=True)
 
     st.write("")
