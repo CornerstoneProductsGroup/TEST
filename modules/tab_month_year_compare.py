@@ -520,23 +520,19 @@ def render_visual_executive_dashboard(
         pos_other = float(pos.iloc[top_n_each_side:]["Delta"].sum()) if len(pos) > top_n_each_side else 0.0
         neg_other = float(neg.iloc[top_n_each_side:]["Delta"].sum()) if len(neg) > top_n_each_side else 0.0
 
-        steps = []
-        steps.append({"Label": b_lbl, "Amount": compare_total, "Type": "total"})
+        steps = [{"Label": b_lbl, "Amount": compare_total, "Type": "total"}]
 
         for _, r in pos_keep.iterrows():
             steps.append({"Label": str(r[level]), "Amount": float(r["Delta"]), "Type": "positive"})
-
         if abs(pos_other) > 1e-9:
             steps.append({"Label": "Other Positive", "Amount": pos_other, "Type": "positive"})
 
         for _, r in neg_keep.iterrows():
             steps.append({"Label": str(r[level]), "Amount": float(r["Delta"]), "Type": "negative"})
-
         if abs(neg_other) > 1e-9:
             steps.append({"Label": "Other Negative", "Amount": neg_other, "Type": "negative"})
 
         steps.append({"Label": a_lbl, "Amount": current_total, "Type": "total"})
-
         return pd.DataFrame(steps)
 
     def waterfall_chart(wf: pd.DataFrame, height: int = 560):
@@ -544,7 +540,6 @@ def render_visual_executive_dashboard(
             return None
 
         BLOCK_VALUE = 10000.0
-
         blue_top = "#1f77b4"
         green_pos = "#2e7d32"
         red_neg = "#c62828"
@@ -552,20 +547,10 @@ def render_visual_executive_dashboard(
         def block_label(v: float) -> str:
             av = abs(v)
             if av >= 1000:
-                s = f"${av/1000:.1f}k"
-                s = s.replace(".0k", "k")
+                s = f"${av/1000:.1f}k".replace(".0k", "k")
             else:
                 s = f"${av:,.0f}"
             return s if v >= 0 else f"-{s}"
-
-        top_label = str(wf.iloc[0]["Label"])
-        bottom_label = str(wf.iloc[-1]["Label"])
-        top_amount = float(wf.iloc[0]["Amount"])
-        bottom_amount = float(wf.iloc[-1]["Amount"])
-
-        bottom_total_color = red_neg if bottom_amount > top_amount else green_pos
-
-        mid = wf.iloc[1:-1].copy()
 
         def make_block_rows(label: str, value: float, color_hex: str, section: str):
             rows = []
@@ -615,6 +600,14 @@ def render_visual_executive_dashboard(
                     }
                 )
             return rows
+
+        top_label = str(wf.iloc[0]["Label"])
+        bottom_label = str(wf.iloc[-1]["Label"])
+        top_amount = float(wf.iloc[0]["Amount"])
+        bottom_amount = float(wf.iloc[-1]["Amount"])
+        bottom_total_color = red_neg if bottom_amount > top_amount else green_pos
+
+        mid = wf.iloc[1:-1].copy()
 
         top_blocks = pd.DataFrame(make_block_rows(top_label, top_amount, blue_top, "top"))
         bottom_blocks = pd.DataFrame(make_block_rows(bottom_label, bottom_amount, bottom_total_color, "bottom"))
@@ -968,7 +961,7 @@ def render_standard_view(
         on="SKU",
         how="left",
     ).fillna(0.0)
-    cmp_only = cmp_only[(cmp_only["Sales"] > 0) & (cmp_only["Current_Sales"] <= 0)].copy()
+    cmp_only = cmp_only[(cmp_only["Sales"] > 0) & (cmp_ONLY["Current_Sales"] <= 0)].copy()
 
     new_count = int(len(cur_only))
     new_sales = float(cur_only["Sales"].sum())
