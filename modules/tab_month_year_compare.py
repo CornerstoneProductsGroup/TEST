@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import altair as alt
 import numpy as np
 import pandas as pd
@@ -101,6 +103,14 @@ def render_visual_executive_dashboard(
 
     POSITIVE_BAR = "#2e7d32"
     NEGATIVE_BAR = "#c62828"
+    TOTAL_BAR = "#4e79a7"
+    NEUTRAL_BAR = "#808080"
+
+    def is_year_label(lbl: str) -> bool:
+        return bool(re.fullmatch(r"\d{4}", str(lbl or "").strip()))
+
+    def year_compare_mode() -> bool:
+        return is_year_label(a_lbl) and is_year_label(b_lbl)
 
     def pct_change(cur: float, prev: float):
         if prev == 0:
@@ -110,7 +120,7 @@ def render_visual_executive_dashboard(
     def delta_html(cur: float, prev: float, is_money: bool):
         d = float(cur) - float(prev)
         pc = pct_change(float(cur), float(prev))
-        color = "#2e7d32" if d > 0 else ("#c62828" if d < 0 else "var(--text-color)")
+        color = POSITIVE_BAR if d > 0 else (NEGATIVE_BAR if d < 0 else "var(--text-color)")
         arrow = "▲ " if d > 0 else ("▼ " if d < 0 else "")
         abs_s = money(d) if is_money else f"{d:,.0f}"
         return (
@@ -167,10 +177,8 @@ def render_visual_executive_dashboard(
         out = out.sort_values(["Period", "Quarter"]).copy()
 
         out["Label"] = out["Value"].map(lambda v: f"{v:,.0f}" if metric == "Units" else money(v))
-
         out["Start"] = out.groupby("Period")["Value"].cumsum() - out["Value"]
         out["End"] = out["Start"] + out["Value"]
-
         out["LabelX"] = out["Start"] + (out["Value"] * 0.08)
 
         total_by_period = out.groupby("Period")["Value"].transform("sum")
@@ -190,7 +198,10 @@ def render_visual_executive_dashboard(
         fallback_cmp: float,
     ):
         metric = "Units" if metric_name == "Units" else "Sales"
-        stacked = prep_quarter_stacked(df_cur, df_cmp, metric)
+
+        stacked = pd.DataFrame()
+        if year_compare_mode():
+            stacked = prep_quarter_stacked(df_cur, df_cmp, metric)
 
         if stacked.empty:
             chart_df = pd.DataFrame(
@@ -216,17 +227,24 @@ def render_visual_executive_dashboard(
                     y=alt.Y("Period:N", title="", sort=PERIOD_DOMAIN),
                     x=alt.X("Value:Q", title=metric_name, scale=alt.Scale(domain=[0, xmax])),
                     color=color_enc,
+                    tooltip=[
+                        alt.Tooltip("Period:N", title="Period"),
+                        alt.Tooltip("Value:Q", title=metric_name, format=",.0f" if metric == "Units" else ",.2f"),
+                    ],
                 )
                 .properties(height=150)
             )
 
+            label_df = chart_df.copy()
+            label_df["Label"] = label_df["Value"].map(lambda v: f"{v:,.0f}" if metric == "Units" else money(v))
+
             labels = (
-                alt.Chart(chart_df)
+                alt.Chart(label_df)
                 .mark_text(dx=8, align="left", fontSize=14, fontWeight="bold")
                 .encode(
                     y=alt.Y("Period:N", sort=PERIOD_DOMAIN),
                     x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax])),
-                    text=alt.Text("Value:Q", format=",.0f" if metric == "Units" else ",.2f"),
+                    text="Label:N",
                     color=color_enc,
                 )
             )
@@ -277,7 +295,9 @@ def render_visual_executive_dashboard(
 
     def prep_grouped_share(df: pd.DataFrame, dim_name: str):
         if df.empty:
-            return pd.DataFrame(columns=[dim_name, "Series", "Value", "SharePct", "Label", "SortTotal", "Start"])
+            return pd.DataFrame(
+                columns=[dim_name, "Series", "Value", "SharePct", "Label", "SortTotal", "Start", "RowColor"]
+            )
 
         long_df = df[[dim_name, "Current", "Compare", "Total"]].melt(
             id_vars=[dim_name, "Total"],
@@ -286,7 +306,31 @@ def render_visual_executive_dashboard(
             value_name="Value",
         )
 
+        color_base = df[[dim_name, "Current", "Compare", "Total"]].copy()
+        color_base["CurrentColor"] = np.where(
+            color_base["Current"] > color_base["Compare"],
+            "green",
+            np.where(color_base["Current"] < color_base["Compare"], "red", "neutral"),
+        )
+        color_base["CompareColor"] = np.where(
+            color_base["Compare"] > color_base["Current"],
+            "green",
+            np.where(color_base["Compare"] < color_base["Current"], "red", "neutral"),
+        )
+
+        long_df = long_df.merge(
+            color_base[[dim_name, "CurrentColor", "CompareColor"]],
+            on=dim_name,
+            how="left",
+        )
+
         long_df["Series"] = long_df["Series"].replace({"Current": a_lbl, "Compare": b_lbl})
+        long_df["RowColor"] = np.where(
+            long_df["Series"] == a_lbl,
+            long_df["CurrentColor"],
+            long_df["CompareColor"],
+        )
+
         long_df["SharePct"] = np.where(long_df["Total"] > 0, long_df["Value"] / long_df["Total"], 0.0)
         long_df["Label"] = long_df.apply(
             lambda r: f'{money(r["Value"])} • {r["SharePct"]:.0%}' if r["Value"] > 0 else "",
@@ -304,15 +348,11 @@ def render_visual_executive_dashboard(
         xmax = xmax * 1.40 if xmax > 0 else 1.0
 
         color_enc = alt.Color(
-            "Series:N",
-            scale=alt.Scale(domain=PERIOD_DOMAIN, range=PERIOD_RANGE),
-            title="",
-            legend=alt.Legend(orient="bottom", direction="horizontal"),
-        )
-
-        text_color_enc = alt.Color(
-            "Series:N",
-            scale=alt.Scale(domain=PERIOD_DOMAIN, range=PERIOD_RANGE),
+            "RowColor:N",
+            scale=alt.Scale(
+                domain=["green", "red", "neutral"],
+                range=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR],
+            ),
             legend=None,
         )
 
@@ -338,6 +378,12 @@ def render_visual_executive_dashboard(
                 x=alt.X("Start:Q", scale=alt.Scale(domain=[0, xmax], nice=True), title="Sales"),
                 x2="Value:Q",
                 color=color_enc,
+                tooltip=[
+                    alt.Tooltip(f"{dim_name}:N", title=dim_name),
+                    alt.Tooltip("Series:N", title="Series"),
+                    alt.Tooltip("Value:Q", title="Sales", format=",.2f"),
+                    alt.Tooltip("SharePct:Q", title="% of row total", format=".0%"),
+                ],
             )
         )
 
@@ -372,7 +418,7 @@ def render_visual_executive_dashboard(
                 yOffset=yoff_enc,
                 x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax], nice=True)),
                 text="Label:N",
-                color=text_color_enc,
+                color=color_enc,
             )
         )
 
@@ -464,113 +510,144 @@ def render_visual_executive_dashboard(
 
         return (rules + dots + labels).properties(height=height)
 
-    def prep_contrib(df: pd.DataFrame):
-        if df.empty:
-            return pd.DataFrame(columns=["Retailer", "Current", "Compare", "Delta", "ContribPct", "PctLabel", "DeltaLabel", "BarColor", "Start"])
+    def prep_waterfall_bridge(df_cur: pd.DataFrame, df_cmp: pd.DataFrame, level: str, top_n_each_side: int = 8):
+        cur = df_cur.groupby(level, dropna=False, as_index=False).agg(Current=("Sales", "sum"))
+        cmp = df_cmp.groupby(level, dropna=False, as_index=False).agg(Compare=("Sales", "sum"))
+        out = cur.merge(cmp, on=level, how="outer").fillna(0.0)
+        out[level] = out[level].astype(str)
+        out["Delta"] = out["Current"] - out["Compare"]
 
-        out = df.copy().sort_values("Delta", ascending=False).copy()
-        denom = float(out["Delta"].abs().sum())
-        out["ContribPct"] = np.where(denom > 0, out["Delta"].abs() / denom, 0.0)
-        out["PctLabel"] = (out["ContribPct"] * 100).round(0).astype(int).astype(str) + "%"
-        out["DeltaLabel"] = out["Delta"].map(money)
-        out["BarColor"] = np.where(out["Delta"] >= 0, POSITIVE_BAR, NEGATIVE_BAR)
-        out["Start"] = 0.0
-        return out
+        compare_total = float(out["Compare"].sum())
+        current_total = float(out["Current"].sum())
 
-    def contrib_lollipop_chart(df: pd.DataFrame, height: int = 540):
-        if df.empty:
+        pos = out[out["Delta"] > 0].sort_values(["Delta", level], ascending=[False, True]).copy()
+        neg = out[out["Delta"] < 0].sort_values(["Delta", level], ascending=[True, True]).copy()
+
+        pos_keep = pos.head(top_n_each_side).copy()
+        neg_keep = neg.head(top_n_each_side).copy()
+
+        pos_other = float(pos.iloc[top_n_each_side:]["Delta"].sum()) if len(pos) > top_n_each_side else 0.0
+        neg_other = float(neg.iloc[top_n_each_side:]["Delta"].sum()) if len(neg) > top_n_each_side else 0.0
+
+        steps = []
+        steps.append({"Label": b_lbl, "Amount": compare_total, "Type": "total"})
+
+        for _, r in pos_keep.iterrows():
+            steps.append({"Label": str(r[level]), "Amount": float(r["Delta"]), "Type": "positive"})
+
+        if abs(pos_other) > 1e-9:
+            steps.append({"Label": "Other Positive", "Amount": pos_other, "Type": "positive"})
+
+        for _, r in neg_keep.iterrows():
+            steps.append({"Label": str(r[level]), "Amount": float(r["Delta"]), "Type": "negative"})
+
+        if abs(neg_other) > 1e-9:
+            steps.append({"Label": "Other Negative", "Amount": neg_other, "Type": "negative"})
+
+        steps.append({"Label": a_lbl, "Amount": current_total, "Type": "total"})
+
+        wf = pd.DataFrame(steps)
+
+        starts = []
+        ends = []
+        running = compare_total
+
+        for i, row in wf.iterrows():
+            if row["Type"] == "total":
+                if i == 0:
+                    start = 0.0
+                    end = compare_total
+                    running = compare_total
+                else:
+                    start = 0.0
+                    end = current_total
+            else:
+                start = running
+                end = running + float(row["Amount"])
+                running = end
+
+            starts.append(start)
+            ends.append(end)
+
+        wf["Y0"] = starts
+        wf["Y1"] = ends
+        wf["BarStart"] = wf[["Y0", "Y1"]].min(axis=1)
+        wf["BarEnd"] = wf[["Y0", "Y1"]].max(axis=1)
+        wf["DisplayAmount"] = wf["Amount"].map(money)
+        wf["ColorType"] = wf["Type"]
+        wf["SortOrder"] = list(range(len(wf)))
+        wf["LabelY"] = np.where(
+            wf["Type"] == "negative",
+            wf["BarStart"],
+            wf["BarEnd"],
+        )
+        wf["LabelDy"] = np.where(wf["Type"] == "negative", 12, -8)
+
+        return wf
+
+    def waterfall_chart(wf: pd.DataFrame, height: int = 420):
+        if wf.empty:
             return None
 
-        xmax = float(df["Delta"].max()) if not df.empty else 0.0
-        xmin = float(df["Delta"].min()) if not df.empty else 0.0
-        pad = max(abs(xmax), abs(xmin)) * 0.52 if max(abs(xmax), abs(xmin)) > 0 else 1.0
-
-        x_scale = alt.Scale(domain=[xmin - pad, xmax + pad], nice=True)
-        order = alt.SortField(field="Delta", order="descending")
-
-        y_enc = alt.Y(
-            "Retailer:N",
-            sort=order,
-            title="",
-            scale=alt.Scale(paddingInner=0.38, paddingOuter=0.18),
+        color_scale = alt.Scale(
+            domain=["positive", "negative", "total"],
+            range=[POSITIVE_BAR, NEGATIVE_BAR, TOTAL_BAR],
         )
 
-        rules = (
-            alt.Chart(df)
-            .mark_rule(strokeWidth=2.5)
-            .encode(
-                y=y_enc,
-                x=alt.X("Start:Q", scale=x_scale, title="Sales Delta"),
-                x2="Delta:Q",
-                color=alt.Color("BarColor:N", scale=None, legend=None),
-            )
-        )
+        x_sort = wf["Label"].tolist()
 
-        dots = (
-            alt.Chart(df)
-            .mark_circle(size=150)
+        bars = (
+            alt.Chart(wf)
+            .mark_bar()
             .encode(
-                y=y_enc,
-                x=alt.X("Delta:Q", scale=x_scale, title="Sales Delta"),
-                color=alt.Color("BarColor:N", scale=None, legend=None),
+                x=alt.X("Label:N", sort=x_sort, title=""),
+                y=alt.Y("BarStart:Q", title="Sales"),
+                y2="BarEnd:Q",
+                color=alt.Color("ColorType:N", scale=color_scale, legend=None),
                 tooltip=[
-                    alt.Tooltip("Retailer:N", title="Retailer"),
-                    alt.Tooltip("Current:Q", title=a_lbl, format=",.2f"),
-                    alt.Tooltip("Compare:Q", title=b_lbl, format=",.2f"),
-                    alt.Tooltip("Delta:Q", title="Delta", format=",.2f"),
-                    alt.Tooltip("ContribPct:Q", title="% of total change", format=".0%"),
+                    alt.Tooltip("Label:N", title="Category"),
+                    alt.Tooltip("Amount:Q", title="Change", format=",.2f"),
+                    alt.Tooltip("Y1:Q", title="Running Total", format=",.2f"),
                 ],
             )
+            .properties(height=height)
         )
 
-        pos_df = df[df["Delta"] >= 0].copy()
-        neg_df = df[df["Delta"] < 0].copy()
+        connector_df = wf.iloc[1:-1].copy()
+        connector_df["PrevEnd"] = wf["Y1"].shift(1).iloc[1:-1].values
+        connector_df["XPrev"] = wf["Label"].shift(1).iloc[1:-1].values
+        connector_df["XCurr"] = connector_df["Label"]
 
-        pos_delta_labels = (
-            alt.Chart(pos_df)
-            .mark_text(dx=10, align="left", fontSize=15, fontWeight="bold")
+        connectors = (
+            alt.Chart(connector_df)
+            .mark_rule(color="#999999", strokeDash=[4, 3])
             .encode(
-                y=y_enc,
-                x=alt.X("Delta:Q", scale=x_scale),
-                text="DeltaLabel:N",
-                color=alt.Color("BarColor:N", scale=None, legend=None),
+                x=alt.X("XPrev:N", sort=x_sort),
+                x2=alt.X2("XCurr:N"),
+                y=alt.Y("PrevEnd:Q"),
             )
         )
 
-        pos_pct_labels = (
-            alt.Chart(pos_df)
-            .mark_text(dx=10, dy=15, align="left", fontSize=13, fontWeight="bold")
+        label_df = wf.copy()
+        label_df["DisplayLabel"] = np.where(
+            wf["Type"] == "total",
+            wf["Amount"].map(money),
+            wf["Amount"].map(money),
+        )
+
+        labels = (
+            alt.Chart(label_df)
+            .mark_text(fontSize=12, fontWeight="bold")
             .encode(
-                y=y_enc,
-                x=alt.X("Delta:Q", scale=x_scale),
-                text="PctLabel:N",
-                color=alt.Color("BarColor:N", scale=None, legend=None),
+                x=alt.X("Label:N", sort=x_sort),
+                y=alt.Y("LabelY:Q"),
+                text="DisplayLabel:N",
+                dy=alt.value(0),
+                color=alt.value("#111111"),
             )
         )
 
-        neg_delta_labels = (
-            alt.Chart(neg_df)
-            .mark_text(dx=-10, align="right", fontSize=15, fontWeight="bold")
-            .encode(
-                y=y_enc,
-                x=alt.X("Delta:Q", scale=x_scale),
-                text="DeltaLabel:N",
-                color=alt.Color("BarColor:N", scale=None, legend=None),
-            )
-        )
-
-        neg_pct_labels = (
-            alt.Chart(neg_df)
-            .mark_text(dx=-10, dy=15, align="right", fontSize=13, fontWeight="bold")
-            .encode(
-                y=y_enc,
-                x=alt.X("Delta:Q", scale=x_scale),
-                text="PctLabel:N",
-                color=alt.Color("BarColor:N", scale=None, legend=None),
-            )
-        )
-
-        return (rules + dots + pos_delta_labels + pos_pct_labels + neg_delta_labels + neg_pct_labels).properties(height=height)
+        return connectors + bars + labels
 
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -608,13 +685,17 @@ def render_visual_executive_dashboard(
 
     st.write("")
 
-    driver_r = prep_compare_metric(dfA, dfB, "Retailer", metric="Sales", top_n=12)
-    driver_r = prep_contrib(driver_r)
-
-    if not driver_r.empty:
+    retailer_wf = prep_waterfall_bridge(dfA, dfB, "Retailer", top_n_each_side=8)
+    if not retailer_wf.empty:
         st.markdown("#### Retailer Contribution to Change")
-        rc_chart = contrib_lollipop_chart(driver_r, height=540)
-        st.altair_chart(rc_chart, use_container_width=True)
+        retailer_chart = waterfall_chart(retailer_wf, height=420)
+        st.altair_chart(retailer_chart, use_container_width=True)
+
+    vendor_wf = prep_waterfall_bridge(dfA, dfB, "Vendor", top_n_each_side=8)
+    if not vendor_wf.empty:
+        st.markdown("#### Vendor Contribution to Change")
+        vendor_chart = waterfall_chart(vendor_wf, height=420)
+        st.altair_chart(vendor_chart, use_container_width=True)
 
     retailer = prep_compare_metric(dfA, dfB, "Retailer", metric="Sales", top_n=10)
     vendor = prep_compare_metric(dfA, dfB, "Vendor", metric="Sales", top_n=10)
