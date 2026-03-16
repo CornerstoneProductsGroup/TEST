@@ -278,31 +278,17 @@ def render_visual_executive_dashboard(
         return bars + labels
 
     def collect_change_contributors(df_cur: pd.DataFrame, df_cmp: pd.DataFrame) -> pd.DataFrame:
-        frames = []
-
-        if "Retailer" in df_cur.columns and "Retailer" in df_cmp.columns:
-            cur = df_cur.groupby("Retailer", as_index=False).agg(Current=("Sales", "sum"))
-            cmp = df_cmp.groupby("Retailer", as_index=False).agg(Compare=("Sales", "sum"))
-            tmp = cur.merge(cmp, on="Retailer", how="outer").fillna(0.0)
-            tmp["Label"] = tmp["Retailer"].astype(str).map(lambda x: f"Retailer: {x}")
-            tmp["Delta"] = tmp["Current"] - tmp["Compare"]
-            frames.append(tmp[["Label", "Delta"]])
-
-        if "Vendor" in df_cur.columns and "Vendor" in df_cmp.columns:
-            cur = df_cur.groupby("Vendor", as_index=False).agg(Current=("Sales", "sum"))
-            cmp = df_cmp.groupby("Vendor", as_index=False).agg(Compare=("Sales", "sum"))
-            tmp = cur.merge(cmp, on="Vendor", how="outer").fillna(0.0)
-            tmp["Label"] = tmp["Vendor"].astype(str).map(lambda x: f"Vendor: {x}")
-            tmp["Delta"] = tmp["Current"] - tmp["Compare"]
-            frames.append(tmp[["Label", "Delta"]])
-
-        if not frames:
+        if "Retailer" not in df_cur.columns or "Retailer" not in df_cmp.columns:
             return pd.DataFrame(columns=["Label", "Delta"])
 
-        out = pd.concat(frames, ignore_index=True)
+        cur = df_cur.groupby("Retailer", as_index=False).agg(Current=("Sales", "sum"))
+        cmp = df_cmp.groupby("Retailer", as_index=False).agg(Compare=("Sales", "sum"))
+        out = cur.merge(cmp, on="Retailer", how="outer").fillna(0.0)
+        out["Label"] = out["Retailer"].astype(str).map(lambda x: f"Retailer: {x}")
+        out["Delta"] = out["Current"] - out["Compare"]
+        out = out[["Label", "Delta"]].copy()
         out = out[np.isfinite(out["Delta"])].copy()
         out = out[out["Delta"] != 0].copy()
-        out = out.drop_duplicates(subset=["Label"], keep="first")
 
         pos = out[out["Delta"] > 0].sort_values(["Delta", "Label"], ascending=[False, True]).copy()
         neg = out[out["Delta"] < 0].sort_values(["Delta", "Label"], ascending=[True, True]).copy()
@@ -316,7 +302,7 @@ def render_visual_executive_dashboard(
         compare_label: str,
         changes_df: pd.DataFrame,
     ):
-        BLOCK_VALUE = 30000.0
+        BLOCK_VALUE = 5000.0
 
         def full_total_label(v: float) -> str:
             return money(float(v))
