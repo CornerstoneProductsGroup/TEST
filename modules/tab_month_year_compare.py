@@ -596,7 +596,7 @@ def render_visual_executive_dashboard(
 
     st.write("")
 
-    st.markdown("#### Period Block View")
+    st.markdown(f"#### Sales Blocks ({a_lbl} vs {b_lbl})")
     block_chart = simple_period_block_chart(
         current_value=float(kA["Sales"]),
         compare_value=float(kB["Sales"]),
