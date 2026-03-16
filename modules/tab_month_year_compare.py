@@ -167,7 +167,7 @@ def render_visual_executive_dashboard(
 
         out["Label"] = out["Value"].map(lambda v: f"{v:,.0f}" if metric == "Units" else money(v))
         out["Start"] = out.groupby("Period")["Value"].cumsum() - out["Value"]
-        out["LabelX"] = out["Start"] + (out["Value"] * 0.08)
+        out["LabelX"] = out["Start"] + (out["Value"] * 0.50)
 
         total_by_period = out.groupby("Period")["Value"].transform("sum")
         out["ShowLabel"] = np.where(
@@ -202,8 +202,7 @@ def render_visual_executive_dashboard(
             )
 
             xmax = float(chart_df["Value"].max()) if not chart_df.empty else 0.0
-            label_pad = max(xmax * 0.03, 1.0)
-            xmax = xmax + label_pad if xmax > 0 else 1.0
+            xmax = xmax * 1.03 if xmax > 0 else 1.0
 
             bars = (
                 alt.Chart(chart_df)
@@ -222,15 +221,21 @@ def render_visual_executive_dashboard(
 
             label_df = chart_df.copy()
             label_df["Label"] = label_df["Value"].map(lambda v: f"{v:,.0f}" if metric == "Units" else money(v))
+            label_df["LabelX"] = label_df["Value"] / 2.0
 
             labels = (
                 alt.Chart(label_df)
-                .mark_text(dx=8, align="left", fontSize=14, fontWeight="bold")
+                .mark_text(
+                    align="center",
+                    baseline="middle",
+                    fontSize=14,
+                    fontWeight="bold",
+                    color="#000000",
+                )
                 .encode(
                     y=alt.Y("Period:N", sort=[a_lbl, b_lbl]),
-                    x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax])),
+                    x=alt.X("LabelX:Q", scale=alt.Scale(domain=[0, xmax])),
                     text="Label:N",
-                    color=alt.Color("ColorHex:N", scale=None, legend=None),
                 )
             )
 
@@ -248,8 +253,7 @@ def render_visual_executive_dashboard(
         )
 
         xmax = float(totals["Value"].max()) if not totals.empty else 0.0
-        label_pad = max(xmax * 0.03, 1.0)
-        xmax = xmax + label_pad if xmax > 0 else 1.0
+        xmax = xmax * 1.03 if xmax > 0 else 1.0
 
         bars = (
             alt.Chart(totals)
@@ -267,15 +271,21 @@ def render_visual_executive_dashboard(
         )
 
         totals["Label"] = totals["Value"].map(lambda v: f"{v:,.0f}" if metric == "Units" else money(v))
+        totals["LabelX"] = totals["Value"] / 2.0
 
         labels = (
             alt.Chart(totals)
-            .mark_text(dx=8, align="left", fontSize=14, fontWeight="bold")
+            .mark_text(
+                align="center",
+                baseline="middle",
+                fontSize=14,
+                fontWeight="bold",
+                color="#000000",
+            )
             .encode(
                 y=alt.Y("Period:N", sort=[a_lbl, b_lbl]),
-                x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax])),
+                x=alt.X("LabelX:Q", scale=alt.Scale(domain=[0, xmax])),
                 text="Label:N",
-                color=alt.Color("ColorHex:N", scale=None, legend=None),
             )
         )
 
@@ -534,7 +544,7 @@ def render_visual_executive_dashboard(
 
         right_labels = (
             alt.Chart(totals_df[totals_df["Side"] == "right"])
-            .mark_text(align="left", dx=10, fontSize=12, fontWeight="bold", clip=False)
+            .mark_text(align="left", dx=10, fontSize=14, fontWeight="bold", clip=False)
             .encode(
                 y=alt.Y("Period:N", sort=order),
                 x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
@@ -546,7 +556,7 @@ def render_visual_executive_dashboard(
 
         left_labels = (
             alt.Chart(totals_df[totals_df["Side"] == "left"])
-            .mark_text(align="right", dx=-10, fontSize=12, fontWeight="bold", clip=False)
+            .mark_text(align="right", dx=-10, fontSize=14, fontWeight="bold", clip=False)
             .encode(
                 y=alt.Y("Period:N", sort=order),
                 x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
@@ -606,7 +616,7 @@ def render_visual_executive_dashboard(
         long_df["Start"] = 0.0
         return long_df
 
-    def grouped_lollipop_chart(long_df: pd.DataFrame, dim_name: str, height: int = 560):
+    def grouped_lollipop_chart(long_df: pd.DataFrame, dim_name: str, height: int = 620):
         if long_df.empty:
             return None
 
@@ -626,13 +636,13 @@ def render_visual_executive_dashboard(
             f"{dim_name}:N",
             sort=alt.SortField(field="SortTotal", order="descending"),
             title="",
-            scale=alt.Scale(paddingInner=0.55, paddingOuter=0.22),
+            scale=alt.Scale(paddingInner=0.78, paddingOuter=0.28),
         )
 
         yoff_enc = alt.YOffset(
             "Series:N",
             sort=[a_lbl, b_lbl],
-            scale=alt.Scale(paddingInner=0.48),
+            scale=alt.Scale(paddingInner=0.75),
         )
 
         rules = (
@@ -829,7 +839,7 @@ def render_visual_executive_dashboard(
         if retailer_long.empty:
             st.caption("No retailer data available.")
         else:
-            retailer_chart = grouped_lollipop_chart(retailer_long, "Retailer", height=560)
+            retailer_chart = grouped_lollipop_chart(retailer_long, "Retailer", height=620)
             st.altair_chart(retailer_chart, use_container_width=True)
 
     with right:
@@ -838,7 +848,7 @@ def render_visual_executive_dashboard(
         if vendor_long.empty:
             st.caption("No vendor data available.")
         else:
-            vendor_chart = grouped_lollipop_chart(vendor_long, "Vendor", height=560)
+            vendor_chart = grouped_lollipop_chart(vendor_long, "Vendor", height=620)
             st.altair_chart(vendor_chart, use_container_width=True)
 
     st.write("")
