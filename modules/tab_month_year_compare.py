@@ -202,7 +202,8 @@ def render_visual_executive_dashboard(
             )
 
             xmax = float(chart_df["Value"].max()) if not chart_df.empty else 0.0
-            xmax = xmax * 1.20 if xmax > 0 else 1.0
+            label_pad = max(xmax * 0.04, 1.0)
+            xmax = xmax + label_pad if xmax > 0 else 1.0
 
             bars = (
                 alt.Chart(chart_df)
@@ -246,12 +247,16 @@ def render_visual_executive_dashboard(
             )
         )
 
+        xmax = float(totals["Value"].max()) if not totals.empty else 0.0
+        label_pad = max(xmax * 0.04, 1.0)
+        xmax = xmax + label_pad if xmax > 0 else 1.0
+
         bars = (
             alt.Chart(totals)
             .mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5)
             .encode(
                 y=alt.Y("Period:N", title="", sort=[a_lbl, b_lbl]),
-                x=alt.X("Value:Q", title=metric_name),
+                x=alt.X("Value:Q", title=metric_name, scale=alt.Scale(domain=[0, xmax])),
                 color=alt.Color("ColorHex:N", scale=None, legend=None),
                 tooltip=[
                     alt.Tooltip("Period:N", title="Period"),
@@ -268,7 +273,7 @@ def render_visual_executive_dashboard(
             .mark_text(dx=8, align="left", fontSize=14, fontWeight="bold")
             .encode(
                 y=alt.Y("Period:N", sort=[a_lbl, b_lbl]),
-                x=alt.X("Value:Q"),
+                x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax])),
                 text="Label:N",
                 color=alt.Color("ColorHex:N", scale=None, legend=None),
             )
@@ -376,11 +381,12 @@ def render_visual_executive_dashboard(
 
         change_max = max(change_max, CHANGE_BLOCK_VALUE)
 
-        total_bar_space = total_max * 1.35
-        change_bar_space = change_max * 2.80
-        xmax = float(max(total_bar_space, change_bar_space, TOTAL_BLOCK_VALUE * 4))
-        xmax = float(np.ceil(xmax / CHANGE_BLOCK_VALUE) * CHANGE_BLOCK_VALUE)
-        center_x = xmax / 2.0
+        left_pad = change_max + max(CHANGE_BLOCK_VALUE * 4, change_max * 0.08)
+        right_needed_for_changes = left_pad + change_max + max(CHANGE_BLOCK_VALUE * 4, change_max * 0.08)
+        right_needed_for_totals = total_max + max(TOTAL_BLOCK_VALUE * 2, total_max * 0.03)
+
+        center_x = float(np.ceil(left_pad / CHANGE_BLOCK_VALUE) * CHANGE_BLOCK_VALUE)
+        xmax = float(np.ceil(max(right_needed_for_changes, right_needed_for_totals) / CHANGE_BLOCK_VALUE) * CHANGE_BLOCK_VALUE)
 
         block_rows = []
         total_label_rows = []
@@ -494,7 +500,7 @@ def render_visual_executive_dashboard(
                 y=alt.Y("Period:N", sort=order, title=""),
                 x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, xmax])),
                 x2="X1:Q",
-                color=alt.Color("ColorHex:N", scale=None, legend=None),
+                fill=alt.Fill("ColorHex:N", scale=None, legend=None),
                 tooltip=[alt.Tooltip("Period:N", title="Period")],
             )
             .properties(height=chart_height)
