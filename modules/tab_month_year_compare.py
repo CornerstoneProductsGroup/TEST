@@ -186,6 +186,9 @@ def render_visual_executive_dashboard(
     ):
         metric = "Units" if metric_name == "Units" else "Sales"
 
+        color_cur = POSITIVE_BAR if float(fallback_cur) >= float(fallback_cmp) else NEGATIVE_BAR
+        color_cmp = POSITIVE_BAR if float(fallback_cmp) > float(fallback_cur) else NEGATIVE_BAR
+
         stacked = pd.DataFrame()
         if year_compare_mode():
             stacked = prep_quarter_stacked(df_cur, df_cmp, metric)
@@ -193,27 +196,21 @@ def render_visual_executive_dashboard(
         if stacked.empty:
             chart_df = pd.DataFrame(
                 [
-                    {"Period": a_lbl, "Value": float(fallback_cur)},
-                    {"Period": b_lbl, "Value": float(fallback_cmp)},
+                    {"Period": a_lbl, "Value": float(fallback_cur), "ColorHex": color_cur},
+                    {"Period": b_lbl, "Value": float(fallback_cmp), "ColorHex": color_cmp},
                 ]
             )
 
             xmax = float(chart_df["Value"].max()) if not chart_df.empty else 0.0
             xmax = xmax * 1.20 if xmax > 0 else 1.0
 
-            color_enc = alt.Color(
-                "Period:N",
-                scale=alt.Scale(domain=PERIOD_DOMAIN, range=PERIOD_RANGE),
-                legend=None,
-            )
-
             bars = (
                 alt.Chart(chart_df)
                 .mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5)
                 .encode(
-                    y=alt.Y("Period:N", title="", sort=PERIOD_DOMAIN),
+                    y=alt.Y("Period:N", title="", sort=[a_lbl, b_lbl]),
                     x=alt.X("Value:Q", title=metric_name, scale=alt.Scale(domain=[0, xmax])),
-                    color=color_enc,
+                    color=alt.Color("ColorHex:N", scale=None, legend=None),
                     tooltip=[
                         alt.Tooltip("Period:N", title="Period"),
                         alt.Tooltip("Value:Q", title=metric_name, format=",.0f" if metric == "Units" else ",.2f"),
@@ -229,52 +226,51 @@ def render_visual_executive_dashboard(
                 alt.Chart(label_df)
                 .mark_text(dx=8, align="left", fontSize=14, fontWeight="bold")
                 .encode(
-                    y=alt.Y("Period:N", sort=PERIOD_DOMAIN),
+                    y=alt.Y("Period:N", sort=[a_lbl, b_lbl]),
                     x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax])),
                     text="Label:N",
-                    color=color_enc,
+                    color=alt.Color("ColorHex:N", scale=None, legend=None),
                 )
             )
 
             return bars + labels
 
+        totals = (
+            stacked.groupby("Period", as_index=False)
+            .agg(Value=("Value", "sum"))
+            .assign(
+                ColorHex=lambda d: d["Period"].map({
+                    a_lbl: color_cur,
+                    b_lbl: color_cmp,
+                })
+            )
+        )
+
         bars = (
-            alt.Chart(stacked)
+            alt.Chart(totals)
             .mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5)
             .encode(
-                y=alt.Y("Period:N", title="", sort=PERIOD_DOMAIN),
+                y=alt.Y("Period:N", title="", sort=[a_lbl, b_lbl]),
                 x=alt.X("Value:Q", title=metric_name),
-                color=alt.Color(
-                    "Quarter:N",
-                    scale=alt.Scale(domain=Q_DOMAIN, range=Q_RANGE),
-                    sort=Q_DOMAIN,
-                    legend=alt.Legend(orient="top", direction="horizontal", title=""),
-                ),
-                order=alt.Order("Quarter:N", sort="ascending"),
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
                 tooltip=[
                     alt.Tooltip("Period:N", title="Period"),
-                    alt.Tooltip("Quarter:N", title="Quarter"),
                     alt.Tooltip("Value:Q", title=metric_name, format=",.0f" if metric == "Units" else ",.2f"),
                 ],
             )
-            .properties(height=165)
+            .properties(height=150)
         )
 
+        totals["Label"] = totals["Value"].map(lambda v: f"{v:,.0f}" if metric == "Units" else money(v))
+
         labels = (
-            alt.Chart(stacked[stacked["ShowLabel"] != ""])
-            .mark_text(
-                align="left",
-                baseline="middle",
-                dx=0,
-                fontSize=12,
-                fontWeight="bold",
-                color="#111111",
-            )
+            alt.Chart(totals)
+            .mark_text(dx=8, align="left", fontSize=14, fontWeight="bold")
             .encode(
-                y=alt.Y("Period:N", sort=PERIOD_DOMAIN),
-                x=alt.X("LabelX:Q", title=metric_name),
-                text="ShowLabel:N",
-                detail="Quarter:N",
+                y=alt.Y("Period:N", sort=[a_lbl, b_lbl]),
+                x=alt.X("Value:Q"),
+                text="Label:N",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
             )
         )
 
@@ -282,16 +278,20 @@ def render_visual_executive_dashboard(
 
     def collect_change_contributors(df_cur: pd.DataFrame, df_cmp: pd.DataFrame) -> pd.DataFrame:
         if "Retailer" not in df_cur.columns or "Retailer" not in df_cmp.columns:
-            return pd.DataFrame(columns=["Label", "Delta"])
+            return pd.DataFrame(columns=["Label", "Delta", "ColorHex", "Side", "Direction"])
 
         cur = df_cur.groupby("Retailer", as_index=False).agg(Current=("Sales", "sum"))
         cmp = df_cmp.groupby("Retailer", as_index=False).agg(Compare=("Sales", "sum"))
         out = cur.merge(cmp, on="Retailer", how="outer").fillna(0.0)
-        out["Label"] = out["Retailer"].astype(str).map(lambda x: f"Retailer: {x}")
+        out["Label"] = out["Retailer"].astype(str)
         out["Delta"] = out["Current"] - out["Compare"]
         out = out[["Label", "Delta"]].copy()
         out = out[np.isfinite(out["Delta"])].copy()
         out = out[out["Delta"] != 0].copy()
+
+        out["ColorHex"] = np.where(out["Delta"] > 0, POSITIVE_BAR, NEGATIVE_BAR)
+        out["Side"] = np.where(out["Delta"] > 0, "right", "left")
+        out["Direction"] = np.where(out["Delta"] > 0, "right", "left")
 
         pos = out[out["Delta"] > 0].sort_values(["Delta", "Label"], ascending=[False, True]).copy()
         neg = out[out["Delta"] < 0].sort_values(["Delta", "Label"], ascending=[True, True]).copy()
@@ -314,11 +314,15 @@ def render_visual_executive_dashboard(
         current_value = float(max(current_value, 0.0))
         compare_value = float(max(compare_value, 0.0))
 
-        current_color = (
-            POSITIVE_BAR
-            if current_value > compare_value
-            else (NEGATIVE_BAR if current_value < compare_value else NEUTRAL_BAR)
-        )
+        if current_value > compare_value:
+            current_color = POSITIVE_BAR
+            compare_color = NEGATIVE_BAR
+        elif current_value < compare_value:
+            current_color = NEGATIVE_BAR
+            compare_color = POSITIVE_BAR
+        else:
+            current_color = NEUTRAL_BAR
+            compare_color = NEUTRAL_BAR
 
         rows = [
             {
@@ -326,7 +330,7 @@ def render_visual_executive_dashboard(
                 "Kind": "total",
                 "Value": compare_value,
                 "Direction": "right",
-                "ColorHex": "#ff7f0e",
+                "ColorHex": compare_color,
                 "Side": "right",
                 "Text": full_total_label(compare_value),
                 "BlockValue": TOTAL_BLOCK_VALUE,
@@ -341,9 +345,9 @@ def render_visual_executive_dashboard(
                         "Period": str(r["Label"]),
                         "Kind": "change",
                         "Value": abs(delta),
-                        "Direction": "right" if delta > 0 else "left",
-                        "ColorHex": POSITIVE_BAR if delta > 0 else NEGATIVE_BAR,
-                        "Side": "right" if delta > 0 else "left",
+                        "Direction": str(r["Direction"]),
+                        "ColorHex": str(r["ColorHex"]),
+                        "Side": str(r["Side"]),
                         "Text": abs_change_label(delta),
                         "BlockValue": CHANGE_BLOCK_VALUE,
                     }
@@ -743,38 +747,10 @@ def render_visual_executive_dashboard(
 
         return (rules + dots + labels).properties(height=height)
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        kpi_card("Total Sales", money(kA["Sales"]), delta_html(kA["Sales"], kB["Sales"], True))
-    with c2:
-        kpi_card("Total Units", f"{kA['Units']:,.0f}", delta_html(kA["Units"], kB["Units"], False))
-    with c3:
-        kpi_card("Avg Selling Price", money(kA["ASP"]), delta_html(kA["ASP"], kB["ASP"], True))
-
-    st.write("")
-
-    change_rows = collect_change_contributors(dfA, dfB)
-
-    st.markdown(
-        f"#### Sales Blocks ({a_lbl} vs {b_lbl})"
-    )
-    st.caption("Totals: 1 block = $25,000 • Retailer changes: 1 block = $1,000")
-
-    block_chart = simple_period_block_chart(
-        current_value=float(kA["Sales"]),
-        compare_value=float(kB["Sales"]),
-        current_label=a_lbl,
-        compare_label=b_lbl,
-        changes_df=change_rows,
-    )
-    st.altair_chart(block_chart, use_container_width=True)
-
-    st.write("")
-
     sales_col, units_col = st.columns(2)
 
     with sales_col:
-        st.markdown(f"#### Sales Totals ({a_lbl} vs {b_lbl})")
+        st.markdown(f"#### Sales Total ({a_lbl} vs {b_lbl})")
         sales_chart = stacked_total_chart(
             metric_name="Sales",
             df_cur=dfA,
@@ -785,7 +761,7 @@ def render_visual_executive_dashboard(
         st.altair_chart(sales_chart, use_container_width=True)
 
     with units_col:
-        st.markdown(f"#### Units Totals ({a_lbl} vs {b_lbl})")
+        st.markdown(f"#### Units Total ({a_lbl} vs {b_lbl})")
         units_chart = stacked_total_chart(
             metric_name="Units",
             df_cur=dfA,
@@ -794,6 +770,22 @@ def render_visual_executive_dashboard(
             fallback_cmp=float(kB["Units"]),
         )
         st.altair_chart(units_chart, use_container_width=True)
+
+    st.write("")
+
+    change_rows = collect_change_contributors(dfA, dfB)
+
+    st.markdown("#### Sales Change Compare")
+    st.caption("Totals: 1 block = $25,000 • Retailer changes: 1 block = $1,000")
+
+    block_chart = simple_period_block_chart(
+        current_value=float(kA["Sales"]),
+        compare_value=float(kB["Sales"]),
+        current_label=a_lbl,
+        compare_label=b_lbl,
+        changes_df=change_rows,
+    )
+    st.altair_chart(block_chart, use_container_width=True)
 
     st.write("")
 
@@ -927,14 +919,6 @@ def render_standard_view(
                 }
             )
         return out
-
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        kpi_card("Total Sales", money(kA["Sales"]), kdelta("Sales"))
-    with c2:
-        kpi_card("Total Units", f"{kA['Units']:,.0f}", kdelta("Units"))
-    with c3:
-        kpi_card("Avg Selling Price", money(kA["ASP"]), kdelta("ASP"))
 
     cur_sku = dfA.groupby("SKU", as_index=False).agg(Sales=("Sales", "sum"), Units=("Units", "sum"))
     cmp_sku = dfB.groupby("SKU", as_index=False).agg(Sales=("Sales", "sum"), Units=("Units", "sum"))
