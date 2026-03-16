@@ -381,9 +381,6 @@ def render_visual_executive_dashboard(
 
         change_max = max(change_max, CHANGE_BLOCK_VALUE)
 
-        # Center the change lanes off the compare bar midpoint whenever possible.
-        # If the compare midpoint is too far left to fit the largest negative move,
-        # push it right just enough so negatives still fit.
         center_from_compare = compare_value / 2.0
         min_center_needed = change_max + max(CHANGE_BLOCK_VALUE * 2, change_max * 0.04)
         center_x = max(center_from_compare, min_center_needed)
@@ -500,24 +497,40 @@ def render_visual_executive_dashboard(
 
         chart_height = max(230, 44 * len(order))
 
-        bars = (
-            alt.Chart(block_df)
-            .mark_bar(stroke="white", strokeWidth=1)
-            .encode(
-                y=alt.Y("Period:N", sort=order, title=""),
-                x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, xmax])),
-                x2="X1:Q",
-                color=alt.Color("ColorHex:N", scale=None, legend=None),
-                tooltip=[alt.Tooltip("Period:N", title="Period")],
+        def _layer(df_sub: pd.DataFrame, color_hex: str):
+            if df_sub.empty:
+                return None
+            return (
+                alt.Chart(df_sub)
+                .mark_bar(color=color_hex, stroke="white", strokeWidth=1)
+                .encode(
+                    y=alt.Y("Period:N", sort=order, title=""),
+                    x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, xmax])),
+                    x2="X1:Q",
+                    tooltip=[alt.Tooltip("Period:N", title="Period")],
+                )
             )
-            .properties(height=chart_height)
-        )
+
+        layers = []
+
+        green_df = block_df[block_df["ColorHex"] == POSITIVE_BAR].copy()
+        red_df = block_df[block_df["ColorHex"] == NEGATIVE_BAR].copy()
+        gray_df = block_df[block_df["ColorHex"] == NEUTRAL_BAR].copy()
+
+        green_layer = _layer(green_df, POSITIVE_BAR)
+        red_layer = _layer(red_df, NEGATIVE_BAR)
+        gray_layer = _layer(gray_df, NEUTRAL_BAR)
+
+        for lyr in (green_layer, red_layer, gray_layer):
+            if lyr is not None:
+                layers.append(lyr)
 
         center_rule = (
             alt.Chart(pd.DataFrame([{"Center": center_x}]))
             .mark_rule(color="#7a7a7a", strokeDash=[4, 4], strokeWidth=1.5)
             .encode(x=alt.X("Center:Q", scale=alt.Scale(domain=[0, xmax])))
         )
+        layers.append(center_rule)
 
         right_labels = (
             alt.Chart(totals_df[totals_df["Side"] == "right"])
@@ -529,6 +542,7 @@ def render_visual_executive_dashboard(
                 color=alt.Color("ColorHex:N", scale=None, legend=None),
             )
         )
+        layers.append(right_labels)
 
         left_labels = (
             alt.Chart(totals_df[totals_df["Side"] == "left"])
@@ -540,8 +554,10 @@ def render_visual_executive_dashboard(
                 color=alt.Color("ColorHex:N", scale=None, legend=None),
             )
         )
+        layers.append(left_labels)
 
-        return bars + center_rule + right_labels + left_labels
+        chart = alt.layer(*layers).properties(height=chart_height)
+        return chart
 
     def prep_grouped_share(df: pd.DataFrame, dim_name: str) -> pd.DataFrame:
         if df.empty:
