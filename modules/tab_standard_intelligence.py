@@ -397,21 +397,9 @@ def render(ctx: dict):
         adv1, adv2, adv3, adv4 = st.columns(4)
 
         with adv1:
-            pivot_dim = st.selectbox(
-                "Pivot rows by",
-                options=["Retailer", "Vendor"],
-                index=0,
-                key="std_weekly_pivot_dim",
-            )
-
+            pivot_dim = st.selectbox("Pivot rows by", options=["Retailer", "Vendor"], index=0, key="std_weekly_pivot_dim")
         with adv2:
-            weekly_metric = st.selectbox(
-                "Metric",
-                options=["Sales", "Units"],
-                index=0,
-                key="std_weekly_metric",
-            )
-
+            weekly_metric = st.selectbox("Metric", options=["Sales", "Units"], index=0, key="std_weekly_metric")
         with adv3:
             display_timeframe = st.selectbox(
                 "Display Time Frame",
@@ -419,7 +407,6 @@ def render(ctx: dict):
                 index=2,
                 key="std_weekly_display_timeframe",
             )
-
         with adv4:
             avg_window_label = st.selectbox(
                 "Average Window",
@@ -446,25 +433,16 @@ def render(ctx: dict):
         display_weeks_set = set(display_weeks)
 
         wk_disp = wk_metric[wk_metric["WeekEnd"].isin(display_weeks_set)].copy()
-
         week_map = {pd.to_datetime(w): _short_week_label(w) for w in display_weeks}
         wk_disp["Week"] = wk_disp["WeekEnd"].map(week_map)
 
-        piv = wk_disp.pivot_table(
-            index=pivot_dim,
-            columns="Week",
-            values="Value",
-            aggfunc="sum",
-            fill_value=0.0,
-        )
-
+        piv = wk_disp.pivot_table(index=pivot_dim, columns="Week", values="Value", aggfunc="sum", fill_value=0.0)
         row_order = sorted(wk_disp[pivot_dim].dropna().unique().tolist())
         piv = piv.reindex(row_order)
 
         display_week_labels = [_short_week_label(w) for w in display_weeks]
         existing_week_cols = [c for c in display_week_labels if c in piv.columns]
         piv = piv.reindex(columns=existing_week_cols, fill_value=0.0)
-
         numeric = piv.copy()
 
         if len(existing_week_cols) >= 2:
@@ -481,13 +459,7 @@ def render(ctx: dict):
             avg_source_weeks = all_weeks[-avg_n:]
             avg_source = wk_metric.copy()
             avg_source["Week"] = avg_source["WeekEnd"].map(lambda w: _short_week_label(w))
-            piv_avg = avg_source.pivot_table(
-                index=pivot_dim,
-                columns="Week",
-                values="Value",
-                aggfunc="sum",
-                fill_value=0.0,
-            )
+            piv_avg = avg_source.pivot_table(index=pivot_dim, columns="Week", values="Value", aggfunc="sum", fill_value=0.0)
             piv_avg = piv_avg.reindex(index=numeric.index)
             avg_existing_cols = [_short_week_label(w) for w in avg_source_weeks]
             avg_existing_cols = [c for c in avg_existing_cols if c in piv_avg.columns]
@@ -506,24 +478,15 @@ def render(ctx: dict):
         display_df = numeric.copy()
         for c in existing_week_cols:
             display_df[c] = display_df[c].map(lambda x: _fmt_metric_value(x, weekly_metric))
-
-        display_df["Δ vs prior"] = display_df["Δ vs prior"].map(
-            lambda x: _colorize_delta_value(x, weekly_metric)
-        )
+        display_df["Δ vs prior"] = display_df["Δ vs prior"].map(lambda x: _colorize_delta_value(x, weekly_metric))
         display_df["Avg"] = display_df["Avg"].map(lambda x: _fmt_metric_value(x, weekly_metric))
         display_df["Δ vs avg"] = display_df["Δ vs avg"].map(lambda x: _colorize_delta_value(x, weekly_metric))
 
         display_df = display_df.reset_index().rename(columns={"index": pivot_dim})
         numeric_reset = numeric.reset_index().rename(columns={"index": pivot_dim})
-
         weekly_cols = [pivot_dim] + existing_week_cols + ["Δ vs prior", "Avg", "Δ vs avg"]
 
-        styled_weekly = _style_delta_cols(
-            display_df[weekly_cols],
-            numeric_reset[weekly_cols],
-            ["Δ vs prior", "Δ vs avg"],
-            bold_total=True,
-        )
+        styled_weekly = _style_delta_cols(display_df[weekly_cols], numeric_reset[weekly_cols], ["Δ vs prior", "Δ vs avg"], bold_total=True)
 
         col_cfg = {pivot_dim: st.column_config.TextColumn(width="medium")}
         for c in existing_week_cols:
@@ -532,13 +495,7 @@ def render(ctx: dict):
         col_cfg["Avg"] = st.column_config.TextColumn(width="small")
         col_cfg["Δ vs avg"] = st.column_config.TextColumn(width="small")
 
-        st.dataframe(
-            styled_weekly,
-            use_container_width=True,
-            height=560,
-            hide_index=True,
-            column_config=col_cfg,
-        )
+        st.dataframe(styled_weekly, use_container_width=True, height=560, hide_index=True, column_config=col_cfg)
 
     st.subheader("Movers & Trend Leaders")
     if compare_mode == "None":
@@ -551,12 +508,7 @@ def render(ctx: dict):
         m["Sales (Compare)"] = m["Sales_B"]
         m["Sales Δ"] = m["Sales_A"] - m["Sales_B"]
         m["Δ %"] = np.where(m["Sales_B"] != 0, m["Sales Δ"] / m["Sales_B"], np.nan)
-        m = m[
-            (m["Sales_A"] >= min_sales)
-            | (m["Sales_B"] >= min_sales)
-            | (m["Units_A"] >= min_units)
-            | (m["Units_B"] >= min_units)
-        ].copy()
+        m = m[(m["Sales_A"] >= min_sales) | (m["Sales_B"] >= min_sales) | (m["Units_A"] >= min_units) | (m["Units_B"] >= min_units)].copy()
 
         inc = m[m["Sales Δ"] > 0].sort_values("Sales Δ", ascending=False).head(10)
         dec = m[m["Sales Δ"] < 0].sort_values("Sales Δ", ascending=True).head(10)
@@ -573,35 +525,32 @@ def render(ctx: dict):
 
         inc_disp = _disp(inc)
         dec_disp = _disp(dec)
-
         mom = build_momentum(df_scope[df_scope["WeekEnd"] <= pA.end], "SKU", lookback_weeks=8)
         trend_leaders_disp = (
             mom.sort_values("Slope", ascending=False)
             .head(10)[["SKU", "Trend", "Slope", "Weeks Up", "Weeks Down", "Sales (lookback)"]]
-            .copy()
-            if not mom.empty
-            else pd.DataFrame(columns=["SKU", "Trend", "Slope", "Weeks Up", "Weeks Down", "Sales (lookback)"])
+            .copy() if not mom.empty else pd.DataFrame(columns=["SKU", "Trend", "Slope", "Weeks Up", "Weeks Down", "Sales (lookback)"])
         )
         if not trend_leaders_disp.empty:
             trend_leaders_disp["Sales (lookback)"] = trend_leaders_disp["Sales (lookback)"].map(money)
             trend_leaders_disp["Slope"] = trend_leaders_disp["Slope"].map(lambda v: f"{v:,.2f}")
 
-        a, b, c = st.columns(3)
-        with a:
+        a_col, b_col, c_col = st.columns(3)
+        with a_col:
             st.markdown("**Top Increasing**")
             render_df(inc_disp, height=320) if not inc_disp.empty else st.caption("None.")
-        with b:
+        with b_col:
             st.markdown("**Top Declining**")
             render_df(dec_disp, height=320) if not dec_disp.empty else st.caption("None.")
-        with c:
+        with c_col:
             st.markdown("**Trend Leaders (slope over last 8 weeks)**")
             render_df(trend_leaders_disp, height=320)
 
     st.divider()
     st.subheader("New Activity")
 
-    a, b = st.columns(2)
-    with a:
+    a_col, b_col = st.columns(2)
+    with a_col:
         st.markdown("**First Sale Ever (Launches)**")
         if first_ever.empty:
             st.caption("None in this period.")
@@ -611,16 +560,13 @@ def render(ctx: dict):
             if "FirstRetailer" in fe.columns:
                 fe["Retailer"] = fe["FirstRetailer"]
             if "Sales" not in fe.columns:
-                if "FirstSales" in fe.columns:
-                    fe["Sales"] = fe["FirstSales"]
-                else:
-                    fe["Sales"] = np.nan
+                fe["Sales"] = fe.get("FirstSales", np.nan)
             fe["Date"] = fe["FirstWeek"].dt.date.astype(str)
             fe["Sales"] = fe["Sales"].map(lambda v: "" if pd.isna(v) else money(v))
             cols = [c for c in ["SKU", "Retailer", "Date", "Sales"] if c in fe.columns]
             render_df(fe[cols], height=300)
 
-    with b:
+    with b_col:
         st.markdown("**New Retailer Placements**")
         if placements.empty:
             st.caption("None in this period.")
@@ -628,10 +574,7 @@ def render(ctx: dict):
             pl = placements.copy()
             pl["FirstWeek"] = pd.to_datetime(pl["FirstWeek"], errors="coerce")
             if "Sales" not in pl.columns:
-                if "FirstSales" in pl.columns:
-                    pl["Sales"] = pl["FirstSales"]
-                else:
-                    pl["Sales"] = np.nan
+                pl["Sales"] = pl.get("FirstSales", np.nan)
             pl["Date"] = pl["FirstWeek"].dt.date.astype(str)
             pl["Sales"] = pl["Sales"].map(lambda v: "" if pd.isna(v) else money(v))
             cols = [c for c in ["SKU", "Retailer", "Date", "Sales"] if c in pl.columns]
@@ -639,74 +582,43 @@ def render(ctx: dict):
 
     st.divider()
     st.header("Strategic Intelligence")
-
     st.subheader("1) Contribution Tree (Where did change come from?)")
     if compare_mode == "None":
         st.info("Select a comparison mode to use the contribution tree.")
     else:
-        level1_choice = st.selectbox(
-            "Level 1 View",
-            ["Retailer", "Vendor"],
-            index=0,
-            key="std_contrib_level1_choice",
-        )
-
+        level1_choice = st.selectbox("Level 1 View", ["Retailer", "Vendor"], index=0, key="std_contrib_level1_choice")
         if level1_choice == "Retailer":
-            level1_col = "Retailer"
-            level2_col = "Vendor"
-            level3_col = "SKU"
+            level1_col, level2_col, level3_col = "Retailer", "Vendor", "SKU"
         else:
-            level1_col = "Vendor"
-            level2_col = "Retailer"
-            level3_col = "SKU"
+            level1_col, level2_col, level3_col = "Vendor", "Retailer", "SKU"
 
         lvl1 = _build_hierarchy(dfA, dfB, level1_col)
         st.markdown(f"**Level 1 — {level1_col}s**")
         _display_hierarchy(lvl1, level1_col, height=500)
 
         lvl1_options = ["(none)"] + lvl1[level1_col].dropna().astype(str).tolist()
-        pick1 = st.selectbox(
-            f"Select {level1_col} for Level 2",
-            lvl1_options,
-            index=0,
-            key="std_contrib_pick1",
-        )
-
+        pick1 = st.selectbox(f"Select {level1_col} for Level 2", lvl1_options, index=0, key="std_contrib_pick1")
         if pick1 != "(none)":
             dfA_l2 = dfA[dfA[level1_col].astype(str) == str(pick1)].copy()
             dfB_l2 = dfB[dfB[level1_col].astype(str) == str(pick1)].copy()
-
             lvl2 = _build_hierarchy(dfA_l2, dfB_l2, level2_col)
             st.markdown(f"**Level 2 — {level2_col}s inside {pick1}**")
             _display_hierarchy(lvl2, level2_col, height=500)
 
             lvl2_options = ["(none)"] + lvl2[level2_col].dropna().astype(str).tolist()
-            pick2 = st.selectbox(
-                f"Select {level2_col} for Level 3",
-                lvl2_options,
-                index=0,
-                key="std_contrib_pick2",
-            )
-
+            pick2 = st.selectbox(f"Select {level2_col} for Level 3", lvl2_options, index=0, key="std_contrib_pick2")
             if pick2 != "(none)":
                 dfA_l3 = dfA_l2[dfA_l2[level2_col].astype(str) == str(pick2)].copy()
                 dfB_l3 = dfB_l2[dfB_l2[level2_col].astype(str) == str(pick2)].copy()
-
                 lvl3 = _build_hierarchy(dfA_l3, dfB_l3, level3_col)
                 st.markdown(f"**Level 3 — {level3_col}s inside {pick1} → {pick2}**")
                 _display_hierarchy(lvl3, level3_col, height=520)
 
     st.subheader("2) SKU Lifecycle (Launch → Growth → Mature → Decline → Dormant)")
-
     with st.expander("Advanced SKU Lifecycle Settings", expanded=False):
         lc1, lc2 = st.columns(2)
         with lc1:
-            lifecycle_timeframe_label = st.selectbox(
-                "Lifecycle Timeframe",
-                ["4 weeks", "8 weeks", "13 weeks", "26 weeks", "52 weeks"],
-                index=1,
-                key="std_lifecycle_timeframe",
-            )
+            lifecycle_timeframe_label = st.selectbox("Lifecycle Timeframe", ["4 weeks", "8 weeks", "13 weeks", "26 weeks", "52 weeks"], index=1, key="std_lifecycle_timeframe")
         with lc2:
             stage_filter = st.multiselect(
                 "Stages",
@@ -716,7 +628,6 @@ def render(ctx: dict):
             )
 
     lifecycle_weeks = int(lifecycle_timeframe_label.split()[0])
-
     life_df_src = df_hist_for_new if show_full_history_lifecycle else df_scope
     life = _compute_lifecycle_custom(life_df_src, lifecycle_weeks)
 
@@ -725,56 +636,22 @@ def render(ctx: dict):
     else:
         if stage_filter:
             life = life[life["Stage"].isin(stage_filter)].copy()
-
         stage_counts = life["Stage"].value_counts().reset_index()
         stage_counts.columns = ["Stage", "Count"]
-
-        stage_order = [
-            "Launch",
-            "Growth",
-            "Mature",
-            "Decline",
-            "Dormant",
-            "Inactive 12+ weeks",
-        ]
+        stage_order = ["Launch", "Growth", "Mature", "Decline", "Dormant", "Inactive 12+ weeks"]
         stage_counts["Stage"] = pd.Categorical(stage_counts["Stage"], categories=stage_order, ordered=True)
         stage_counts = stage_counts.sort_values("Stage").reset_index(drop=True)
-
         st.markdown("**Stage Summary**")
         render_df(stage_counts, height=220)
 
         st.markdown("**Lifecycle Detail**")
         life_show = life.copy()
-
         if min_sales > 0 and "Sales_lookback" in life_show.columns:
             life_show = life_show[life_show["Sales_lookback"] >= min_sales].copy()
 
-        rename_map = {
-            "Sales_lookback": "Sales (lookback)",
-            "Last_Week_Sales": "Last Week Sales",
-            "Avg_Weekly_Sales": "Avg Weekly Sales",
-            "Last_Week_vs_Avg": "Last Week vs Avg",
-            "WoW_Sales_Δ": "WoW Sales Δ",
-        }
+        rename_map = {"Sales_lookback": "Sales (lookback)", "Last_Week_Sales": "Last Week Sales", "Avg_Weekly_Sales": "Avg Weekly Sales", "Last_Week_vs_Avg": "Last Week vs Avg", "WoW_Sales_Δ": "WoW Sales Δ"}
         life_show = life_show.rename(columns=rename_map)
-
-        cols = [
-            c for c in [
-                "SKU",
-                "Stage",
-                "Trend",
-                "Sales (lookback)",
-                "Last Week Sales",
-                "Avg Weekly Sales",
-                "Last Week vs Avg",
-                "WoW Sales Δ",
-                "Weeks Up",
-                "Weeks Down",
-                "Weeks With Sales",
-            ]
-            if c in life_show.columns
-        ]
-
+        cols = [c for c in ["SKU", "Stage", "Trend", "Sales (lookback)", "Last Week Sales", "Avg Weekly Sales", "Last Week vs Avg", "WoW Sales Δ", "Weeks Up", "Weeks Down", "Weeks With Sales"] if c in life_show.columns]
         numeric_life = life_show[cols].copy()
 
         total_row = {"SKU": "TOTAL"}
@@ -783,61 +660,30 @@ def render(ctx: dict):
                 continue
             if c in ["Stage", "Trend"]:
                 total_row[c] = ""
-            elif c in ["Sales (lookback)", "Last Week Sales", "Avg Weekly Sales", "Last Week vs Avg", "WoW Sales Δ"]:
-                total_row[c] = pd.to_numeric(numeric_life[c], errors="coerce").fillna(0).sum()
-            elif c in ["Weeks Up", "Weeks Down", "Weeks With Sales"]:
+            elif c in ["Sales (lookback)", "Last Week Sales", "Avg Weekly Sales", "Last Week vs Avg", "WoW Sales Δ", "Weeks Up", "Weeks Down", "Weeks With Sales"]:
                 total_row[c] = pd.to_numeric(numeric_life[c], errors="coerce").fillna(0).sum()
             else:
                 total_row[c] = ""
 
         numeric_life = pd.concat([numeric_life, pd.DataFrame([total_row])], ignore_index=True)
         life_show = numeric_life.copy()
-
         for c in ["Sales (lookback)", "Last Week Sales", "Avg Weekly Sales", "Last Week vs Avg", "WoW Sales Δ"]:
             if c in life_show.columns:
                 if c in ["Last Week vs Avg", "WoW Sales Δ"]:
-                    life_show[c] = life_show[c].map(
-                        lambda v: "" if pd.isna(v) else f"{'+' if float(v) > 0 else ''}{money(float(v))}"
-                    )
+                    life_show[c] = life_show[c].map(lambda v: "" if pd.isna(v) else f"{'+' if float(v) > 0 else ''}{money(float(v))}")
                 else:
-                    life_show[c] = life_show[c].map(
-                        lambda v: "" if pd.isna(v) else money(float(v))
-                    )
-
-        if "Weeks With Sales" in life_show.columns:
-            life_show["Weeks With Sales"] = life_show["Weeks With Sales"].map(
-                lambda v: "" if pd.isna(v) else f"{int(float(v)):,}"
-            )
-
-        if "Weeks Up" in life_show.columns:
-            life_show["Weeks Up"] = life_show["Weeks Up"].map(
-                lambda v: "" if pd.isna(v) else f"{int(float(v)):,}"
-            )
-
-        if "Weeks Down" in life_show.columns:
-            life_show["Weeks Down"] = life_show["Weeks Down"].map(
-                lambda v: "" if pd.isna(v) else f"{int(float(v)):,}"
-            )
+                    life_show[c] = life_show[c].map(lambda v: "" if pd.isna(v) else money(float(v)))
+        for c in ["Weeks With Sales", "Weeks Up", "Weeks Down"]:
+            if c in life_show.columns:
+                life_show[c] = life_show[c].map(lambda v: "" if pd.isna(v) else f"{int(float(v)):,}")
 
         life_cfg = {"SKU": st.column_config.TextColumn(width="medium")}
         for c in cols:
             if c != "SKU":
                 life_cfg[c] = st.column_config.TextColumn(width="small")
 
-        styled_life = _style_delta_cols(
-            life_show[cols],
-            numeric_life[cols],
-            ["Last Week vs Avg", "WoW Sales Δ"],
-            bold_total=True,
-        )
-
-        st.dataframe(
-            styled_life,
-            use_container_width=True,
-            height=620,
-            hide_index=True,
-            column_config=life_cfg,
-        )
+        styled_life = _style_delta_cols(life_show[cols], numeric_life[cols], ["Last Week vs Avg", "WoW Sales Δ"], bold_total=True)
+        st.dataframe(styled_life, use_container_width=True, height=620, hide_index=True, column_config=life_cfg)
 
     st.divider()
     st.subheader("3) Opportunity Detector (Find expansion + gaps)")
@@ -848,418 +694,6 @@ def render(ctx: dict):
         tabs = st.tabs(list(opp.keys()))
         for t, (name, odf) in zip(tabs, opp.items()):
             with t:
-                render_df(odf, height=420) if not odf.empty else st.caption(
-                    "No signals found with current filters/thresholds."
-                )
+                render_df(odf, height=420) if not odf.empty else st.caption("No signals found with current filters/thresholds.")
 
 
-def render_visual_only(ctx: dict):
-    dfA = ctx["dfA"]
-    dfB = ctx["dfB"]
-    kA = ctx["kA"]
-    kB = ctx["kB"]
-    a_lbl = ctx["a_lbl"]
-    b_lbl = ctx["b_lbl"]
-    compare_mode = ctx["compare_mode"]
-    driver_level = ctx["driver_level"]
-
-    st.subheader("Standard Intelligence • Visual Analytics")
-
-    if compare_mode == "None":
-        st.info("Select a comparison mode to use Standard Intelligence visual analytics.")
-        return
-
-    POSITIVE_BAR = "#2e7d32"
-    NEGATIVE_BAR = "#c62828"
-    NEUTRAL_BAR = "#808080"
-    TEXT_COLOR = "#1a1a1a"
-
-    def _text_style(font_size: int = 16, color: str = TEXT_COLOR):
-        return {
-            "fontSize": font_size,
-            "fontWeight": "normal",
-            "color": color,
-            "stroke": "#f5f5f5",
-            "strokeWidth": 0.6,
-        }
-
-    def _totals_df(metric: str) -> pd.DataFrame:
-        cur = float(kA.get(metric, 0.0))
-        cmpv = float(kB.get(metric, 0.0))
-
-        if cur > cmpv:
-            cur_color = POSITIVE_BAR
-            cmp_color = NEGATIVE_BAR
-        elif cur < cmpv:
-            cur_color = NEGATIVE_BAR
-            cmp_color = POSITIVE_BAR
-        else:
-            cur_color = NEUTRAL_BAR
-            cmp_color = NEUTRAL_BAR
-
-        label_fmt = money if metric == "Sales" else (lambda x: f"{x:,.0f}")
-        out = pd.DataFrame(
-            [
-                {"Period": a_lbl, "Value": cur, "Label": label_fmt(cur), "Color": cur_color},
-                {"Period": b_lbl, "Value": cmpv, "Label": label_fmt(cmpv), "Color": cmp_color},
-            ]
-        )
-        out["MidX"] = out["Value"] / 2.0
-        return out
-
-    def _render_total_bars(df: pd.DataFrame, title: str, x_title: str):
-        if df.empty:
-            st.info("No total data available.")
-            return
-
-        xmax = float(df["Value"].max()) if not df.empty else 0.0
-        xmax = xmax * 1.08 if xmax > 0 else 1.0
-
-        y_scale = alt.Scale(paddingInner=0.65, paddingOuter=0.45)
-
-        bars = (
-            alt.Chart(df)
-            .mark_bar(cornerRadiusTopRight=6, cornerRadiusBottomRight=6, size=26)
-            .encode(
-                y=alt.Y(
-                    "Period:N",
-                    title="",
-                    sort=df["Period"].tolist(),
-                    axis=alt.Axis(labelFontSize=16, labelColor=TEXT_COLOR),
-                    scale=y_scale,
-                ),
-                x=alt.X(
-                    "Value:Q",
-                    title=x_title,
-                    scale=alt.Scale(domain=[0, xmax]),
-                    axis=alt.Axis(labelFontSize=14, titleFontSize=16, labelColor=TEXT_COLOR, titleColor=TEXT_COLOR),
-                ),
-                color=alt.Color("Color:N", scale=None, legend=None),
-                tooltip=[
-                    alt.Tooltip("Period:N", title="Period"),
-                    alt.Tooltip("Value:Q", title=x_title, format=",.2f" if x_title == "Sales" else ",.0f"),
-                ],
-            )
-            .properties(height=130, title=title)
-        )
-
-        text = (
-            alt.Chart(df)
-            .mark_text(align="center", baseline="middle", **_text_style(font_size=14, color="#111111"))
-            .encode(
-                y=alt.Y("Period:N", sort=df["Period"].tolist(), scale=y_scale),
-                x=alt.X("MidX:Q", scale=alt.Scale(domain=[0, xmax])),
-                text="Label:N",
-            )
-        )
-
-        st.altair_chart(bars + text, use_container_width=True)
-
-    def _contributors_df(level: str) -> pd.DataFrame:
-        drv = drivers(dfA, dfB, level)
-        if drv is None or drv.empty:
-            return pd.DataFrame()
-
-        out = drv.copy()
-        out[level] = out[level].astype(str)
-        out["Label"] = out["Sales_Δ"].map(money)
-        return out
-
-    def _sku_increase_decline_df() -> pd.DataFrame:
-        a = dfA.groupby("SKU", as_index=False).agg(Current=("Sales", "sum"))
-        b = dfB.groupby("SKU", as_index=False).agg(Compare=("Sales", "sum"))
-        out = a.merge(b, on="SKU", how="outer").fillna(0.0)
-        out["Sales_Δ"] = out["Current"] - out["Compare"]
-        out["Label"] = out["Sales_Δ"].map(money)
-        return out
-
-    def _top2_compare_df(dim: str) -> pd.DataFrame:
-        cur = dfA.groupby(dim, as_index=False).agg(Current=("Sales", "sum"))
-        cmpv = dfB.groupby(dim, as_index=False).agg(Compare=("Sales", "sum"))
-        out = cur.merge(cmpv, on=dim, how="outer").fillna(0.0)
-        out["Total"] = out["Current"] + out["Compare"]
-        out = out.sort_values(["Total", dim], ascending=[False, True]).head(2).copy()
-        out["Entity"] = out[dim].astype(str)
-        return out
-
-    def _render_positive_lollipop_list(
-        df: pd.DataFrame,
-        y_col: str,
-        value_col: str,
-        title: str,
-    ):
-        if df.empty:
-            st.info(f"No data available for {title.lower()}.")
-            return
-
-        xmax = float(df[value_col].max()) if not df.empty else 0.0
-        xmax = xmax * 1.15 if xmax > 0 else 1.0
-        df = df.copy()
-        df["Zero"] = 0.0
-
-        rules = (
-            alt.Chart(df)
-            .mark_rule(strokeWidth=2.5, color=POSITIVE_BAR)
-            .encode(
-                y=alt.Y(
-                    f"{y_col}:N",
-                    sort=None,
-                    title="",
-                    axis=alt.Axis(labelLimit=320, labelFontSize=16, labelColor=TEXT_COLOR),
-                ),
-                x=alt.X(
-                    "Zero:Q",
-                    scale=alt.Scale(domain=[0, xmax]),
-                    title="Sales Change",
-                    axis=alt.Axis(labelFontSize=14, titleFontSize=16, labelColor=TEXT_COLOR, titleColor=TEXT_COLOR),
-                ),
-                x2=f"{value_col}:Q",
-            )
-        )
-
-        dots = (
-            alt.Chart(df)
-            .mark_circle(size=160, color=POSITIVE_BAR)
-            .encode(
-                y=alt.Y(
-                    f"{y_col}:N",
-                    sort=None,
-                    title="",
-                    axis=alt.Axis(labelLimit=320, labelFontSize=16, labelColor=TEXT_COLOR),
-                ),
-                x=alt.X(f"{value_col}:Q", scale=alt.Scale(domain=[0, xmax]), title="Sales Change"),
-                tooltip=[
-                    alt.Tooltip(f"{y_col}:N", title="Name"),
-                    alt.Tooltip(f"{value_col}:Q", title="Change", format=",.2f"),
-                ],
-            )
-        )
-
-        text = (
-            alt.Chart(df)
-            .mark_text(dx=8, align="left", **_text_style(font_size=14))
-            .encode(
-                y=alt.Y(
-                    f"{y_col}:N",
-                    sort=None,
-                    title="",
-                    axis=alt.Axis(labelLimit=320, labelFontSize=16, labelColor=TEXT_COLOR),
-                ),
-                x=alt.X(f"{value_col}:Q", scale=alt.Scale(domain=[0, xmax]), title="Sales Change"),
-                text="Label:N",
-            )
-        )
-
-        st.altair_chart(
-            (rules + dots + text).properties(height=max(260, len(df) * 38), title=title),
-            use_container_width=True,
-        )
-
-    def _render_negative_lollipop_list(
-        df: pd.DataFrame,
-        y_col: str,
-        value_col: str,
-        title: str,
-        show_right_labels: bool = False,
-    ):
-        if df.empty:
-            st.info(f"No data available for {title.lower()}.")
-            return
-
-        xmax = float(df[value_col].abs().max()) if not df.empty else 0.0
-        xmax = xmax * 1.15 if xmax > 0 else 1.0
-
-        df = df.copy()
-        df["RightEdge"] = 0.0
-
-        y_axis = (
-            alt.Axis(labels=False, ticks=False, domain=False)
-            if show_right_labels
-            else alt.Axis(labelLimit=320, labelFontSize=16, labelColor=TEXT_COLOR)
-        )
-
-        rules = (
-            alt.Chart(df)
-            .mark_rule(strokeWidth=2.5, color=NEGATIVE_BAR)
-            .encode(
-                y=alt.Y(f"{y_col}:N", sort=None, title="", axis=y_axis),
-                x=alt.X(
-                    "RightEdge:Q",
-                    scale=alt.Scale(domain=[-xmax, 0]),
-                    title="Sales Change",
-                    axis=alt.Axis(labelFontSize=14, titleFontSize=16, labelColor=TEXT_COLOR, titleColor=TEXT_COLOR),
-                ),
-                x2=f"{value_col}:Q",
-            )
-        )
-
-        dots = (
-            alt.Chart(df)
-            .mark_circle(size=160, color=NEGATIVE_BAR)
-            .encode(
-                y=alt.Y(f"{y_col}:N", sort=None, title="", axis=y_axis),
-                x=alt.X(f"{value_col}:Q", scale=alt.Scale(domain=[-xmax, 0]), title="Sales Change"),
-                tooltip=[
-                    alt.Tooltip(f"{y_col}:N", title="Name"),
-                    alt.Tooltip(f"{value_col}:Q", title="Change", format=",.2f"),
-                ],
-            )
-        )
-
-        value_text = (
-            alt.Chart(df)
-            .mark_text(dx=-8, align="right", **_text_style(font_size=14))
-            .encode(
-                y=alt.Y(f"{y_col}:N", sort=None, title="", axis=y_axis),
-                x=alt.X(f"{value_col}:Q", scale=alt.Scale(domain=[-xmax, 0]), title="Sales Change"),
-                text="Label:N",
-            )
-        )
-
-        layers = [rules, dots, value_text]
-
-        if show_right_labels:
-            name_text = (
-                alt.Chart(df)
-                .mark_text(dx=8, align="left", **_text_style(font_size=14))
-                .encode(
-                    y=alt.Y(
-                        f"{y_col}:N",
-                        sort=None,
-                        title="",
-                        axis=alt.Axis(labels=False, ticks=False, domain=False),
-                    ),
-                    x=alt.value(0),
-                    text=f"{y_col}:N",
-                )
-            )
-            layers.append(name_text)
-
-        st.altair_chart(
-            alt.layer(*layers).properties(height=max(260, len(df) * 38), title=title),
-            use_container_width=True,
-        )
-
-    def _render_compare_lollipop(df: pd.DataFrame, title: str):
-        if df.empty:
-            st.info(f"No data available for {title.lower()}.")
-            return
-
-        long_df = pd.DataFrame(
-            [
-                {"Entity": row["Entity"], "Period": a_lbl, "Value": float(row["Current"])}
-                for _, row in df.iterrows()
-            ]
-            + [
-                {"Entity": row["Entity"], "Period": b_lbl, "Value": float(row["Compare"])}
-                for _, row in df.iterrows()
-            ]
-        )
-        long_df["RowLabel"] = long_df["Entity"] + " • " + long_df["Period"]
-        long_df["Label"] = long_df["Value"].map(money)
-        long_df["Zero"] = 0.0
-
-        xmax = float(long_df["Value"].max()) if not long_df.empty else 0.0
-        xmax = xmax * 1.15 if xmax > 0 else 1.0
-
-        rules = (
-            alt.Chart(long_df)
-            .mark_rule(strokeWidth=2.5)
-            .encode(
-                y=alt.Y(
-                    "RowLabel:N",
-                    sort=None,
-                    title="",
-                    axis=alt.Axis(labelLimit=420, labelFontSize=15, labelColor=TEXT_COLOR),
-                ),
-                x=alt.X(
-                    "Zero:Q",
-                    scale=alt.Scale(domain=[0, xmax]),
-                    title="Sales",
-                    axis=alt.Axis(labelFontSize=14, titleFontSize=16, labelColor=TEXT_COLOR, titleColor=TEXT_COLOR),
-                ),
-                x2="Value:Q",
-                color=alt.Color("Period:N", title="", legend=alt.Legend(labelFontSize=14)),
-            )
-        )
-
-        dots = (
-            alt.Chart(long_df)
-            .mark_circle(size=160)
-            .encode(
-                y=alt.Y(
-                    "RowLabel:N",
-                    sort=None,
-                    title="",
-                    axis=alt.Axis(labelLimit=420, labelFontSize=15, labelColor=TEXT_COLOR),
-                ),
-                x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax]), title="Sales"),
-                color=alt.Color("Period:N", title="", legend=None),
-                tooltip=[
-                    alt.Tooltip("Entity:N", title="Name"),
-                    alt.Tooltip("Period:N", title="Period"),
-                    alt.Tooltip("Value:Q", title="Sales", format=",.2f"),
-                ],
-            )
-        )
-
-        text = (
-            alt.Chart(long_df)
-            .mark_text(dx=8, align="left", **_text_style(font_size=13))
-            .encode(
-                y=alt.Y(
-                    "RowLabel:N",
-                    sort=None,
-                    title="",
-                    axis=alt.Axis(labelLimit=420, labelFontSize=15, labelColor=TEXT_COLOR),
-                ),
-                x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax]), title="Sales"),
-                text="Label:N",
-            )
-        )
-
-        st.altair_chart(
-            (rules + dots + text).properties(height=max(220, len(long_df) * 34), title=title),
-            use_container_width=True,
-        )
-
-    st.markdown("### Totals")
-    t1, t2 = st.columns(2)
-    with t1:
-        _render_total_bars(_totals_df("Sales"), "Total Sales • Current vs Compare", "Sales")
-    with t2:
-        _render_total_bars(_totals_df("Units"), "Total Units • Current vs Compare", "Units")
-
-    st.markdown("### Contributors")
-    contrib_df = _contributors_df(driver_level)
-    if contrib_df.empty:
-        st.info("No contributor data available.")
-    else:
-        pos = contrib_df[contrib_df["Sales_Δ"] > 0].sort_values("Sales_Δ", ascending=False).head(10).copy()
-        neg = contrib_df[contrib_df["Sales_Δ"] < 0].sort_values("Sales_Δ", ascending=True).head(10).copy()
-
-        c1, c2 = st.columns(2)
-        with c1:
-            _render_positive_lollipop_list(pos, driver_level, "Sales_Δ", "Top Positive Contributors")
-        with c2:
-            _render_negative_lollipop_list(neg, driver_level, "Sales_Δ", "Top Negative Contributors", show_right_labels=True)
-
-    st.markdown("### SKU Movers")
-    sku_df = _sku_increase_decline_df()
-    inc = sku_df[sku_df["Sales_Δ"] > 0].sort_values("Sales_Δ", ascending=False).head(10).copy()
-    dec = sku_df[sku_df["Sales_Δ"] < 0].sort_values("Sales_Δ", ascending=True).head(10).copy()
-
-    s1, s2 = st.columns(2)
-    with s1:
-        _render_positive_lollipop_list(inc, "SKU", "Sales_Δ", "Top Increasing SKUs")
-    with s2:
-        _render_negative_lollipop_list(dec, "SKU", "Sales_Δ", "Top Declining SKUs", show_right_labels=True)
-
-    st.markdown("### Top 2 Compared Between Current and Compare")
-    r1, r2 = st.columns(2)
-    with r1:
-        _render_compare_lollipop(_top2_compare_df("Retailer"), "Top 2 Retailers")
-    with r2:
-        _render_compare_lollipop(_top2_compare_df("Vendor"), "Top 2 Vendors")
-
-    _render_compare_lollipop(_top2_compare_df("SKU"), "Top 2 SKUs")
