@@ -37,24 +37,15 @@ def render(ctx: dict):
         unsafe_allow_html=True,
     )
 
-    dfA = ctx["dfA"]
-    dfB = ctx["dfB"]
-    kA = ctx["kA"]
-    kB = ctx["kB"]
-    a_lbl = ctx["a_lbl"]
-    b_lbl = ctx["b_lbl"]
-    compare_mode = ctx["compare_mode"]
-    min_sales = ctx["min_sales"]
-
     render_standard_view(
-        dfA=dfA,
-        dfB=dfB,
-        kA=kA,
-        kB=kB,
-        a_lbl=a_lbl,
-        b_lbl=b_lbl,
-        compare_mode=compare_mode,
-        min_sales=min_sales,
+        dfA=ctx["dfA"],
+        dfB=ctx["dfB"],
+        kA=ctx["kA"],
+        kB=ctx["kB"],
+        a_lbl=ctx["a_lbl"],
+        b_lbl=ctx["b_lbl"],
+        compare_mode=ctx["compare_mode"],
+        min_sales=ctx["min_sales"],
     )
 
 
@@ -133,7 +124,7 @@ def render_visual_executive_dashboard(
         level: str,
         metric: str = "Sales",
         top_n: int = 10,
-    ):
+    ) -> pd.DataFrame:
         cur = df_cur.groupby(level, dropna=False, as_index=False).agg(Current=(metric, "sum"))
         cmp = df_cmp.groupby(level, dropna=False, as_index=False).agg(Compare=(metric, "sum"))
         out = cur.merge(cmp, on=level, how="outer").fillna(0.0)
@@ -143,9 +134,8 @@ def render_visual_executive_dashboard(
         out = out.sort_values(["Total", level], ascending=[False, True]).head(top_n).copy()
         return out
 
-    def prep_quarter_stacked(df_cur: pd.DataFrame, df_cmp: pd.DataFrame, metric: str):
-        required = {"Quarter"}
-        if not required.issubset(df_cur.columns) or not required.issubset(df_cmp.columns):
+    def prep_quarter_stacked(df_cur: pd.DataFrame, df_cmp: pd.DataFrame, metric: str) -> pd.DataFrame:
+        if "Quarter" not in df_cur.columns or "Quarter" not in df_cmp.columns:
             return pd.DataFrame()
 
         cur = df_cur.copy()
@@ -169,15 +159,11 @@ def render_visual_executive_dashboard(
         b.rename(columns={metric: "Value"}, inplace=True)
 
         out = pd.concat([a, b], ignore_index=True)
-        if out.empty:
-            return out
-
         out["Quarter"] = pd.Categorical(out["Quarter"], categories=Q_DOMAIN, ordered=True)
         out = out.sort_values(["Period", "Quarter"]).copy()
 
         out["Label"] = out["Value"].map(lambda v: f"{v:,.0f}" if metric == "Units" else money(v))
         out["Start"] = out.groupby("Period")["Value"].cumsum() - out["Value"]
-        out["End"] = out["Start"] + out["Value"]
         out["LabelX"] = out["Start"] + (out["Value"] * 0.08)
 
         total_by_period = out.groupby("Period")["Value"].transform("sum")
@@ -186,7 +172,6 @@ def render_visual_executive_dashboard(
             out["Label"],
             "",
         )
-
         return out
 
     def stacked_total_chart(
@@ -292,16 +277,59 @@ def render_visual_executive_dashboard(
 
         return bars + labels
 
-    def simple_period_block_chart(current_value: float, compare_value: float, current_label: str, compare_label: str):
+    def largest_increase_contributor(df_cur: pd.DataFrame, df_cmp: pd.DataFrame):
+        best_label = "Largest Increase"
+        best_value = 0.0
+
+        if "Retailer" in df_cur.columns and "Retailer" in df_cmp.columns:
+            retailer_cur = df_cur.groupby("Retailer", as_index=False).agg(Current=("Sales", "sum"))
+            retailer_cmp = df_cmp.groupby("Retailer", as_index=False).agg(Compare=("Sales", "sum"))
+            retailer = retailer_cur.merge(retailer_cmp, on="Retailer", how="outer").fillna(0.0)
+            retailer["Delta"] = retailer["Current"] - retailer["Compare"]
+            if not retailer.empty:
+                r = retailer.sort_values("Delta", ascending=False).iloc[0]
+                if float(r["Delta"]) > best_value:
+                    best_label = f'Retailer: {r["Retailer"]}'
+                    best_value = float(r["Delta"])
+
+        if "Vendor" in df_cur.columns and "Vendor" in df_cmp.columns:
+            vendor_cur = df_cur.groupby("Vendor", as_index=False).agg(Current=("Sales", "sum"))
+            vendor_cmp = df_cmp.groupby("Vendor", as_index=False).agg(Compare=("Sales", "sum"))
+            vendor = vendor_cur.merge(vendor_cmp, on="Vendor", how="outer").fillna(0.0)
+            vendor["Delta"] = vendor["Current"] - vendor["Compare"]
+            if not vendor.empty:
+                v = vendor.sort_values("Delta", ascending=False).iloc[0]
+                if float(v["Delta"]) > best_value:
+                    best_label = f'Vendor: {v["Vendor"]}'
+                    best_value = float(v["Delta"])
+
+        return best_label, best_value
+
+    def simple_period_block_chart(
+        current_value: float,
+        compare_value: float,
+        current_label: str,
+        compare_label: str,
+        largest_inc_label: str,
+        largest_inc_value: float,
+    ):
         BLOCK_VALUE = 10000.0
 
-        def block_label(v: float) -> str:
+        def block_piece_label(v: float) -> str:
             av = abs(v)
             if av >= 1000:
                 return f"${av/1000:.0f}k"
             return f"${av:,.0f}"
 
-        def make_blocks(label: str, value: float, color_hex: str):
+        def total_label(v: float) -> str:
+            av = abs(v)
+            if av >= 1000000:
+                return f"${v/1000000:.2f}M"
+            if av >= 1000:
+                return f"${v/1000:.0f}k"
+            return f"${v:,.0f}"
+
+        def make_blocks(label: str, value: float, color_hex: str) -> pd.DataFrame:
             rows = []
             if value <= 0:
                 return pd.DataFrame(
@@ -326,20 +354,22 @@ def render_visual_executive_dashboard(
                         "X0": start,
                         "X1": end,
                         "Center": (start + end) / 2.0,
-                        "BlockText": block_label(piece),
+                        "BlockText": block_piece_label(piece),
                         "ColorHex": color_hex,
                     }
                 )
             return pd.DataFrame(rows)
 
-        current_blocks = make_blocks(current_label, float(current_value), "#1f77b4")
         compare_blocks = make_blocks(compare_label, float(compare_value), "#ff7f0e")
-        block_df = pd.concat([current_blocks, compare_blocks], ignore_index=True)
+        increase_blocks = make_blocks(largest_inc_label, float(max(largest_inc_value, 0.0)), "#2e7d32")
+        current_blocks = make_blocks(current_label, float(current_value), "#1f77b4")
 
-        xmax = max(float(current_value), float(compare_value))
+        block_df = pd.concat([compare_blocks, increase_blocks, current_blocks], ignore_index=True)
+
+        xmax = max(float(current_value), float(compare_value), float(max(largest_inc_value, 0.0)))
         xmax = max(BLOCK_VALUE, np.ceil(xmax / BLOCK_VALUE) * BLOCK_VALUE)
 
-        order = [current_label, compare_label]
+        order = [compare_label, largest_inc_label, current_label]
 
         bars = (
             alt.Chart(block_df)
@@ -354,10 +384,10 @@ def render_visual_executive_dashboard(
                     alt.Tooltip("BlockText:N", title="Block"),
                 ],
             )
-            .properties(height=140)
+            .properties(height=190)
         )
 
-        labels = (
+        block_labels = (
             alt.Chart(block_df)
             .mark_text(fontSize=10, fontWeight="bold", color="white")
             .encode(
@@ -367,9 +397,43 @@ def render_visual_executive_dashboard(
             )
         )
 
-        return bars + labels
+        totals_df = pd.DataFrame(
+            [
+                {
+                    "Period": compare_label,
+                    "X": float(compare_value),
+                    "Text": total_label(float(compare_value)),
+                    "ColorHex": "#ff7f0e",
+                },
+                {
+                    "Period": largest_inc_label,
+                    "X": float(max(largest_inc_value, 0.0)),
+                    "Text": total_label(float(max(largest_inc_value, 0.0))),
+                    "ColorHex": "#2e7d32",
+                },
+                {
+                    "Period": current_label,
+                    "X": float(current_value),
+                    "Text": total_label(float(current_value)),
+                    "ColorHex": "#1f77b4",
+                },
+            ]
+        )
 
-    def prep_grouped_share(df: pd.DataFrame, dim_name: str):
+        total_labels = (
+            alt.Chart(totals_df)
+            .mark_text(align="left", dx=8, fontSize=12, fontWeight="bold")
+            .encode(
+                y=alt.Y("Period:N", sort=order),
+                x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
+                text="Text:N",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+            )
+        )
+
+        return bars + block_labels + total_labels
+
+    def prep_grouped_share(df: pd.DataFrame, dim_name: str) -> pd.DataFrame:
         if df.empty:
             return pd.DataFrame(
                 columns=[dim_name, "Series", "Value", "SharePct", "Label", "SortTotal", "Start", "RowColor"]
@@ -596,12 +660,15 @@ def render_visual_executive_dashboard(
 
     st.write("")
 
+    inc_label, inc_value = largest_increase_contributor(dfA, dfB)
     st.markdown(f"#### Sales Blocks ({a_lbl} vs {b_lbl})")
     block_chart = simple_period_block_chart(
         current_value=float(kA["Sales"]),
         compare_value=float(kB["Sales"]),
         current_label=a_lbl,
         compare_label=b_lbl,
+        largest_inc_label=inc_label,
+        largest_inc_value=float(inc_value),
     )
     st.altair_chart(block_chart, use_container_width=True)
 
