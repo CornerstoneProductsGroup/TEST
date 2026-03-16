@@ -537,8 +537,7 @@ def render_visual_executive_dashboard(
 
         steps.append({"Label": a_lbl, "Amount": current_total, "Type": "total"})
 
-        wf = pd.DataFrame(steps)
-        return wf
+        return pd.DataFrame(steps)
 
     def waterfall_chart(wf: pd.DataFrame, height: int = 560):
         if wf.empty:
@@ -549,6 +548,15 @@ def render_visual_executive_dashboard(
         blue_top = "#1f77b4"
         green_pos = "#2e7d32"
         red_neg = "#c62828"
+
+        def block_label(v: float) -> str:
+            av = abs(v)
+            if av >= 1000:
+                s = f"${av/1000:.1f}k"
+                s = s.replace(".0k", "k")
+            else:
+                s = f"${av:,.0f}"
+            return s if v >= 0 else f"-{s}"
 
         top_label = str(wf.iloc[0]["Label"])
         bottom_label = str(wf.iloc[-1]["Label"])
@@ -561,11 +569,11 @@ def render_visual_executive_dashboard(
 
         def make_block_rows(label: str, value: float, color_hex: str, section: str):
             rows = []
-            if value == 0:
+            if abs(value) < 1e-9:
                 rows.append(
                     {
                         "Label": label,
-                        "BlockNum": 0,
+                        "BlockNum": 1,
                         "X0": 0.0,
                         "X1": 0.0,
                         "BlockCenter": 0.0,
@@ -583,15 +591,16 @@ def render_visual_executive_dashboard(
             for i in range(n_blocks):
                 start_mag = i * BLOCK_VALUE
                 end_mag = min((i + 1) * BLOCK_VALUE, abs_val)
+                piece = end_mag - start_mag
 
                 if sign > 0:
                     x0 = start_mag
                     x1 = end_mag
-                    block_amt = end_mag - start_mag
+                    block_amt = piece
                 else:
                     x0 = -end_mag
                     x1 = -start_mag
-                    block_amt = -(end_mag - start_mag)
+                    block_amt = -piece
 
                 rows.append(
                     {
@@ -600,7 +609,7 @@ def render_visual_executive_dashboard(
                         "X0": x0,
                         "X1": x1,
                         "BlockCenter": (x0 + x1) / 2.0,
-                        "BlockText": money(block_amt),
+                        "BlockText": block_label(block_amt),
                         "ColorHex": color_hex,
                         "Section": section,
                     }
