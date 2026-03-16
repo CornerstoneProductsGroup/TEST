@@ -292,6 +292,83 @@ def render_visual_executive_dashboard(
 
         return bars + labels
 
+    def simple_period_block_chart(current_value: float, compare_value: float, current_label: str, compare_label: str):
+        BLOCK_VALUE = 10000.0
+
+        def block_label(v: float) -> str:
+            av = abs(v)
+            if av >= 1000:
+                return f"${av/1000:.0f}k"
+            return f"${av:,.0f}"
+
+        def make_blocks(label: str, value: float, color_hex: str):
+            rows = []
+            if value <= 0:
+                return pd.DataFrame(
+                    [{
+                        "Period": label,
+                        "X0": 0.0,
+                        "X1": 0.0,
+                        "Center": 0.0,
+                        "BlockText": "$0",
+                        "ColorHex": color_hex,
+                    }]
+                )
+
+            n_blocks = int(np.ceil(value / BLOCK_VALUE))
+            for i in range(n_blocks):
+                start = i * BLOCK_VALUE
+                end = min((i + 1) * BLOCK_VALUE, value)
+                piece = end - start
+                rows.append(
+                    {
+                        "Period": label,
+                        "X0": start,
+                        "X1": end,
+                        "Center": (start + end) / 2.0,
+                        "BlockText": block_label(piece),
+                        "ColorHex": color_hex,
+                    }
+                )
+            return pd.DataFrame(rows)
+
+        current_blocks = make_blocks(current_label, float(current_value), "#1f77b4")
+        compare_blocks = make_blocks(compare_label, float(compare_value), "#ff7f0e")
+        block_df = pd.concat([current_blocks, compare_blocks], ignore_index=True)
+
+        xmax = max(float(current_value), float(compare_value))
+        xmax = max(BLOCK_VALUE, np.ceil(xmax / BLOCK_VALUE) * BLOCK_VALUE)
+
+        order = [current_label, compare_label]
+
+        bars = (
+            alt.Chart(block_df)
+            .mark_rect(stroke="white", strokeWidth=1)
+            .encode(
+                y=alt.Y("Period:N", sort=order, title=""),
+                x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, xmax])),
+                x2="X1:Q",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+                tooltip=[
+                    alt.Tooltip("Period:N", title="Period"),
+                    alt.Tooltip("BlockText:N", title="Block"),
+                ],
+            )
+            .properties(height=140)
+        )
+
+        labels = (
+            alt.Chart(block_df)
+            .mark_text(fontSize=10, fontWeight="bold", color="white")
+            .encode(
+                y=alt.Y("Period:N", sort=order),
+                x=alt.X("Center:Q", scale=alt.Scale(domain=[0, xmax])),
+                text="BlockText:N",
+            )
+        )
+
+        return bars + labels
+
     def prep_grouped_share(df: pd.DataFrame, dim_name: str):
         if df.empty:
             return pd.DataFrame(
@@ -516,6 +593,17 @@ def render_visual_executive_dashboard(
         kpi_card("Total Units", f"{kA['Units']:,.0f}", delta_html(kA["Units"], kB["Units"], False))
     with c3:
         kpi_card("Avg Selling Price", money(kA["ASP"]), delta_html(kA["ASP"], kB["ASP"], True))
+
+    st.write("")
+
+    st.markdown("#### Period Block View")
+    block_chart = simple_period_block_chart(
+        current_value=float(kA["Sales"]),
+        compare_value=float(kB["Sales"]),
+        current_label=a_lbl,
+        compare_label=b_lbl,
+    )
+    st.altair_chart(block_chart, use_container_width=True)
 
     st.write("")
 
