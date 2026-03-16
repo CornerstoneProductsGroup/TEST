@@ -579,7 +579,7 @@ def render_visual_executive_dashboard(
         wf["LabelY"] = np.where(wf["Type"] == "negative", wf["BarStart"], wf["BarEnd"])
         return wf
 
-    def waterfall_chart(wf: pd.DataFrame, height: int = 420):
+    def waterfall_chart(wf: pd.DataFrame, height: int = 520):
         if wf.empty:
             return None
 
@@ -588,15 +588,15 @@ def render_visual_executive_dashboard(
             range=[POSITIVE_BAR, NEGATIVE_BAR, TOTAL_BAR],
         )
 
-        x_sort = wf["Label"].tolist()
+        y_sort = wf["Label"].tolist()
 
         bars = (
             alt.Chart(wf)
             .mark_bar()
             .encode(
-                x=alt.X("Label:N", sort=x_sort, title=""),
-                y=alt.Y("BarStart:Q", title="Sales"),
-                y2="BarEnd:Q",
+                y=alt.Y("Label:N", sort=y_sort, title=""),
+                x=alt.X("BarStart:Q", title="Sales"),
+                x2="BarEnd:Q",
                 color=alt.Color("ColorType:N", scale=color_scale, legend=None),
                 tooltip=[
                     alt.Tooltip("Label:N", title="Category"),
@@ -610,16 +610,16 @@ def render_visual_executive_dashboard(
         connector_df = wf.iloc[1:-1].copy()
         if not connector_df.empty:
             connector_df["PrevEnd"] = wf["Y1"].shift(1).iloc[1:-1].values
-            connector_df["XPrev"] = wf["Label"].shift(1).iloc[1:-1].values
-            connector_df["XCurr"] = connector_df["Label"]
+            connector_df["YPrev"] = wf["Label"].shift(1).iloc[1:-1].values
+            connector_df["YCurr"] = connector_df["Label"]
 
             connectors = (
                 alt.Chart(connector_df)
                 .mark_rule(color="#999999", strokeDash=[4, 3])
                 .encode(
-                    x=alt.X("XPrev:N", sort=x_sort),
-                    x2=alt.X2("XCurr:N"),
-                    y=alt.Y("PrevEnd:Q"),
+                    y=alt.Y("YPrev:N", sort=y_sort),
+                    y2=alt.Y2("YCurr:N"),
+                    x=alt.X("PrevEnd:Q"),
                 )
             )
         else:
@@ -630,20 +630,20 @@ def render_visual_executive_dashboard(
 
         pos_labels = (
             alt.Chart(pos_labels_df)
-            .mark_text(fontSize=12, fontWeight="bold", dy=-8, color="#111111")
+            .mark_text(fontSize=12, fontWeight="bold", dx=8, align="left", color="#111111")
             .encode(
-                x=alt.X("Label:N", sort=x_sort),
-                y=alt.Y("LabelY:Q"),
+                y=alt.Y("Label:N", sort=y_sort),
+                x=alt.X("LabelY:Q"),
                 text=alt.Text("DisplayAmount:N"),
             )
         )
 
         neg_labels = (
             alt.Chart(neg_labels_df)
-            .mark_text(fontSize=12, fontWeight="bold", dy=12, color="#111111")
+            .mark_text(fontSize=12, fontWeight="bold", dx=-8, align="right", color="#111111")
             .encode(
-                x=alt.X("Label:N", sort=x_sort),
-                y=alt.Y("LabelY:Q"),
+                y=alt.Y("Label:N", sort=y_sort),
+                x=alt.X("LabelY:Q"),
                 text=alt.Text("DisplayAmount:N"),
             )
         )
@@ -689,13 +689,13 @@ def render_visual_executive_dashboard(
     retailer_wf = prep_waterfall_bridge(dfA, dfB, "Retailer", top_n_each_side=8)
     if not retailer_wf.empty:
         st.markdown("#### Retailer Contribution to Change")
-        retailer_chart = waterfall_chart(retailer_wf, height=420)
+        retailer_chart = waterfall_chart(retailer_wf, height=520)
         st.altair_chart(retailer_chart, use_container_width=True)
 
     vendor_wf = prep_waterfall_bridge(dfA, dfB, "Vendor", top_n_each_side=8)
     if not vendor_wf.empty:
         st.markdown("#### Vendor Contribution to Change")
-        vendor_chart = waterfall_chart(vendor_wf, height=420)
+        vendor_chart = waterfall_chart(vendor_wf, height=520)
         st.altair_chart(vendor_chart, use_container_width=True)
 
     retailer = prep_compare_metric(dfA, dfB, "Retailer", metric="Sales", top_n=10)
