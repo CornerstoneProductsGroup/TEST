@@ -873,12 +873,12 @@ def render_visual_only(ctx: dict):
     NEUTRAL_BAR = "#808080"
 
     theme_base = st.get_option("theme.base") or "light"
-    IS_DARK = str(theme_base).lower() == "dark"
+    is_dark = str(theme_base).lower() == "dark"
 
-    AXIS_TEXT_COLOR = "#F3F4F6" if IS_DARK else "#111111"
-    TITLE_TEXT_COLOR = "#F3F4F6" if IS_DARK else "#111111"
+    AXIS_TEXT_COLOR = "#F3F4F6" if is_dark else "#111111"
+    TITLE_TEXT_COLOR = "#F3F4F6" if is_dark else "#111111"
     LABEL_INSIDE_BAR_COLOR = "#000000"
-    TEXT_STROKE_COLOR = "#111111" if IS_DARK else "#FFFFFF"
+    OUTLINE_COLOR = "#111111" if is_dark else "#FFFFFF"
 
     TOTAL_BLOCK_VALUE = 30000.0
     CHANGE_BLOCK_VALUE = 1000.0
@@ -893,7 +893,7 @@ def render_visual_only(ctx: dict):
             "fontSize": font_size,
             "fontWeight": "bold",
             "color": color,
-            "stroke": TEXT_STROKE_COLOR,
+            "stroke": OUTLINE_COLOR,
             "strokeWidth": 0.6,
         }
 
@@ -941,7 +941,7 @@ def render_visual_only(ctx: dict):
                         labelColor=AXIS_TEXT_COLOR,
                         labelLimit=220,
                     ),
-                    scale=alt.Scale(paddingInner=0.55, paddingOuter=0.30),
+                    scale=alt.Scale(paddingInner=0.60, paddingOuter=0.32),
                 ),
                 x=alt.X(
                     "Value:Q",
@@ -961,7 +961,7 @@ def render_visual_only(ctx: dict):
                 ],
             )
             .properties(
-                height=240,
+                height=250,
                 title=alt.TitleParams(
                     title,
                     fontSize=CHART_TITLE_FONTSIZE,
