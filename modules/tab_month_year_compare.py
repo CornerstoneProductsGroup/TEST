@@ -636,7 +636,7 @@ def render_visual_executive_dashboard(
             f"{dim_name}:N",
             sort=alt.SortField(field="SortTotal", order="descending"),
             title="",
-            scale=alt.Scale(paddingInner=0.70, paddingOuter=0.40),
+            scale=alt.Scale(paddingInner=0.30, paddingOuter=0.16),
         )
 
         yoff_enc = alt.YOffset(
