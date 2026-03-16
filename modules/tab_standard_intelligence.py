@@ -871,18 +871,24 @@ def render_visual_only(ctx: dict):
     POSITIVE_BAR = "#2e7d32"
     NEGATIVE_BAR = "#c62828"
     NEUTRAL_BAR = "#808080"
-    TEXT_COLOR = "#1a1a1a"
+    THEME_TEXT = "var(--text-color)"
+    THEME_BG_STROKE = "var(--background-color)"
 
     TOTAL_BLOCK_VALUE = 30000.0
     CHANGE_BLOCK_VALUE = 1000.0
 
-    def _text_style(font_size: int = 15, color: str = TEXT_COLOR):
+    AXIS_LABEL_FONTSIZE = 14
+    AXIS_TITLE_FONTSIZE = 15
+    CHART_TITLE_FONTSIZE = 18
+    Y_LABEL_LIMIT = 260
+
+    def _text_style(font_size: int = 15, color: str = THEME_TEXT):
         return {
             "fontSize": font_size,
             "fontWeight": "bold",
             "color": color,
-            "stroke": "#f5f5f5",
-            "strokeWidth": 0.5,
+            "stroke": THEME_BG_STROKE,
+            "strokeWidth": 0.75,
         }
 
     def _format_metric(v: float, metric: str) -> str:
@@ -914,23 +920,33 @@ def render_visual_only(ctx: dict):
             return
 
         xmax = float(df["Value"].max()) if not df.empty else 0.0
-        xmax = xmax * 1.03 if xmax > 0 else 1.0
+        xmax = xmax * 1.04 if xmax > 0 else 1.0
 
         bars = (
             alt.Chart(df)
-            .mark_bar(cornerRadiusTopRight=7, cornerRadiusBottomRight=7, size=30)
+            .mark_bar(cornerRadiusTopRight=7, cornerRadiusBottomRight=7, size=36)
             .encode(
                 y=alt.Y(
                     "Period:N",
                     title="",
                     sort=[a_lbl, b_lbl],
-                    axis=alt.Axis(labelFontSize=15, labelColor=TEXT_COLOR),
+                    axis=alt.Axis(
+                        labelFontSize=16,
+                        labelColor=THEME_TEXT,
+                        labelLimit=220,
+                    ),
+                    scale=alt.Scale(paddingInner=0.45, paddingOuter=0.25),
                 ),
                 x=alt.X(
                     "Value:Q",
                     title=axis_title,
                     scale=alt.Scale(domain=[0, xmax]),
-                    axis=alt.Axis(labelFontSize=13, titleFontSize=14, labelColor=TEXT_COLOR, titleColor=TEXT_COLOR),
+                    axis=alt.Axis(
+                        labelFontSize=AXIS_LABEL_FONTSIZE,
+                        titleFontSize=AXIS_TITLE_FONTSIZE,
+                        labelColor=THEME_TEXT,
+                        titleColor=THEME_TEXT,
+                    ),
                 ),
                 color=alt.Color("Color:N", scale=None, legend=None),
                 tooltip=[
@@ -938,12 +954,12 @@ def render_visual_only(ctx: dict):
                     alt.Tooltip("Value:Q", title=axis_title, format=",.2f" if axis_title == "Sales" else ",.0f"),
                 ],
             )
-            .properties(height=145, title=title)
+            .properties(height=190, title=alt.TitleParams(title, fontSize=CHART_TITLE_FONTSIZE, color=THEME_TEXT))
         )
 
         labels = (
             alt.Chart(df)
-            .mark_text(align="center", baseline="middle", **_text_style(font_size=14, color="#111111"))
+            .mark_text(align="center", baseline="middle", **_text_style(font_size=15, color=THEME_TEXT))
             .encode(
                 y=alt.Y("Period:N", sort=[a_lbl, b_lbl]),
                 x=alt.X("MidX:Q", scale=alt.Scale(domain=[0, xmax])),
@@ -1036,7 +1052,11 @@ def render_visual_only(ctx: dict):
         row_df = pd.DataFrame(rows)
 
         total_max = float(max(compare_value, current_value, TOTAL_BLOCK_VALUE))
-        change_max = float(row_df.loc[row_df["Kind"] == "change", "Value"].max()) if (row_df["Kind"] == "change").any() else CHANGE_BLOCK_VALUE
+        change_max = (
+            float(row_df.loc[row_df["Kind"] == "change", "Value"].max())
+            if (row_df["Kind"] == "change").any()
+            else CHANGE_BLOCK_VALUE
+        )
         change_max = max(change_max, CHANGE_BLOCK_VALUE)
 
         center_from_compare = compare_value / 2.0
@@ -1100,13 +1120,22 @@ def render_visual_only(ctx: dict):
                         "Period:N",
                         sort=order,
                         title="",
-                        axis=alt.Axis(labelFontSize=14, labelColor=TEXT_COLOR, labelLimit=220),
+                        axis=alt.Axis(
+                            labelFontSize=AXIS_LABEL_FONTSIZE,
+                            labelColor=THEME_TEXT,
+                            labelLimit=220,
+                        ),
                     ),
                     x=alt.X(
                         "X0:Q",
                         title="Sales",
                         scale=alt.Scale(domain=[0, xmax]),
-                        axis=alt.Axis(labelFontSize=12, titleFontSize=13, labelColor=TEXT_COLOR, titleColor=TEXT_COLOR),
+                        axis=alt.Axis(
+                            labelFontSize=AXIS_LABEL_FONTSIZE,
+                            titleFontSize=AXIS_TITLE_FONTSIZE,
+                            labelColor=THEME_TEXT,
+                            titleColor=THEME_TEXT,
+                        ),
                     ),
                     x2="X1:Q",
                 )
@@ -1146,7 +1175,10 @@ def render_visual_only(ctx: dict):
             )
         )
 
-        return alt.layer(*layers).properties(height=max(260, len(order) * 40))
+        return alt.layer(*layers).properties(
+            height=max(300, len(order) * 42),
+            title=alt.TitleParams("Sales Contribution Change by Retailer", fontSize=CHART_TITLE_FONTSIZE, color=THEME_TEXT),
+        )
 
     def _vendor_delta_df() -> pd.DataFrame:
         cur = dfA.groupby("Vendor", as_index=False).agg(Current=("Sales", "sum"))
@@ -1180,7 +1212,11 @@ def render_visual_only(ctx: dict):
             f"{y_col}:N",
             sort=alt.SortField(field="Sales_Δ", order="descending"),
             title="",
-            axis=alt.Axis(labelFontSize=14, labelColor=TEXT_COLOR, labelLimit=260),
+            axis=alt.Axis(
+                labelFontSize=AXIS_LABEL_FONTSIZE,
+                labelColor=THEME_TEXT,
+                labelLimit=Y_LABEL_LIMIT,
+            ),
         )
 
         rules = (
@@ -1188,7 +1224,17 @@ def render_visual_only(ctx: dict):
             .mark_rule(strokeWidth=2.5, color=POSITIVE_BAR)
             .encode(
                 y=y_enc,
-                x=alt.X("Zero:Q", title="Sales Change", scale=alt.Scale(domain=[0, xmax])),
+                x=alt.X(
+                    "Zero:Q",
+                    title="Sales Change",
+                    scale=alt.Scale(domain=[0, xmax]),
+                    axis=alt.Axis(
+                        labelFontSize=AXIS_LABEL_FONTSIZE,
+                        titleFontSize=AXIS_TITLE_FONTSIZE,
+                        labelColor=THEME_TEXT,
+                        titleColor=THEME_TEXT,
+                    ),
+                ),
                 x2="Sales_Δ:Q",
             )
         )
@@ -1218,7 +1264,13 @@ def render_visual_only(ctx: dict):
             )
         )
 
-        st.altair_chart((rules + dots + labels).properties(height=max(260, len(df) * 38), title=title), use_container_width=True)
+        st.altair_chart(
+            (rules + dots + labels).properties(
+                height=max(280, len(df) * 40),
+                title=alt.TitleParams(title, fontSize=CHART_TITLE_FONTSIZE, color=THEME_TEXT),
+            ),
+            use_container_width=True,
+        )
 
     def _render_negative_lollipop(df: pd.DataFrame, y_col: str, title: str, show_right_labels: bool = True):
         if df.empty:
@@ -1230,15 +1282,38 @@ def render_visual_only(ctx: dict):
         xmax = float(df["Sales_Δ"].abs().max()) if not df.empty else 0.0
         xmax = xmax * 1.15 if xmax > 0 else 1.0
 
-        y_axis = alt.Axis(labels=False, ticks=False, domain=False) if show_right_labels else alt.Axis(labelFontSize=14, labelColor=TEXT_COLOR, labelLimit=260)
-        y_enc = alt.Y(f"{y_col}:N", sort=alt.SortField(field="Sales_Δ", order="ascending"), title="", axis=y_axis)
+        y_axis = (
+            alt.Axis(labels=False, ticks=False, domain=False)
+            if show_right_labels
+            else alt.Axis(
+                labelFontSize=AXIS_LABEL_FONTSIZE,
+                labelColor=THEME_TEXT,
+                labelLimit=Y_LABEL_LIMIT,
+            )
+        )
+        y_enc = alt.Y(
+            f"{y_col}:N",
+            sort=alt.SortField(field="Sales_Δ", order="ascending"),
+            title="",
+            axis=y_axis,
+        )
 
         rules = (
             alt.Chart(df)
             .mark_rule(strokeWidth=2.5, color=NEGATIVE_BAR)
             .encode(
                 y=y_enc,
-                x=alt.X("Zero:Q", title="Sales Change", scale=alt.Scale(domain=[-xmax, 0])),
+                x=alt.X(
+                    "Zero:Q",
+                    title="Sales Change",
+                    scale=alt.Scale(domain=[-xmax, 0]),
+                    axis=alt.Axis(
+                        labelFontSize=AXIS_LABEL_FONTSIZE,
+                        titleFontSize=AXIS_TITLE_FONTSIZE,
+                        labelColor=THEME_TEXT,
+                        titleColor=THEME_TEXT,
+                    ),
+                ),
                 x2="Sales_Δ:Q",
             )
         )
@@ -1273,15 +1348,26 @@ def render_visual_only(ctx: dict):
         if show_right_labels:
             layers.append(
                 alt.Chart(df)
-                .mark_text(align="left", dx=8, **_text_style(font_size=13, color=TEXT_COLOR))
+                .mark_text(align="left", dx=8, **_text_style(font_size=13, color=THEME_TEXT))
                 .encode(
-                    y=alt.Y(f"{y_col}:N", sort=alt.SortField(field="Sales_Δ", order="ascending"), title="", axis=alt.Axis(labels=False, ticks=False, domain=False)),
+                    y=alt.Y(
+                        f"{y_col}:N",
+                        sort=alt.SortField(field="Sales_Δ", order="ascending"),
+                        title="",
+                        axis=alt.Axis(labels=False, ticks=False, domain=False),
+                    ),
                     x=alt.value(0),
                     text=f"{y_col}:N",
                 )
             )
 
-        st.altair_chart(alt.layer(*layers).properties(height=max(260, len(df) * 38), title=title), use_container_width=True)
+        st.altair_chart(
+            alt.layer(*layers).properties(
+                height=max(280, len(df) * 40),
+                title=alt.TitleParams(title, fontSize=CHART_TITLE_FONTSIZE, color=THEME_TEXT),
+            ),
+            use_container_width=True,
+        )
 
     sales_col, units_col = st.columns(2)
 
@@ -1291,7 +1377,6 @@ def render_visual_only(ctx: dict):
     with units_col:
         _render_total_bars(_totals_df("Units"), "Total Units", "Units")
 
-    st.markdown("#### Sales Contribution Change by Retailer")
     st.caption("Total bars: 1 block = $30,000 • Retailer change bars: 1 block = $1,000")
 
     retailer_changes = _collect_retailer_change_rows(dfA, dfB)
