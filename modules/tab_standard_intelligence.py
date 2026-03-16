@@ -861,7 +861,6 @@ def render_visual_only(ctx: dict):
     a_lbl = ctx["a_lbl"]
     b_lbl = ctx["b_lbl"]
     compare_mode = ctx["compare_mode"]
-    driver_level = ctx["driver_level"]
 
     st.subheader("Standard Intelligence • Visual Analytics")
 
@@ -874,392 +873,451 @@ def render_visual_only(ctx: dict):
     NEUTRAL_BAR = "#808080"
     TEXT_COLOR = "#1a1a1a"
 
-    def _text_style(font_size: int = 16, color: str = TEXT_COLOR):
+    TOTAL_BLOCK_VALUE = 30000.0
+    CHANGE_BLOCK_VALUE = 1000.0
+
+    def _text_style(font_size: int = 15, color: str = TEXT_COLOR):
         return {
             "fontSize": font_size,
-            "fontWeight": "normal",
+            "fontWeight": "bold",
             "color": color,
             "stroke": "#f5f5f5",
-            "strokeWidth": 0.6,
+            "strokeWidth": 0.5,
         }
+
+    def _format_metric(v: float, metric: str) -> str:
+        return money(float(v)) if metric == "Sales" else f"{float(v):,.0f}"
 
     def _totals_df(metric: str) -> pd.DataFrame:
         cur = float(kA.get(metric, 0.0))
         cmpv = float(kB.get(metric, 0.0))
 
         if cur > cmpv:
-            cur_color = POSITIVE_BAR
-            cmp_color = NEGATIVE_BAR
+            cur_color, cmp_color = POSITIVE_BAR, NEGATIVE_BAR
         elif cur < cmpv:
-            cur_color = NEGATIVE_BAR
-            cmp_color = POSITIVE_BAR
+            cur_color, cmp_color = NEGATIVE_BAR, POSITIVE_BAR
         else:
-            cur_color = NEUTRAL_BAR
-            cmp_color = NEUTRAL_BAR
+            cur_color = cmp_color = NEUTRAL_BAR
 
-        label_fmt = money if metric == "Sales" else (lambda x: f"{x:,.0f}")
         out = pd.DataFrame(
             [
-                {"Period": a_lbl, "Value": cur, "Label": label_fmt(cur), "Color": cur_color},
-                {"Period": b_lbl, "Value": cmpv, "Label": label_fmt(cmpv), "Color": cmp_color},
+                {"Period": a_lbl, "Value": cur, "Label": _format_metric(cur, metric), "Color": cur_color},
+                {"Period": b_lbl, "Value": cmpv, "Label": _format_metric(cmpv, metric), "Color": cmp_color},
             ]
         )
         out["MidX"] = out["Value"] / 2.0
         return out
 
-    def _render_total_bars(df: pd.DataFrame, title: str, x_title: str):
+    def _render_total_bars(df: pd.DataFrame, title: str, axis_title: str):
         if df.empty:
-            st.info("No total data available.")
+            st.info(f"No data available for {title.lower()}.")
             return
 
         xmax = float(df["Value"].max()) if not df.empty else 0.0
-        xmax = xmax * 1.08 if xmax > 0 else 1.0
-
-        y_scale = alt.Scale(paddingInner=0.65, paddingOuter=0.45)
+        xmax = xmax * 1.03 if xmax > 0 else 1.0
 
         bars = (
             alt.Chart(df)
-            .mark_bar(cornerRadiusTopRight=6, cornerRadiusBottomRight=6, size=26)
+            .mark_bar(cornerRadiusTopRight=7, cornerRadiusBottomRight=7, size=30)
             .encode(
                 y=alt.Y(
                     "Period:N",
                     title="",
-                    sort=df["Period"].tolist(),
-                    axis=alt.Axis(labelFontSize=16, labelColor=TEXT_COLOR),
-                    scale=y_scale,
+                    sort=[a_lbl, b_lbl],
+                    axis=alt.Axis(labelFontSize=15, labelColor=TEXT_COLOR),
                 ),
                 x=alt.X(
                     "Value:Q",
-                    title=x_title,
+                    title=axis_title,
                     scale=alt.Scale(domain=[0, xmax]),
-                    axis=alt.Axis(labelFontSize=14, titleFontSize=16, labelColor=TEXT_COLOR, titleColor=TEXT_COLOR),
+                    axis=alt.Axis(labelFontSize=13, titleFontSize=14, labelColor=TEXT_COLOR, titleColor=TEXT_COLOR),
                 ),
                 color=alt.Color("Color:N", scale=None, legend=None),
                 tooltip=[
                     alt.Tooltip("Period:N", title="Period"),
-                    alt.Tooltip("Value:Q", title=x_title, format=",.2f" if x_title == "Sales" else ",.0f"),
+                    alt.Tooltip("Value:Q", title=axis_title, format=",.2f" if axis_title == "Sales" else ",.0f"),
                 ],
             )
-            .properties(height=130, title=title)
+            .properties(height=145, title=title)
         )
 
-        text = (
+        labels = (
             alt.Chart(df)
             .mark_text(align="center", baseline="middle", **_text_style(font_size=14, color="#111111"))
             .encode(
-                y=alt.Y("Period:N", sort=df["Period"].tolist(), scale=y_scale),
+                y=alt.Y("Period:N", sort=[a_lbl, b_lbl]),
                 x=alt.X("MidX:Q", scale=alt.Scale(domain=[0, xmax])),
                 text="Label:N",
             )
         )
 
-        st.altair_chart(bars + text, use_container_width=True)
+        st.altair_chart(bars + labels, use_container_width=True)
 
-    def _contributors_df(level: str) -> pd.DataFrame:
-        drv = drivers(dfA, dfB, level)
-        if drv is None or drv.empty:
-            return pd.DataFrame()
+    def _collect_retailer_change_rows(df_cur: pd.DataFrame, df_cmp: pd.DataFrame) -> pd.DataFrame:
+        cur = df_cur.groupby("Retailer", as_index=False).agg(Current=("Sales", "sum"))
+        cmpv = df_cmp.groupby("Retailer", as_index=False).agg(Compare=("Sales", "sum"))
+        out = cur.merge(cmpv, on="Retailer", how="outer").fillna(0.0)
+        out["Label"] = out["Retailer"].astype(str)
+        out["Delta"] = out["Current"] - out["Compare"]
+        out = out[np.isfinite(out["Delta"])].copy()
+        out = out[out["Delta"] != 0].copy()
 
-        out = drv.copy()
-        out[level] = out[level].astype(str)
-        out["Label"] = out["Sales_Δ"].map(money)
-        return out
+        pos = out[out["Delta"] > 0].sort_values(["Delta", "Label"], ascending=[False, True]).copy()
+        neg = out[out["Delta"] < 0].sort_values(["Delta", "Label"], ascending=[True, True]).copy()
 
-    def _sku_increase_decline_df() -> pd.DataFrame:
-        a = dfA.groupby("SKU", as_index=False).agg(Current=("Sales", "sum"))
-        b = dfB.groupby("SKU", as_index=False).agg(Compare=("Sales", "sum"))
-        out = a.merge(b, on="SKU", how="outer").fillna(0.0)
+        pos["ColorHex"] = POSITIVE_BAR
+        pos["Direction"] = "right"
+        pos["Side"] = "right"
+
+        neg["ColorHex"] = NEGATIVE_BAR
+        neg["Direction"] = "left"
+        neg["Side"] = "left"
+
+        return pd.concat([pos, neg], ignore_index=True)[["Label", "Delta", "ColorHex", "Direction", "Side"]]
+
+    def _sales_contribution_block_chart(current_value: float, compare_value: float, changes_df: pd.DataFrame):
+        def _total_label(v: float) -> str:
+            return money(float(v))
+
+        def _change_label(v: float) -> str:
+            return money(abs(float(v)))
+
+        current_value = float(max(current_value, 0.0))
+        compare_value = float(max(compare_value, 0.0))
+
+        if current_value > compare_value:
+            current_color, compare_color = POSITIVE_BAR, NEGATIVE_BAR
+        elif current_value < compare_value:
+            current_color, compare_color = NEGATIVE_BAR, POSITIVE_BAR
+        else:
+            current_color = compare_color = NEUTRAL_BAR
+
+        rows = [
+            {
+                "Period": b_lbl,
+                "Kind": "total",
+                "Value": compare_value,
+                "Direction": "right",
+                "ColorHex": compare_color,
+                "Side": "right",
+                "Text": _total_label(compare_value),
+                "BlockValue": TOTAL_BLOCK_VALUE,
+            }
+        ]
+
+        if changes_df is not None and not changes_df.empty:
+            for _, r in changes_df.iterrows():
+                rows.append(
+                    {
+                        "Period": str(r["Label"]),
+                        "Kind": "change",
+                        "Value": abs(float(r["Delta"])),
+                        "Direction": str(r["Direction"]),
+                        "ColorHex": str(r["ColorHex"]),
+                        "Side": str(r["Side"]),
+                        "Text": _change_label(float(r["Delta"])),
+                        "BlockValue": CHANGE_BLOCK_VALUE,
+                    }
+                )
+
+        rows.append(
+            {
+                "Period": a_lbl,
+                "Kind": "total",
+                "Value": current_value,
+                "Direction": "right",
+                "ColorHex": current_color,
+                "Side": "right",
+                "Text": _total_label(current_value),
+                "BlockValue": TOTAL_BLOCK_VALUE,
+            }
+        )
+
+        row_df = pd.DataFrame(rows)
+
+        total_max = float(max(compare_value, current_value, TOTAL_BLOCK_VALUE))
+        change_max = float(row_df.loc[row_df["Kind"] == "change", "Value"].max()) if (row_df["Kind"] == "change").any() else CHANGE_BLOCK_VALUE
+        change_max = max(change_max, CHANGE_BLOCK_VALUE)
+
+        center_from_compare = compare_value / 2.0
+        min_center_needed = change_max + max(CHANGE_BLOCK_VALUE * 2, change_max * 0.04)
+        center_x = max(center_from_compare, min_center_needed)
+        center_x = float(np.ceil(center_x / CHANGE_BLOCK_VALUE) * CHANGE_BLOCK_VALUE)
+
+        right_needed_for_changes = center_x + change_max + max(CHANGE_BLOCK_VALUE * 2, change_max * 0.04)
+        right_needed_for_totals = total_max + max(TOTAL_BLOCK_VALUE, total_max * 0.02)
+        xmax = float(max(right_needed_for_changes, right_needed_for_totals))
+        xmax = float(np.ceil(xmax / CHANGE_BLOCK_VALUE) * CHANGE_BLOCK_VALUE)
+
+        block_rows = []
+        label_rows = []
+
+        for _, r in row_df.iterrows():
+            value = float(max(r["Value"], 0.0))
+            block_value = float(r["BlockValue"])
+
+            if r["Kind"] == "total":
+                n_blocks = max(1, int(np.ceil(value / block_value))) if value > 0 else 1
+                for i in range(n_blocks):
+                    x0 = i * block_value if value > 0 else 0.0
+                    x1 = min((i + 1) * block_value, value) if value > 0 else 0.0
+                    block_rows.append({"Period": r["Period"], "X0": x0, "X1": x1, "ColorHex": r["ColorHex"]})
+                label_rows.append({"Period": r["Period"], "X": value, "Text": r["Text"], "ColorHex": r["ColorHex"], "Side": "right"})
+            else:
+                n_blocks = max(1, int(np.ceil(value / block_value))) if value > 0 else 1
+                for i in range(n_blocks):
+                    piece_start = i * block_value if value > 0 else 0.0
+                    piece_end = min((i + 1) * block_value, value) if value > 0 else 0.0
+                    if r["Direction"] == "right":
+                        x0 = center_x + piece_start
+                        x1 = center_x + piece_end
+                    else:
+                        x0 = center_x - piece_end
+                        x1 = center_x - piece_start
+                    block_rows.append({"Period": r["Period"], "X0": x0, "X1": x1, "ColorHex": r["ColorHex"]})
+                label_rows.append(
+                    {
+                        "Period": r["Period"],
+                        "X": center_x + value if r["Direction"] == "right" else center_x - value,
+                        "Text": r["Text"],
+                        "ColorHex": r["ColorHex"],
+                        "Side": r["Side"],
+                    }
+                )
+
+        block_df = pd.DataFrame(block_rows)
+        labels_df = pd.DataFrame(label_rows)
+        order = row_df["Period"].tolist()
+
+        def _bar_layer(df_sub: pd.DataFrame, color_hex: str):
+            if df_sub.empty:
+                return None
+            return (
+                alt.Chart(df_sub)
+                .mark_bar(color=color_hex, stroke="white", strokeWidth=1)
+                .encode(
+                    y=alt.Y(
+                        "Period:N",
+                        sort=order,
+                        title="",
+                        axis=alt.Axis(labelFontSize=14, labelColor=TEXT_COLOR, labelLimit=220),
+                    ),
+                    x=alt.X(
+                        "X0:Q",
+                        title="Sales",
+                        scale=alt.Scale(domain=[0, xmax]),
+                        axis=alt.Axis(labelFontSize=12, titleFontSize=13, labelColor=TEXT_COLOR, titleColor=TEXT_COLOR),
+                    ),
+                    x2="X1:Q",
+                )
+            )
+
+        layers = []
+        for color_hex in (POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR):
+            lyr = _bar_layer(block_df[block_df["ColorHex"] == color_hex].copy(), color_hex)
+            if lyr is not None:
+                layers.append(lyr)
+
+        layers.append(
+            alt.Chart(pd.DataFrame([{"Center": center_x}]))
+            .mark_rule(color="#7a7a7a", strokeDash=[4, 4], strokeWidth=1.5)
+            .encode(x=alt.X("Center:Q", scale=alt.Scale(domain=[0, xmax])))
+        )
+
+        layers.append(
+            alt.Chart(labels_df[labels_df["Side"] == "right"])
+            .mark_text(align="left", dx=8, **_text_style(font_size=12))
+            .encode(
+                y=alt.Y("Period:N", sort=order),
+                x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
+                text="Text:N",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+            )
+        )
+
+        layers.append(
+            alt.Chart(labels_df[labels_df["Side"] == "left"])
+            .mark_text(align="right", dx=-8, **_text_style(font_size=12))
+            .encode(
+                y=alt.Y("Period:N", sort=order),
+                x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
+                text="Text:N",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+            )
+        )
+
+        return alt.layer(*layers).properties(height=max(260, len(order) * 40))
+
+    def _vendor_delta_df() -> pd.DataFrame:
+        cur = dfA.groupby("Vendor", as_index=False).agg(Current=("Sales", "sum"))
+        cmpv = dfB.groupby("Vendor", as_index=False).agg(Compare=("Sales", "sum"))
+        out = cur.merge(cmpv, on="Vendor", how="outer").fillna(0.0)
+        out["Vendor"] = out["Vendor"].astype(str)
         out["Sales_Δ"] = out["Current"] - out["Compare"]
         out["Label"] = out["Sales_Δ"].map(money)
         return out
 
-    def _top2_compare_df(dim: str) -> pd.DataFrame:
-        cur = dfA.groupby(dim, as_index=False).agg(Current=("Sales", "sum"))
-        cmpv = dfB.groupby(dim, as_index=False).agg(Compare=("Sales", "sum"))
-        out = cur.merge(cmpv, on=dim, how="outer").fillna(0.0)
-        out["Total"] = out["Current"] + out["Compare"]
-        out = out.sort_values(["Total", dim], ascending=[False, True]).head(2).copy()
-        out["Entity"] = out[dim].astype(str)
+    def _sku_delta_df() -> pd.DataFrame:
+        cur = dfA.groupby("SKU", as_index=False).agg(Current=("Sales", "sum"))
+        cmpv = dfB.groupby("SKU", as_index=False).agg(Compare=("Sales", "sum"))
+        out = cur.merge(cmpv, on="SKU", how="outer").fillna(0.0)
+        out["SKU"] = out["SKU"].astype(str)
+        out["Sales_Δ"] = out["Current"] - out["Compare"]
+        out["Label"] = out["Sales_Δ"].map(money)
         return out
 
-    def _render_positive_lollipop_list(
-        df: pd.DataFrame,
-        y_col: str,
-        value_col: str,
-        title: str,
-    ):
+    def _render_positive_lollipop(df: pd.DataFrame, y_col: str, title: str):
         if df.empty:
             st.info(f"No data available for {title.lower()}.")
             return
 
-        xmax = float(df[value_col].max()) if not df.empty else 0.0
-        xmax = xmax * 1.15 if xmax > 0 else 1.0
         df = df.copy()
         df["Zero"] = 0.0
+        xmax = float(df["Sales_Δ"].max()) if not df.empty else 0.0
+        xmax = xmax * 1.15 if xmax > 0 else 1.0
+
+        y_enc = alt.Y(
+            f"{y_col}:N",
+            sort=alt.SortField(field="Sales_Δ", order="descending"),
+            title="",
+            axis=alt.Axis(labelFontSize=14, labelColor=TEXT_COLOR, labelLimit=260),
+        )
 
         rules = (
             alt.Chart(df)
             .mark_rule(strokeWidth=2.5, color=POSITIVE_BAR)
             .encode(
-                y=alt.Y(
-                    f"{y_col}:N",
-                    sort=None,
-                    title="",
-                    axis=alt.Axis(labelLimit=320, labelFontSize=16, labelColor=TEXT_COLOR),
-                ),
-                x=alt.X(
-                    "Zero:Q",
-                    scale=alt.Scale(domain=[0, xmax]),
-                    title="Sales Change",
-                    axis=alt.Axis(labelFontSize=14, titleFontSize=16, labelColor=TEXT_COLOR, titleColor=TEXT_COLOR),
-                ),
-                x2=f"{value_col}:Q",
+                y=y_enc,
+                x=alt.X("Zero:Q", title="Sales Change", scale=alt.Scale(domain=[0, xmax])),
+                x2="Sales_Δ:Q",
             )
         )
 
         dots = (
             alt.Chart(df)
-            .mark_circle(size=160, color=POSITIVE_BAR)
+            .mark_circle(size=150, color=POSITIVE_BAR)
             .encode(
-                y=alt.Y(
-                    f"{y_col}:N",
-                    sort=None,
-                    title="",
-                    axis=alt.Axis(labelLimit=320, labelFontSize=16, labelColor=TEXT_COLOR),
-                ),
-                x=alt.X(f"{value_col}:Q", scale=alt.Scale(domain=[0, xmax]), title="Sales Change"),
+                y=y_enc,
+                x=alt.X("Sales_Δ:Q", scale=alt.Scale(domain=[0, xmax])),
                 tooltip=[
                     alt.Tooltip(f"{y_col}:N", title="Name"),
-                    alt.Tooltip(f"{value_col}:Q", title="Change", format=",.2f"),
+                    alt.Tooltip("Current:Q", title=a_lbl, format=",.2f"),
+                    alt.Tooltip("Compare:Q", title=b_lbl, format=",.2f"),
+                    alt.Tooltip("Sales_Δ:Q", title="Change", format=",.2f"),
                 ],
             )
         )
 
-        text = (
+        labels = (
             alt.Chart(df)
-            .mark_text(dx=8, align="left", **_text_style(font_size=14))
+            .mark_text(align="left", dx=8, color=POSITIVE_BAR, fontSize=13, fontWeight="bold")
             .encode(
-                y=alt.Y(
-                    f"{y_col}:N",
-                    sort=None,
-                    title="",
-                    axis=alt.Axis(labelLimit=320, labelFontSize=16, labelColor=TEXT_COLOR),
-                ),
-                x=alt.X(f"{value_col}:Q", scale=alt.Scale(domain=[0, xmax]), title="Sales Change"),
+                y=y_enc,
+                x=alt.X("Sales_Δ:Q", scale=alt.Scale(domain=[0, xmax])),
                 text="Label:N",
             )
         )
 
-        st.altair_chart(
-            (rules + dots + text).properties(height=max(260, len(df) * 38), title=title),
-            use_container_width=True,
-        )
+        st.altair_chart((rules + dots + labels).properties(height=max(260, len(df) * 38), title=title), use_container_width=True)
 
-    def _render_negative_lollipop_list(
-        df: pd.DataFrame,
-        y_col: str,
-        value_col: str,
-        title: str,
-        show_right_labels: bool = False,
-    ):
+    def _render_negative_lollipop(df: pd.DataFrame, y_col: str, title: str, show_right_labels: bool = True):
         if df.empty:
             st.info(f"No data available for {title.lower()}.")
             return
 
-        xmax = float(df[value_col].abs().max()) if not df.empty else 0.0
+        df = df.copy()
+        df["Zero"] = 0.0
+        xmax = float(df["Sales_Δ"].abs().max()) if not df.empty else 0.0
         xmax = xmax * 1.15 if xmax > 0 else 1.0
 
-        df = df.copy()
-        df["RightEdge"] = 0.0
-
-        y_axis = (
-            alt.Axis(labels=False, ticks=False, domain=False)
-            if show_right_labels
-            else alt.Axis(labelLimit=320, labelFontSize=16, labelColor=TEXT_COLOR)
-        )
+        y_axis = alt.Axis(labels=False, ticks=False, domain=False) if show_right_labels else alt.Axis(labelFontSize=14, labelColor=TEXT_COLOR, labelLimit=260)
+        y_enc = alt.Y(f"{y_col}:N", sort=alt.SortField(field="Sales_Δ", order="ascending"), title="", axis=y_axis)
 
         rules = (
             alt.Chart(df)
             .mark_rule(strokeWidth=2.5, color=NEGATIVE_BAR)
             .encode(
-                y=alt.Y(f"{y_col}:N", sort=None, title="", axis=y_axis),
-                x=alt.X(
-                    "RightEdge:Q",
-                    scale=alt.Scale(domain=[-xmax, 0]),
-                    title="Sales Change",
-                    axis=alt.Axis(labelFontSize=14, titleFontSize=16, labelColor=TEXT_COLOR, titleColor=TEXT_COLOR),
-                ),
-                x2=f"{value_col}:Q",
+                y=y_enc,
+                x=alt.X("Zero:Q", title="Sales Change", scale=alt.Scale(domain=[-xmax, 0])),
+                x2="Sales_Δ:Q",
             )
         )
 
         dots = (
             alt.Chart(df)
-            .mark_circle(size=160, color=NEGATIVE_BAR)
+            .mark_circle(size=150, color=NEGATIVE_BAR)
             .encode(
-                y=alt.Y(f"{y_col}:N", sort=None, title="", axis=y_axis),
-                x=alt.X(f"{value_col}:Q", scale=alt.Scale(domain=[-xmax, 0]), title="Sales Change"),
+                y=y_enc,
+                x=alt.X("Sales_Δ:Q", scale=alt.Scale(domain=[-xmax, 0])),
                 tooltip=[
                     alt.Tooltip(f"{y_col}:N", title="Name"),
-                    alt.Tooltip(f"{value_col}:Q", title="Change", format=",.2f"),
+                    alt.Tooltip("Current:Q", title=a_lbl, format=",.2f"),
+                    alt.Tooltip("Compare:Q", title=b_lbl, format=",.2f"),
+                    alt.Tooltip("Sales_Δ:Q", title="Change", format=",.2f"),
                 ],
             )
         )
 
-        value_text = (
+        value_labels = (
             alt.Chart(df)
-            .mark_text(dx=-8, align="right", **_text_style(font_size=14))
+            .mark_text(align="right", dx=-8, color=NEGATIVE_BAR, fontSize=13, fontWeight="bold")
             .encode(
-                y=alt.Y(f"{y_col}:N", sort=None, title="", axis=y_axis),
-                x=alt.X(f"{value_col}:Q", scale=alt.Scale(domain=[-xmax, 0]), title="Sales Change"),
+                y=y_enc,
+                x=alt.X("Sales_Δ:Q", scale=alt.Scale(domain=[-xmax, 0])),
                 text="Label:N",
             )
         )
 
-        layers = [rules, dots, value_text]
+        layers = [rules, dots, value_labels]
 
         if show_right_labels:
-            name_text = (
+            layers.append(
                 alt.Chart(df)
-                .mark_text(dx=8, align="left", **_text_style(font_size=14))
+                .mark_text(align="left", dx=8, **_text_style(font_size=13, color=TEXT_COLOR))
                 .encode(
-                    y=alt.Y(
-                        f"{y_col}:N",
-                        sort=None,
-                        title="",
-                        axis=alt.Axis(labels=False, ticks=False, domain=False),
-                    ),
+                    y=alt.Y(f"{y_col}:N", sort=alt.SortField(field="Sales_Δ", order="ascending"), title="", axis=alt.Axis(labels=False, ticks=False, domain=False)),
                     x=alt.value(0),
                     text=f"{y_col}:N",
                 )
             )
-            layers.append(name_text)
 
-        st.altair_chart(
-            alt.layer(*layers).properties(height=max(260, len(df) * 38), title=title),
-            use_container_width=True,
-        )
+        st.altair_chart(alt.layer(*layers).properties(height=max(260, len(df) * 38), title=title), use_container_width=True)
 
-    def _render_compare_lollipop(df: pd.DataFrame, title: str):
-        if df.empty:
-            st.info(f"No data available for {title.lower()}.")
-            return
+    sales_col, units_col = st.columns(2)
 
-        long_df = pd.DataFrame(
-            [
-                {"Entity": row["Entity"], "Period": a_lbl, "Value": float(row["Current"])}
-                for _, row in df.iterrows()
-            ]
-            + [
-                {"Entity": row["Entity"], "Period": b_lbl, "Value": float(row["Compare"])}
-                for _, row in df.iterrows()
-            ]
-        )
-        long_df["RowLabel"] = long_df["Entity"] + " • " + long_df["Period"]
-        long_df["Label"] = long_df["Value"].map(money)
-        long_df["Zero"] = 0.0
+    with sales_col:
+        _render_total_bars(_totals_df("Sales"), "Total Sales", "Sales")
 
-        xmax = float(long_df["Value"].max()) if not long_df.empty else 0.0
-        xmax = xmax * 1.15 if xmax > 0 else 1.0
+    with units_col:
+        _render_total_bars(_totals_df("Units"), "Total Units", "Units")
 
-        rules = (
-            alt.Chart(long_df)
-            .mark_rule(strokeWidth=2.5)
-            .encode(
-                y=alt.Y(
-                    "RowLabel:N",
-                    sort=None,
-                    title="",
-                    axis=alt.Axis(labelLimit=420, labelFontSize=15, labelColor=TEXT_COLOR),
-                ),
-                x=alt.X(
-                    "Zero:Q",
-                    scale=alt.Scale(domain=[0, xmax]),
-                    title="Sales",
-                    axis=alt.Axis(labelFontSize=14, titleFontSize=16, labelColor=TEXT_COLOR, titleColor=TEXT_COLOR),
-                ),
-                x2="Value:Q",
-                color=alt.Color("Period:N", title="", legend=alt.Legend(labelFontSize=14)),
-            )
-        )
+    st.markdown("#### Sales Contribution Change by Retailer")
+    st.caption("Total bars: 1 block = $30,000 • Retailer change bars: 1 block = $1,000")
 
-        dots = (
-            alt.Chart(long_df)
-            .mark_circle(size=160)
-            .encode(
-                y=alt.Y(
-                    "RowLabel:N",
-                    sort=None,
-                    title="",
-                    axis=alt.Axis(labelLimit=420, labelFontSize=15, labelColor=TEXT_COLOR),
-                ),
-                x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax]), title="Sales"),
-                color=alt.Color("Period:N", title="", legend=None),
-                tooltip=[
-                    alt.Tooltip("Entity:N", title="Name"),
-                    alt.Tooltip("Period:N", title="Period"),
-                    alt.Tooltip("Value:Q", title="Sales", format=",.2f"),
-                ],
-            )
-        )
+    retailer_changes = _collect_retailer_change_rows(dfA, dfB)
+    contrib_chart = _sales_contribution_block_chart(
+        current_value=float(kA.get("Sales", 0.0)),
+        compare_value=float(kB.get("Sales", 0.0)),
+        changes_df=retailer_changes,
+    )
+    st.altair_chart(contrib_chart, use_container_width=True)
 
-        text = (
-            alt.Chart(long_df)
-            .mark_text(dx=8, align="left", **_text_style(font_size=13))
-            .encode(
-                y=alt.Y(
-                    "RowLabel:N",
-                    sort=None,
-                    title="",
-                    axis=alt.Axis(labelLimit=420, labelFontSize=15, labelColor=TEXT_COLOR),
-                ),
-                x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax]), title="Sales"),
-                text="Label:N",
-            )
-        )
+    vendor_df = _vendor_delta_df()
+    vendor_pos = vendor_df[vendor_df["Sales_Δ"] > 0].sort_values("Sales_Δ", ascending=False).head(5).copy()
+    vendor_neg = vendor_df[vendor_df["Sales_Δ"] < 0].sort_values("Sales_Δ", ascending=True).head(5).copy()
 
-        st.altair_chart(
-            (rules + dots + text).properties(height=max(220, len(long_df) * 34), title=title),
-            use_container_width=True,
-        )
+    v1, v2 = st.columns(2)
+    with v1:
+        _render_positive_lollipop(vendor_pos, "Vendor", "Top 5 Positive Vendor Contributors")
+    with v2:
+        _render_negative_lollipop(vendor_neg, "Vendor", "Top 5 Negative Vendor Contributors", show_right_labels=True)
 
-    st.markdown("### Totals")
-    t1, t2 = st.columns(2)
-    with t1:
-        _render_total_bars(_totals_df("Sales"), "Total Sales • Current vs Compare", "Sales")
-    with t2:
-        _render_total_bars(_totals_df("Units"), "Total Units • Current vs Compare", "Units")
-
-    st.markdown("### Contributors")
-    contrib_df = _contributors_df(driver_level)
-    if contrib_df.empty:
-        st.info("No contributor data available.")
-    else:
-        pos = contrib_df[contrib_df["Sales_Δ"] > 0].sort_values("Sales_Δ", ascending=False).head(10).copy()
-        neg = contrib_df[contrib_df["Sales_Δ"] < 0].sort_values("Sales_Δ", ascending=True).head(10).copy()
-
-        c1, c2 = st.columns(2)
-        with c1:
-            _render_positive_lollipop_list(pos, driver_level, "Sales_Δ", "Top Positive Contributors")
-        with c2:
-            _render_negative_lollipop_list(neg, driver_level, "Sales_Δ", "Top Negative Contributors", show_right_labels=True)
-
-    st.markdown("### SKU Movers")
-    sku_df = _sku_increase_decline_df()
-    inc = sku_df[sku_df["Sales_Δ"] > 0].sort_values("Sales_Δ", ascending=False).head(10).copy()
-    dec = sku_df[sku_df["Sales_Δ"] < 0].sort_values("Sales_Δ", ascending=True).head(10).copy()
+    sku_df = _sku_delta_df()
+    sku_pos = sku_df[sku_df["Sales_Δ"] > 0].sort_values("Sales_Δ", ascending=False).head(10).copy()
+    sku_neg = sku_df[sku_df["Sales_Δ"] < 0].sort_values("Sales_Δ", ascending=True).head(10).copy()
 
     s1, s2 = st.columns(2)
     with s1:
-        _render_positive_lollipop_list(inc, "SKU", "Sales_Δ", "Top Increasing SKUs")
+        _render_positive_lollipop(sku_pos, "SKU", "Top 10 Increasing SKUs")
     with s2:
-        _render_negative_lollipop_list(dec, "SKU", "Sales_Δ", "Top Declining SKUs", show_right_labels=True)
-
-    st.markdown("### Top 2 Compared Between Current and Compare")
-    r1, r2 = st.columns(2)
-    with r1:
-        _render_compare_lollipop(_top2_compare_df("Retailer"), "Top 2 Retailers")
-    with r2:
-        _render_compare_lollipop(_top2_compare_df("Vendor"), "Top 2 Vendors")
-
-    _render_compare_lollipop(_top2_compare_df("SKU"), "Top 2 SKUs")
+        _render_negative_lollipop(sku_neg, "SKU", "Top 10 Declining SKUs", show_right_labels=True)
