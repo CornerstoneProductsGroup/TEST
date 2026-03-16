@@ -632,17 +632,19 @@ def render_visual_executive_dashboard(
             legend=None,
         )
 
+        # Tighter retailer/vendor grouping
         y_enc = alt.Y(
             f"{dim_name}:N",
             sort=alt.SortField(field="SortTotal", order="descending"),
             title="",
-            scale=alt.Scale(paddingInner=0.22, paddingOuter=0.12),
+            scale=alt.Scale(paddingInner=0.10, paddingOuter=0.08),
         )
 
+        # Much larger space between current vs compare inside each retailer/vendor
         yoff_enc = alt.YOffset(
             "Series:N",
             sort=[a_lbl, b_lbl],
-            scale=alt.Scale(paddingInner=0.02, paddingOuter=0.55),
+            scale=alt.Scale(paddingInner=0.00, paddingOuter=0.85),
         )
 
         rules = (
