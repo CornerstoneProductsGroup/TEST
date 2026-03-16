@@ -871,8 +871,14 @@ def render_visual_only(ctx: dict):
     POSITIVE_BAR = "#2e7d32"
     NEGATIVE_BAR = "#c62828"
     NEUTRAL_BAR = "#808080"
-    THEME_TEXT = "var(--text-color)"
-    THEME_BG_STROKE = "var(--background-color)"
+
+    theme_base = st.get_option("theme.base") or "light"
+    IS_DARK = str(theme_base).lower() == "dark"
+
+    AXIS_TEXT_COLOR = "#F3F4F6" if IS_DARK else "#111111"
+    TITLE_TEXT_COLOR = "#F3F4F6" if IS_DARK else "#111111"
+    LABEL_INSIDE_BAR_COLOR = "#000000"
+    TEXT_STROKE_COLOR = "#111111" if IS_DARK else "#FFFFFF"
 
     TOTAL_BLOCK_VALUE = 30000.0
     CHANGE_BLOCK_VALUE = 1000.0
@@ -882,13 +888,13 @@ def render_visual_only(ctx: dict):
     CHART_TITLE_FONTSIZE = 18
     Y_LABEL_LIMIT = 260
 
-    def _text_style(font_size: int = 15, color: str = THEME_TEXT):
+    def _text_style(font_size: int = 15, color: str = AXIS_TEXT_COLOR):
         return {
             "fontSize": font_size,
             "fontWeight": "bold",
             "color": color,
-            "stroke": THEME_BG_STROKE,
-            "strokeWidth": 0.75,
+            "stroke": TEXT_STROKE_COLOR,
+            "strokeWidth": 0.6,
         }
 
     def _format_metric(v: float, metric: str) -> str:
@@ -920,11 +926,11 @@ def render_visual_only(ctx: dict):
             return
 
         xmax = float(df["Value"].max()) if not df.empty else 0.0
-        xmax = xmax * 1.04 if xmax > 0 else 1.0
+        xmax = xmax * 1.05 if xmax > 0 else 1.0
 
         bars = (
             alt.Chart(df)
-            .mark_bar(cornerRadiusTopRight=7, cornerRadiusBottomRight=7, size=36)
+            .mark_bar(cornerRadiusTopRight=7, cornerRadiusBottomRight=7, size=34)
             .encode(
                 y=alt.Y(
                     "Period:N",
@@ -932,10 +938,10 @@ def render_visual_only(ctx: dict):
                     sort=[a_lbl, b_lbl],
                     axis=alt.Axis(
                         labelFontSize=16,
-                        labelColor=THEME_TEXT,
+                        labelColor=AXIS_TEXT_COLOR,
                         labelLimit=220,
                     ),
-                    scale=alt.Scale(paddingInner=0.45, paddingOuter=0.25),
+                    scale=alt.Scale(paddingInner=0.55, paddingOuter=0.30),
                 ),
                 x=alt.X(
                     "Value:Q",
@@ -944,8 +950,8 @@ def render_visual_only(ctx: dict):
                     axis=alt.Axis(
                         labelFontSize=AXIS_LABEL_FONTSIZE,
                         titleFontSize=AXIS_TITLE_FONTSIZE,
-                        labelColor=THEME_TEXT,
-                        titleColor=THEME_TEXT,
+                        labelColor=AXIS_TEXT_COLOR,
+                        titleColor=AXIS_TEXT_COLOR,
                     ),
                 ),
                 color=alt.Color("Color:N", scale=None, legend=None),
@@ -954,12 +960,25 @@ def render_visual_only(ctx: dict):
                     alt.Tooltip("Value:Q", title=axis_title, format=",.2f" if axis_title == "Sales" else ",.0f"),
                 ],
             )
-            .properties(height=190, title=alt.TitleParams(title, fontSize=CHART_TITLE_FONTSIZE, color=THEME_TEXT))
+            .properties(
+                height=240,
+                title=alt.TitleParams(
+                    title,
+                    fontSize=CHART_TITLE_FONTSIZE,
+                    color=TITLE_TEXT_COLOR,
+                ),
+            )
         )
 
         labels = (
             alt.Chart(df)
-            .mark_text(align="center", baseline="middle", **_text_style(font_size=15, color=THEME_TEXT))
+            .mark_text(
+                align="center",
+                baseline="middle",
+                fontSize=15,
+                fontWeight="bold",
+                color=LABEL_INSIDE_BAR_COLOR,
+            )
             .encode(
                 y=alt.Y("Period:N", sort=[a_lbl, b_lbl]),
                 x=alt.X("MidX:Q", scale=alt.Scale(domain=[0, xmax])),
@@ -1122,7 +1141,7 @@ def render_visual_only(ctx: dict):
                         title="",
                         axis=alt.Axis(
                             labelFontSize=AXIS_LABEL_FONTSIZE,
-                            labelColor=THEME_TEXT,
+                            labelColor=AXIS_TEXT_COLOR,
                             labelLimit=220,
                         ),
                     ),
@@ -1133,8 +1152,8 @@ def render_visual_only(ctx: dict):
                         axis=alt.Axis(
                             labelFontSize=AXIS_LABEL_FONTSIZE,
                             titleFontSize=AXIS_TITLE_FONTSIZE,
-                            labelColor=THEME_TEXT,
-                            titleColor=THEME_TEXT,
+                            labelColor=AXIS_TEXT_COLOR,
+                            titleColor=AXIS_TEXT_COLOR,
                         ),
                     ),
                     x2="X1:Q",
@@ -1177,7 +1196,7 @@ def render_visual_only(ctx: dict):
 
         return alt.layer(*layers).properties(
             height=max(300, len(order) * 42),
-            title=alt.TitleParams("Sales Contribution Change by Retailer", fontSize=CHART_TITLE_FONTSIZE, color=THEME_TEXT),
+            title=alt.TitleParams("Sales Contribution Change by Retailer", fontSize=CHART_TITLE_FONTSIZE, color=TITLE_TEXT_COLOR),
         )
 
     def _vendor_delta_df() -> pd.DataFrame:
@@ -1214,7 +1233,7 @@ def render_visual_only(ctx: dict):
             title="",
             axis=alt.Axis(
                 labelFontSize=AXIS_LABEL_FONTSIZE,
-                labelColor=THEME_TEXT,
+                labelColor=AXIS_TEXT_COLOR,
                 labelLimit=Y_LABEL_LIMIT,
             ),
         )
@@ -1231,8 +1250,8 @@ def render_visual_only(ctx: dict):
                     axis=alt.Axis(
                         labelFontSize=AXIS_LABEL_FONTSIZE,
                         titleFontSize=AXIS_TITLE_FONTSIZE,
-                        labelColor=THEME_TEXT,
-                        titleColor=THEME_TEXT,
+                        labelColor=AXIS_TEXT_COLOR,
+                        titleColor=AXIS_TEXT_COLOR,
                     ),
                 ),
                 x2="Sales_Δ:Q",
@@ -1267,7 +1286,7 @@ def render_visual_only(ctx: dict):
         st.altair_chart(
             (rules + dots + labels).properties(
                 height=max(280, len(df) * 40),
-                title=alt.TitleParams(title, fontSize=CHART_TITLE_FONTSIZE, color=THEME_TEXT),
+                title=alt.TitleParams(title, fontSize=CHART_TITLE_FONTSIZE, color=TITLE_TEXT_COLOR),
             ),
             use_container_width=True,
         )
@@ -1287,7 +1306,7 @@ def render_visual_only(ctx: dict):
             if show_right_labels
             else alt.Axis(
                 labelFontSize=AXIS_LABEL_FONTSIZE,
-                labelColor=THEME_TEXT,
+                labelColor=AXIS_TEXT_COLOR,
                 labelLimit=Y_LABEL_LIMIT,
             )
         )
@@ -1310,8 +1329,8 @@ def render_visual_only(ctx: dict):
                     axis=alt.Axis(
                         labelFontSize=AXIS_LABEL_FONTSIZE,
                         titleFontSize=AXIS_TITLE_FONTSIZE,
-                        labelColor=THEME_TEXT,
-                        titleColor=THEME_TEXT,
+                        labelColor=AXIS_TEXT_COLOR,
+                        titleColor=AXIS_TEXT_COLOR,
                     ),
                 ),
                 x2="Sales_Δ:Q",
@@ -1348,7 +1367,7 @@ def render_visual_only(ctx: dict):
         if show_right_labels:
             layers.append(
                 alt.Chart(df)
-                .mark_text(align="left", dx=8, **_text_style(font_size=13, color=THEME_TEXT))
+                .mark_text(align="left", dx=8, **_text_style(font_size=13, color=AXIS_TEXT_COLOR))
                 .encode(
                     y=alt.Y(
                         f"{y_col}:N",
@@ -1364,7 +1383,7 @@ def render_visual_only(ctx: dict):
         st.altair_chart(
             alt.layer(*layers).properties(
                 height=max(280, len(df) * 40),
-                title=alt.TitleParams(title, fontSize=CHART_TITLE_FONTSIZE, color=THEME_TEXT),
+                title=alt.TitleParams(title, fontSize=CHART_TITLE_FONTSIZE, color=TITLE_TEXT_COLOR),
             ),
             use_container_width=True,
         )
