@@ -196,9 +196,7 @@ def render(ctx: dict):
 
         sku_tot = (
             look.groupby("SKU", as_index=False)
-            .agg(
-                Sales_lookback=("Sales", "sum"),
-            )
+            .agg(Sales_lookback=("Sales", "sum"))
         )
 
         last_week_sales = (
@@ -1174,7 +1172,7 @@ def render_visual_only(ctx: dict):
 
         layers.append(
             alt.Chart(labels_df[labels_df["Side"] == "right"])
-            .mark_text(align="left", dx=8, **_text_style(font_size=12))
+            .mark_text(align="left", dx=8, fontSize=15, fontWeight="bold")
             .encode(
                 y=alt.Y("Period:N", sort=order),
                 x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
@@ -1185,7 +1183,7 @@ def render_visual_only(ctx: dict):
 
         layers.append(
             alt.Chart(labels_df[labels_df["Side"] == "left"])
-            .mark_text(align="right", dx=-8, **_text_style(font_size=12))
+            .mark_text(align="right", dx=-8, fontSize=15, fontWeight="bold")
             .encode(
                 y=alt.Y("Period:N", sort=order),
                 x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
@@ -1298,23 +1296,15 @@ def render_visual_only(ctx: dict):
 
         df = df.copy()
         df["Zero"] = 0.0
+        df["RightLabelX"] = 0.0
         xmax = float(df["Sales_Δ"].abs().max()) if not df.empty else 0.0
         xmax = xmax * 1.15 if xmax > 0 else 1.0
 
-        y_axis = (
-            alt.Axis(labels=False, ticks=False, domain=False)
-            if show_right_labels
-            else alt.Axis(
-                labelFontSize=AXIS_LABEL_FONTSIZE,
-                labelColor=AXIS_TEXT_COLOR,
-                labelLimit=Y_LABEL_LIMIT,
-            )
-        )
         y_enc = alt.Y(
             f"{y_col}:N",
             sort=alt.SortField(field="Sales_Δ", order="ascending"),
             title="",
-            axis=y_axis,
+            axis=alt.Axis(labels=False, ticks=False, domain=False),
         )
 
         rules = (
@@ -1362,26 +1352,18 @@ def render_visual_only(ctx: dict):
             )
         )
 
-        layers = [rules, dots, value_labels]
-
-        if show_right_labels:
-            layers.append(
-                alt.Chart(df)
-                .mark_text(align="left", dx=8, **_text_style(font_size=13, color=AXIS_TEXT_COLOR))
-                .encode(
-                    y=alt.Y(
-                        f"{y_col}:N",
-                        sort=alt.SortField(field="Sales_Δ", order="ascending"),
-                        title="",
-                        axis=alt.Axis(labels=False, ticks=False, domain=False),
-                    ),
-                    x=alt.value(0),
-                    text=f"{y_col}:N",
-                )
+        name_labels = (
+            alt.Chart(df)
+            .mark_text(align="left", dx=8, color=AXIS_TEXT_COLOR, fontSize=13, fontWeight="bold")
+            .encode(
+                y=y_enc,
+                x=alt.X("RightLabelX:Q", scale=alt.Scale(domain=[-xmax, 0])),
+                text=f"{y_col}:N",
             )
+        )
 
         st.altair_chart(
-            alt.layer(*layers).properties(
+            alt.layer(rules, dots, value_labels, name_labels).properties(
                 height=max(280, len(df) * 40),
                 title=alt.TitleParams(title, fontSize=CHART_TITLE_FONTSIZE, color=TITLE_TEXT_COLOR),
             ),
