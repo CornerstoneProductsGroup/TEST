@@ -305,6 +305,34 @@ def render_visual_executive_dashboard(
 
         return best_label, best_value
 
+    def largest_decrease_contributor(df_cur: pd.DataFrame, df_cmp: pd.DataFrame):
+        best_label = "Largest Decrease"
+        best_value = 0.0
+
+        if "Retailer" in df_cur.columns and "Retailer" in df_cmp.columns:
+            retailer_cur = df_cur.groupby("Retailer", as_index=False).agg(Current=("Sales", "sum"))
+            retailer_cmp = df_cmp.groupby("Retailer", as_index=False).agg(Compare=("Sales", "sum"))
+            retailer = retailer_cur.merge(retailer_cmp, on="Retailer", how="outer").fillna(0.0)
+            retailer["Delta"] = retailer["Current"] - retailer["Compare"]
+            if not retailer.empty:
+                r = retailer.sort_values("Delta", ascending=True).iloc[0]
+                if float(r["Delta"]) < best_value:
+                    best_label = f'Retailer: {r["Retailer"]}'
+                    best_value = float(r["Delta"])
+
+        if "Vendor" in df_cur.columns and "Vendor" in df_cmp.columns:
+            vendor_cur = df_cur.groupby("Vendor", as_index=False).agg(Current=("Sales", "sum"))
+            vendor_cmp = df_cmp.groupby("Vendor", as_index=False).agg(Compare=("Sales", "sum"))
+            vendor = vendor_cur.merge(vendor_cmp, on="Vendor", how="outer").fillna(0.0)
+            vendor["Delta"] = vendor["Current"] - vendor["Compare"]
+            if not vendor.empty:
+                v = vendor.sort_values("Delta", ascending=True).iloc[0]
+                if float(v["Delta"]) < best_value:
+                    best_label = f'Vendor: {v["Vendor"]}'
+                    best_value = float(v["Delta"])
+
+        return best_label, best_value
+
     def simple_period_block_chart(
         current_value: float,
         compare_value: float,
@@ -312,14 +340,10 @@ def render_visual_executive_dashboard(
         compare_label: str,
         largest_inc_label: str,
         largest_inc_value: float,
+        largest_dec_label: str,
+        largest_dec_value: float,
     ):
         BLOCK_VALUE = 10000.0
-
-        def block_piece_label(v: float) -> str:
-            av = abs(v)
-            if av >= 1000:
-                return f"${av/1000:.0f}k"
-            return f"${av:,.0f}"
 
         def total_label(v: float) -> str:
             av = abs(v)
@@ -329,16 +353,16 @@ def render_visual_executive_dashboard(
                 return f"${v/1000:.0f}k"
             return f"${v:,.0f}"
 
-        def make_blocks(label: str, value: float, color_hex: str) -> pd.DataFrame:
+        def make_total_blocks(label: str, value: float, color_hex: str) -> pd.DataFrame:
             rows = []
+            value = float(max(value, 0.0))
+
             if value <= 0:
                 return pd.DataFrame(
                     [{
                         "Period": label,
                         "X0": 0.0,
                         "X1": 0.0,
-                        "Center": 0.0,
-                        "BlockText": "$0",
                         "ColorHex": color_hex,
                     }]
                 )
@@ -347,29 +371,73 @@ def render_visual_executive_dashboard(
             for i in range(n_blocks):
                 start = i * BLOCK_VALUE
                 end = min((i + 1) * BLOCK_VALUE, value)
-                piece = end - start
                 rows.append(
                     {
                         "Period": label,
                         "X0": start,
                         "X1": end,
-                        "Center": (start + end) / 2.0,
-                        "BlockText": block_piece_label(piece),
                         "ColorHex": color_hex,
                     }
                 )
             return pd.DataFrame(rows)
 
-        compare_blocks = make_blocks(compare_label, float(compare_value), "#ff7f0e")
-        increase_blocks = make_blocks(largest_inc_label, float(max(largest_inc_value, 0.0)), "#2e7d32")
-        current_blocks = make_blocks(current_label, float(current_value), "#1f77b4")
+        def make_center_blocks(label: str, value: float, direction: str, color_hex: str, center_x: float) -> pd.DataFrame:
+            rows = []
+            value = abs(float(value))
 
-        block_df = pd.concat([compare_blocks, increase_blocks, current_blocks], ignore_index=True)
+            if value <= 0:
+                return pd.DataFrame(
+                    [{
+                        "Period": label,
+                        "X0": center_x,
+                        "X1": center_x,
+                        "ColorHex": color_hex,
+                    }]
+                )
 
-        xmax = max(float(current_value), float(compare_value), float(max(largest_inc_value, 0.0)))
-        xmax = max(BLOCK_VALUE, np.ceil(xmax / BLOCK_VALUE) * BLOCK_VALUE)
+            n_blocks = int(np.ceil(value / BLOCK_VALUE))
+            for i in range(n_blocks):
+                piece_start = i * BLOCK_VALUE
+                piece_end = min((i + 1) * BLOCK_VALUE, value)
 
-        order = [compare_label, largest_inc_label, current_label]
+                if direction == "right":
+                    x0 = center_x + piece_start
+                    x1 = center_x + piece_end
+                else:
+                    x0 = center_x - piece_end
+                    x1 = center_x - piece_start
+
+                rows.append(
+                    {
+                        "Period": label,
+                        "X0": x0,
+                        "X1": x1,
+                        "ColorHex": color_hex,
+                    }
+                )
+            return pd.DataFrame(rows)
+
+        pos_value = float(max(largest_inc_value, 0.0))
+        neg_value = float(abs(min(largest_dec_value, 0.0)))
+
+        total_max = max(float(current_value), float(compare_value), BLOCK_VALUE)
+        change_max = max(pos_value, neg_value, BLOCK_VALUE)
+
+        xmax = max(total_max, change_max * 2.0)
+        xmax = float(np.ceil(xmax / BLOCK_VALUE) * BLOCK_VALUE)
+        center_x = xmax / 2.0
+
+        compare_blocks = make_total_blocks(compare_label, float(compare_value), "#ff7f0e")
+        negative_blocks = make_center_blocks(largest_dec_label, neg_value, "left", "#c62828", center_x)
+        positive_blocks = make_center_blocks(largest_inc_label, pos_value, "right", "#2e7d32", center_x)
+        current_blocks = make_total_blocks(current_label, float(current_value), "#1f77b4")
+
+        block_df = pd.concat(
+            [compare_blocks, negative_blocks, positive_blocks, current_blocks],
+            ignore_index=True,
+        )
+
+        order = [compare_label, largest_dec_label, largest_inc_label, current_label]
 
         bars = (
             alt.Chart(block_df)
@@ -379,22 +447,16 @@ def render_visual_executive_dashboard(
                 x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, xmax])),
                 x2="X1:Q",
                 color=alt.Color("ColorHex:N", scale=None, legend=None),
-                tooltip=[
-                    alt.Tooltip("Period:N", title="Period"),
-                    alt.Tooltip("BlockText:N", title="Block"),
-                ],
+                tooltip=[alt.Tooltip("Period:N", title="Period")],
             )
-            .properties(height=190)
+            .properties(height=230)
         )
 
-        block_labels = (
-            alt.Chart(block_df)
-            .mark_text(fontSize=10, fontWeight="bold", color="white")
-            .encode(
-                y=alt.Y("Period:N", sort=order),
-                x=alt.X("Center:Q", scale=alt.Scale(domain=[0, xmax])),
-                text="BlockText:N",
-            )
+        center_rule_df = pd.DataFrame([{"Center": center_x}])
+        center_rule = (
+            alt.Chart(center_rule_df)
+            .mark_rule(color="#7a7a7a", strokeDash=[4, 4], strokeWidth=1.5)
+            .encode(x=alt.X("Center:Q", scale=alt.Scale(domain=[0, xmax])))
         )
 
         totals_df = pd.DataFrame(
@@ -404,24 +466,34 @@ def render_visual_executive_dashboard(
                     "X": float(compare_value),
                     "Text": total_label(float(compare_value)),
                     "ColorHex": "#ff7f0e",
+                    "Side": "right",
+                },
+                {
+                    "Period": largest_dec_label,
+                    "X": center_x - neg_value,
+                    "Text": total_label(float(neg_value)),
+                    "ColorHex": "#c62828",
+                    "Side": "left",
                 },
                 {
                     "Period": largest_inc_label,
-                    "X": float(max(largest_inc_value, 0.0)),
-                    "Text": total_label(float(max(largest_inc_value, 0.0))),
+                    "X": center_x + pos_value,
+                    "Text": total_label(float(pos_value)),
                     "ColorHex": "#2e7d32",
+                    "Side": "right",
                 },
                 {
                     "Period": current_label,
                     "X": float(current_value),
                     "Text": total_label(float(current_value)),
                     "ColorHex": "#1f77b4",
+                    "Side": "right",
                 },
             ]
         )
 
-        total_labels = (
-            alt.Chart(totals_df)
+        right_labels = (
+            alt.Chart(totals_df[totals_df["Side"] == "right"])
             .mark_text(align="left", dx=8, fontSize=12, fontWeight="bold")
             .encode(
                 y=alt.Y("Period:N", sort=order),
@@ -431,7 +503,18 @@ def render_visual_executive_dashboard(
             )
         )
 
-        return bars + block_labels + total_labels
+        left_labels = (
+            alt.Chart(totals_df[totals_df["Side"] == "left"])
+            .mark_text(align="right", dx=-8, fontSize=12, fontWeight="bold")
+            .encode(
+                y=alt.Y("Period:N", sort=order),
+                x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
+                text="Text:N",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+            )
+        )
+
+        return bars + center_rule + right_labels + left_labels
 
     def prep_grouped_share(df: pd.DataFrame, dim_name: str) -> pd.DataFrame:
         if df.empty:
@@ -661,6 +744,8 @@ def render_visual_executive_dashboard(
     st.write("")
 
     inc_label, inc_value = largest_increase_contributor(dfA, dfB)
+    dec_label, dec_value = largest_decrease_contributor(dfA, dfB)
+
     st.markdown(f"#### Sales Blocks ({a_lbl} vs {b_lbl})")
     block_chart = simple_period_block_chart(
         current_value=float(kA["Sales"]),
@@ -669,6 +754,8 @@ def render_visual_executive_dashboard(
         compare_label=b_lbl,
         largest_inc_label=inc_label,
         largest_inc_value=float(inc_value),
+        largest_dec_label=dec_label,
+        largest_dec_value=float(dec_value),
     )
     st.altair_chart(block_chart, use_container_width=True)
 
