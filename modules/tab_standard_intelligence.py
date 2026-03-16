@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-
 import altair as alt
 import numpy as np
 import pandas as pd
@@ -10,872 +8,34 @@ import streamlit as st
 from .shared_core import (
     money,
     pct_fmt,
+    kpi_card,
+    leader_sales_card,
+    biggest_increase_card,
     rename_ab_columns,
     render_df,
-    count_sales_card,
-    kpi_card,
-    selection_total_card,
-    top_two_card,
-    biggest_increase_card,
+    build_momentum,
+    opportunity_detector,
+    drivers,
+    first_sale_ever,
+    new_placement,
 )
 
 
 def render(ctx: dict):
-    st.markdown(
-        """
-        <style>
-        .kpi-card .kpi-title{font-size:13px !important;}
-        .kpi-card .kpi-value{font-size:31px !important;}
-        .kpi-card .kpi-delta{font-size:15px !important;}
-        .kpi-card .kpi-sub{font-size:15px !important;}
-        .kpi-card .top-two-item .kpi-big-name{font-size:22px !important;}
-        .kpi-card .top-two-item .kpi-value{font-size:30px !important;}
-        .kpi-card .top-two-item .kpi-delta{font-size:14px !important;}
-        .kpi-card .top-two-item .kpi-sub{font-size:14px !important;}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    render_standard_view(
-        dfA=ctx["dfA"],
-        dfB=ctx["dfB"],
-        kA=ctx["kA"],
-        kB=ctx["kB"],
-        a_lbl=ctx["a_lbl"],
-        b_lbl=ctx["b_lbl"],
-        compare_mode=ctx["compare_mode"],
-        min_sales=ctx["min_sales"],
-    )
-
-
-def render_visual_only(ctx: dict):
-    st.markdown(
-        """
-        <style>
-        .kpi-card .kpi-title{font-size:13px !important;}
-        .kpi-card .kpi-value{font-size:31px !important;}
-        .kpi-card .kpi-delta{font-size:15px !important;}
-        .kpi-card .kpi-sub{font-size:15px !important;}
-        .kpi-card .top-two-item .kpi-big-name{font-size:22px !important;}
-        .kpi-card .top-two-item .kpi-value{font-size:30px !important;}
-        .kpi-card .top-two-item .kpi-delta{font-size:14px !important;}
-        .kpi-card .top-two-item .kpi-sub{font-size:14px !important;}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    render_visual_executive_dashboard(
-        dfA=ctx["dfA"],
-        dfB=ctx["dfB"],
-        kA=ctx["kA"],
-        kB=ctx["kB"],
-        a_lbl=ctx["a_lbl"],
-        b_lbl=ctx["b_lbl"],
-        min_sales=ctx["min_sales"],
-    )
-
-
-def render_visual_executive_dashboard(
-    dfA: pd.DataFrame,
-    dfB: pd.DataFrame,
-    kA: dict,
-    kB: dict,
-    a_lbl: str,
-    b_lbl: str,
-    min_sales: float,
-):
-    PERIOD_DOMAIN = [a_lbl, b_lbl]
-    PERIOD_RANGE = ["#1f77b4", "#ff7f0e"]
-
-    Q_DOMAIN = ["Q1", "Q2", "Q3", "Q4"]
-    Q_RANGE = ["#dbe7f5", "#a8c4e5", "#6f9fd1", "#2f6fb3"]
-
-    POSITIVE_BAR = "#2e7d32"
-    NEGATIVE_BAR = "#c62828"
-    NEUTRAL_BAR = "#808080"
-
-    TOTAL_BLOCK_VALUE = 25000.0
-    CHANGE_BLOCK_VALUE = 1000.0
-
-    def is_year_label(lbl: str) -> bool:
-        return bool(re.fullmatch(r"\d{4}", str(lbl or "").strip()))
-
-    def year_compare_mode() -> bool:
-        return is_year_label(a_lbl) and is_year_label(b_lbl)
-
-    def pct_change(cur: float, prev: float):
-        if prev == 0:
-            return np.nan if cur == 0 else np.inf
-        return (cur - prev) / prev
-
-    def delta_html(cur: float, prev: float, is_money: bool):
-        d = float(cur) - float(prev)
-        pc = pct_change(float(cur), float(prev))
-        color = POSITIVE_BAR if d > 0 else (NEGATIVE_BAR if d < 0 else "var(--text-color)")
-        arrow = "▲ " if d > 0 else ("▼ " if d < 0 else "")
-        abs_s = money(d) if is_money else f"{d:,.0f}"
-        return (
-            f"<span class='delta-abs' style='color:{color}'>{arrow}{abs_s}</span>"
-            f"<span class='delta-pct' style='color:{color}'>({pct_fmt(pc)})</span>"
-        )
-
-    def prep_compare_metric(
-        df_cur: pd.DataFrame,
-        df_cmp: pd.DataFrame,
-        level: str,
-        metric: str = "Sales",
-        top_n: int = 10,
-    ) -> pd.DataFrame:
-        cur = df_cur.groupby(level, dropna=False, as_index=False).agg(Current=(metric, "sum"))
-        cmp = df_cmp.groupby(level, dropna=False, as_index=False).agg(Compare=(metric, "sum"))
-        out = cur.merge(cmp, on=level, how="outer").fillna(0.0)
-        out[level] = out[level].astype(str)
-        out["Delta"] = out["Current"] - out["Compare"]
-        out["Total"] = out["Current"] + out["Compare"]
-        out = out.sort_values(["Total", level], ascending=[False, True]).head(top_n).copy()
-        return out
-
-    def prep_quarter_stacked(df_cur: pd.DataFrame, df_cmp: pd.DataFrame, metric: str) -> pd.DataFrame:
-        if "Quarter" not in df_cur.columns or "Quarter" not in df_cmp.columns:
-            return pd.DataFrame()
-
-        cur = df_cur.copy()
-        cmp = df_cmp.copy()
-
-        cur["Quarter"] = cur["Quarter"].astype(str).str.upper().str.strip()
-        cmp["Quarter"] = cmp["Quarter"].astype(str).str.upper().str.strip()
-
-        cur = cur[cur["Quarter"].isin(Q_DOMAIN)]
-        cmp = cmp[cmp["Quarter"].isin(Q_DOMAIN)]
-
-        if cur.empty or cmp.empty:
-            return pd.DataFrame()
-
-        a = cur.groupby("Quarter", as_index=False)[metric].sum()
-        b = cmp.groupby("Quarter", as_index=False)[metric].sum()
-
-        a["Period"] = a_lbl
-        b["Period"] = b_lbl
-        a.rename(columns={metric: "Value"}, inplace=True)
-        b.rename(columns={metric: "Value"}, inplace=True)
-
-        out = pd.concat([a, b], ignore_index=True)
-        out["Quarter"] = pd.Categorical(out["Quarter"], categories=Q_DOMAIN, ordered=True)
-        out = out.sort_values(["Period", "Quarter"]).copy()
-
-        out["Label"] = out["Value"].map(lambda v: f"{v:,.0f}" if metric == "Units" else money(v))
-        out["Start"] = out.groupby("Period")["Value"].cumsum() - out["Value"]
-        out["LabelX"] = out["Start"] + (out["Value"] * 0.08)
-
-        total_by_period = out.groupby("Period")["Value"].transform("sum")
-        out["ShowLabel"] = np.where(
-            (out["Value"] > 0) & (out["Value"] / total_by_period >= 0.08),
-            out["Label"],
-            "",
-        )
-        return out
-
-    def stacked_total_chart(
-        metric_name: str,
-        df_cur: pd.DataFrame,
-        df_cmp: pd.DataFrame,
-        fallback_cur: float,
-        fallback_cmp: float,
-    ):
-        metric = "Units" if metric_name == "Units" else "Sales"
-
-        color_cur = POSITIVE_BAR if float(fallback_cur) >= float(fallback_cmp) else NEGATIVE_BAR
-        color_cmp = POSITIVE_BAR if float(fallback_cmp) > float(fallback_cur) else NEGATIVE_BAR
-
-        stacked = pd.DataFrame()
-        if year_compare_mode():
-            stacked = prep_quarter_stacked(df_cur, df_cmp, metric)
-
-        if stacked.empty:
-            chart_df = pd.DataFrame(
-                [
-                    {"Period": a_lbl, "Value": float(fallback_cur), "ColorHex": color_cur},
-                    {"Period": b_lbl, "Value": float(fallback_cmp), "ColorHex": color_cmp},
-                ]
-            )
-
-            xmax = float(chart_df["Value"].max()) if not chart_df.empty else 0.0
-            label_pad = max(xmax * 0.03, 1.0)
-            xmax = xmax + label_pad if xmax > 0 else 1.0
-
-            bars = (
-                alt.Chart(chart_df)
-                .mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5)
-                .encode(
-                    y=alt.Y("Period:N", title="", sort=[a_lbl, b_lbl]),
-                    x=alt.X("Value:Q", title=metric_name, scale=alt.Scale(domain=[0, xmax])),
-                    color=alt.Color("ColorHex:N", scale=None, legend=None),
-                    tooltip=[
-                        alt.Tooltip("Period:N", title="Period"),
-                        alt.Tooltip("Value:Q", title=metric_name, format=",.0f" if metric == "Units" else ",.2f"),
-                    ],
-                )
-                .properties(height=150)
-            )
-
-            label_df = chart_df.copy()
-            label_df["Label"] = label_df["Value"].map(lambda v: f"{v:,.0f}" if metric == "Units" else money(v))
-
-            labels = (
-                alt.Chart(label_df)
-                .mark_text(dx=8, align="left", fontSize=14, fontWeight="bold")
-                .encode(
-                    y=alt.Y("Period:N", sort=[a_lbl, b_lbl]),
-                    x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax])),
-                    text="Label:N",
-                    color=alt.Color("ColorHex:N", scale=None, legend=None),
-                )
-            )
-
-            return bars + labels
-
-        totals = (
-            stacked.groupby("Period", as_index=False)
-            .agg(Value=("Value", "sum"))
-            .assign(
-                ColorHex=lambda d: d["Period"].map({
-                    a_lbl: color_cur,
-                    b_lbl: color_cmp,
-                })
-            )
-        )
-
-        xmax = float(totals["Value"].max()) if not totals.empty else 0.0
-        label_pad = max(xmax * 0.03, 1.0)
-        xmax = xmax + label_pad if xmax > 0 else 1.0
-
-        bars = (
-            alt.Chart(totals)
-            .mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5)
-            .encode(
-                y=alt.Y("Period:N", title="", sort=[a_lbl, b_lbl]),
-                x=alt.X("Value:Q", title=metric_name, scale=alt.Scale(domain=[0, xmax])),
-                color=alt.Color("ColorHex:N", scale=None, legend=None),
-                tooltip=[
-                    alt.Tooltip("Period:N", title="Period"),
-                    alt.Tooltip("Value:Q", title=metric_name, format=",.0f" if metric == "Units" else ",.2f"),
-                ],
-            )
-            .properties(height=150)
-        )
-
-        totals["Label"] = totals["Value"].map(lambda v: f"{v:,.0f}" if metric == "Units" else money(v))
-
-        labels = (
-            alt.Chart(totals)
-            .mark_text(dx=8, align="left", fontSize=14, fontWeight="bold")
-            .encode(
-                y=alt.Y("Period:N", sort=[a_lbl, b_lbl]),
-                x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax])),
-                text="Label:N",
-                color=alt.Color("ColorHex:N", scale=None, legend=None),
-            )
-        )
-
-        return bars + labels
-
-    def collect_change_contributors(df_cur: pd.DataFrame, df_cmp: pd.DataFrame) -> pd.DataFrame:
-        if "Retailer" not in df_cur.columns or "Retailer" not in df_cmp.columns:
-            return pd.DataFrame(columns=["Label", "Delta", "ColorHex", "Side", "Direction"])
-
-        cur = df_cur.groupby("Retailer", as_index=False).agg(Current=("Sales", "sum"))
-        cmp = df_cmp.groupby("Retailer", as_index=False).agg(Compare=("Sales", "sum"))
-        out = cur.merge(cmp, on="Retailer", how="outer").fillna(0.0)
-        out["Label"] = out["Retailer"].astype(str)
-        out["Delta"] = out["Current"] - out["Compare"]
-        out = out[["Label", "Delta"]].copy()
-        out = out[np.isfinite(out["Delta"])].copy()
-        out = out[out["Delta"] != 0].copy()
-
-        out["ColorHex"] = np.where(out["Delta"] > 0, POSITIVE_BAR, NEGATIVE_BAR)
-        out["Side"] = np.where(out["Delta"] > 0, "right", "left")
-        out["Direction"] = np.where(out["Delta"] > 0, "right", "left")
-
-        pos = out[out["Delta"] > 0].sort_values(["Delta", "Label"], ascending=[False, True]).copy()
-        neg = out[out["Delta"] < 0].sort_values(["Delta", "Label"], ascending=[True, True]).copy()
-
-        return pd.concat([pos, neg], ignore_index=True)
-
-    def simple_period_block_chart(
-        current_value: float,
-        compare_value: float,
-        current_label: str,
-        compare_label: str,
-        changes_df: pd.DataFrame,
-    ):
-        def full_total_label(v: float) -> str:
-            return money(float(v))
-
-        def abs_change_label(v: float) -> str:
-            return money(abs(float(v)))
-
-        current_value = float(max(current_value, 0.0))
-        compare_value = float(max(compare_value, 0.0))
-
-        if current_value > compare_value:
-            current_color = POSITIVE_BAR
-            compare_color = NEGATIVE_BAR
-        elif current_value < compare_value:
-            current_color = NEGATIVE_BAR
-            compare_color = POSITIVE_BAR
-        else:
-            current_color = NEUTRAL_BAR
-            compare_color = NEUTRAL_BAR
-
-        rows = [
-            {
-                "Period": compare_label,
-                "Kind": "total",
-                "Value": compare_value,
-                "Direction": "right",
-                "ColorHex": compare_color,
-                "Side": "right",
-                "Text": full_total_label(compare_value),
-                "BlockValue": TOTAL_BLOCK_VALUE,
-            }
-        ]
-
-        if changes_df is not None and not changes_df.empty:
-            for _, r in changes_df.iterrows():
-                delta = float(r["Delta"])
-                rows.append(
-                    {
-                        "Period": str(r["Label"]),
-                        "Kind": "change",
-                        "Value": abs(delta),
-                        "Direction": str(r["Direction"]),
-                        "ColorHex": str(r["ColorHex"]),
-                        "Side": str(r["Side"]),
-                        "Text": abs_change_label(delta),
-                        "BlockValue": CHANGE_BLOCK_VALUE,
-                    }
-                )
-
-        rows.append(
-            {
-                "Period": current_label,
-                "Kind": "total",
-                "Value": current_value,
-                "Direction": "right",
-                "ColorHex": current_color,
-                "Side": "right",
-                "Text": full_total_label(current_value),
-                "BlockValue": TOTAL_BLOCK_VALUE,
-            }
-        )
-
-        row_df = pd.DataFrame(rows)
-
-        total_max = float(max(compare_value, current_value, TOTAL_BLOCK_VALUE))
-        if (row_df["Kind"] == "change").any():
-            change_max = float(row_df.loc[row_df["Kind"] == "change", "Value"].max())
-        else:
-            change_max = CHANGE_BLOCK_VALUE
-
-        change_max = max(change_max, CHANGE_BLOCK_VALUE)
-
-        center_from_compare = compare_value / 2.0
-        min_center_needed = change_max + max(CHANGE_BLOCK_VALUE * 2, change_max * 0.04)
-        center_x = max(center_from_compare, min_center_needed)
-        center_x = float(np.ceil(center_x / CHANGE_BLOCK_VALUE) * CHANGE_BLOCK_VALUE)
-
-        right_needed_for_changes = center_x + change_max + max(CHANGE_BLOCK_VALUE * 2, change_max * 0.04)
-        right_needed_for_totals = total_max + max(TOTAL_BLOCK_VALUE, total_max * 0.02)
-
-        xmax = float(max(right_needed_for_changes, right_needed_for_totals))
-        xmax = float(np.ceil(xmax / CHANGE_BLOCK_VALUE) * CHANGE_BLOCK_VALUE)
-
-        block_rows = []
-        total_label_rows = []
-
-        for _, r in row_df.iterrows():
-            value = float(max(r["Value"], 0.0))
-            block_value = float(r["BlockValue"])
-
-            if r["Kind"] == "total":
-                if value <= 0:
-                    block_rows.append(
-                        {
-                            "Period": r["Period"],
-                            "X0": 0.0,
-                            "X1": 0.0,
-                            "ColorHex": r["ColorHex"],
-                        }
-                    )
-                    total_label_rows.append(
-                        {
-                            "Period": r["Period"],
-                            "X": 0.0,
-                            "Text": r["Text"],
-                            "ColorHex": r["ColorHex"],
-                            "Side": r["Side"],
-                        }
-                    )
-                else:
-                    n_blocks = int(np.ceil(value / block_value))
-                    for i in range(n_blocks):
-                        x0 = i * block_value
-                        x1 = min((i + 1) * block_value, value)
-                        block_rows.append(
-                            {
-                                "Period": r["Period"],
-                                "X0": x0,
-                                "X1": x1,
-                                "ColorHex": r["ColorHex"],
-                            }
-                        )
-                    total_label_rows.append(
-                        {
-                            "Period": r["Period"],
-                            "X": value,
-                            "Text": r["Text"],
-                            "ColorHex": r["ColorHex"],
-                            "Side": "right",
-                        }
-                    )
-            else:
-                if value <= 0:
-                    block_rows.append(
-                        {
-                            "Period": r["Period"],
-                            "X0": center_x,
-                            "X1": center_x,
-                            "ColorHex": r["ColorHex"],
-                        }
-                    )
-                    total_label_rows.append(
-                        {
-                            "Period": r["Period"],
-                            "X": center_x,
-                            "Text": r["Text"],
-                            "ColorHex": r["ColorHex"],
-                            "Side": r["Side"],
-                        }
-                    )
-                else:
-                    n_blocks = int(np.ceil(value / block_value))
-                    for i in range(n_blocks):
-                        piece_start = i * block_value
-                        piece_end = min((i + 1) * block_value, value)
-
-                        if r["Direction"] == "right":
-                            x0 = center_x + piece_start
-                            x1 = center_x + piece_end
-                        else:
-                            x0 = center_x - piece_end
-                            x1 = center_x - piece_start
-
-                        block_rows.append(
-                            {
-                                "Period": r["Period"],
-                                "X0": x0,
-                                "X1": x1,
-                                "ColorHex": r["ColorHex"],
-                            }
-                        )
-
-                    total_label_rows.append(
-                        {
-                            "Period": r["Period"],
-                            "X": center_x + value if r["Direction"] == "right" else center_x - value,
-                            "Text": r["Text"],
-                            "ColorHex": r["ColorHex"],
-                            "Side": r["Side"],
-                        }
-                    )
-
-        block_df = pd.DataFrame(block_rows)
-        totals_df = pd.DataFrame(total_label_rows)
-        order = row_df["Period"].tolist()
-
-        chart_height = max(230, 44 * len(order))
-
-        def _layer(df_sub: pd.DataFrame, color_hex: str):
-            if df_sub.empty:
-                return None
-            return (
-                alt.Chart(df_sub)
-                .mark_bar(color=color_hex, stroke="white", strokeWidth=1)
-                .encode(
-                    y=alt.Y("Period:N", sort=order, title=""),
-                    x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, xmax])),
-                    x2="X1:Q",
-                    tooltip=[alt.Tooltip("Period:N", title="Period")],
-                )
-            )
-
-        layers = []
-
-        green_df = block_df[block_df["ColorHex"] == POSITIVE_BAR].copy()
-        red_df = block_df[block_df["ColorHex"] == NEGATIVE_BAR].copy()
-        gray_df = block_df[block_df["ColorHex"] == NEUTRAL_BAR].copy()
-
-        green_layer = _layer(green_df, POSITIVE_BAR)
-        red_layer = _layer(red_df, NEGATIVE_BAR)
-        gray_layer = _layer(gray_df, NEUTRAL_BAR)
-
-        for lyr in (green_layer, red_layer, gray_layer):
-            if lyr is not None:
-                layers.append(lyr)
-
-        center_rule = (
-            alt.Chart(pd.DataFrame([{"Center": center_x}]))
-            .mark_rule(color="#7a7a7a", strokeDash=[4, 4], strokeWidth=1.5)
-            .encode(x=alt.X("Center:Q", scale=alt.Scale(domain=[0, xmax])))
-        )
-        layers.append(center_rule)
-
-        right_labels = (
-            alt.Chart(totals_df[totals_df["Side"] == "right"])
-            .mark_text(align="left", dx=10, fontSize=12, fontWeight="bold", clip=False)
-            .encode(
-                y=alt.Y("Period:N", sort=order),
-                x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
-                text="Text:N",
-                color=alt.Color("ColorHex:N", scale=None, legend=None),
-            )
-        )
-        layers.append(right_labels)
-
-        left_labels = (
-            alt.Chart(totals_df[totals_df["Side"] == "left"])
-            .mark_text(align="right", dx=-10, fontSize=12, fontWeight="bold", clip=False)
-            .encode(
-                y=alt.Y("Period:N", sort=order),
-                x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
-                text="Text:N",
-                color=alt.Color("ColorHex:N", scale=None, legend=None),
-            )
-        )
-        layers.append(left_labels)
-
-        chart = alt.layer(*layers).properties(height=chart_height)
-        return chart
-
-    def prep_grouped_share(df: pd.DataFrame, dim_name: str) -> pd.DataFrame:
-        if df.empty:
-            return pd.DataFrame(
-                columns=[dim_name, "Series", "Value", "SharePct", "Label", "SortTotal", "Start", "RowColor"]
-            )
-
-        long_df = df[[dim_name, "Current", "Compare", "Total"]].melt(
-            id_vars=[dim_name, "Total"],
-            value_vars=["Current", "Compare"],
-            var_name="Series",
-            value_name="Value",
-        )
-
-        color_base = df[[dim_name, "Current", "Compare", "Total"]].copy()
-        color_base["CurrentColor"] = np.where(
-            color_base["Current"] > color_base["Compare"],
-            "green",
-            np.where(color_base["Current"] < color_base["Compare"], "red", "neutral"),
-        )
-        color_base["CompareColor"] = np.where(
-            color_base["Compare"] > color_base["Current"],
-            "green",
-            np.where(color_base["Compare"] < color_base["Current"], "red", "neutral"),
-        )
-
-        long_df = long_df.merge(
-            color_base[[dim_name, "CurrentColor", "CompareColor"]],
-            on=dim_name,
-            how="left",
-        )
-
-        long_df["Series"] = long_df["Series"].replace({"Current": a_lbl, "Compare": b_lbl})
-        long_df["RowColor"] = np.where(
-            long_df["Series"] == a_lbl,
-            long_df["CurrentColor"],
-            long_df["CompareColor"],
-        )
-
-        long_df["SharePct"] = np.where(long_df["Total"] > 0, long_df["Value"] / long_df["Total"], 0.0)
-        long_df["Label"] = long_df.apply(
-            lambda r: f'{money(r["Value"])} • {r["SharePct"]:.0%}' if r["Value"] > 0 else "",
-            axis=1,
-        )
-        long_df["SortTotal"] = long_df["Total"]
-        long_df["Start"] = 0.0
-        return long_df
-
-    def grouped_lollipop_chart(long_df: pd.DataFrame, dim_name: str, height: int = 560):
-        if long_df.empty:
-            return None
-
-        xmax = float(long_df["Value"].max()) if not long_df.empty else 0.0
-        xmax = xmax * 1.40 if xmax > 0 else 1.0
-
-        color_enc = alt.Color(
-            "RowColor:N",
-            scale=alt.Scale(
-                domain=["green", "red", "neutral"],
-                range=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR],
-            ),
-            legend=None,
-        )
-
-        y_enc = alt.Y(
-            f"{dim_name}:N",
-            sort=alt.SortField(field="SortTotal", order="descending"),
-            title="",
-            scale=alt.Scale(paddingInner=0.55, paddingOuter=0.22),
-        )
-
-        yoff_enc = alt.YOffset(
-            "Series:N",
-            sort=[a_lbl, b_lbl],
-            scale=alt.Scale(paddingInner=0.48),
-        )
-
-        rules = (
-            alt.Chart(long_df)
-            .mark_rule(strokeWidth=2.5)
-            .encode(
-                y=y_enc,
-                yOffset=yoff_enc,
-                x=alt.X("Start:Q", scale=alt.Scale(domain=[0, xmax], nice=True), title="Sales"),
-                x2="Value:Q",
-                color=color_enc,
-                tooltip=[
-                    alt.Tooltip(f"{dim_name}:N", title=dim_name),
-                    alt.Tooltip("Series:N", title="Series"),
-                    alt.Tooltip("Value:Q", title="Sales", format=",.2f"),
-                    alt.Tooltip("SharePct:Q", title="% of row total", format=".0%"),
-                ],
-            )
-        )
-
-        dots = (
-            alt.Chart(long_df)
-            .mark_circle(size=150)
-            .encode(
-                y=y_enc,
-                yOffset=yoff_enc,
-                x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax], nice=True), title="Sales"),
-                color=color_enc,
-                tooltip=[
-                    alt.Tooltip(f"{dim_name}:N", title=dim_name),
-                    alt.Tooltip("Series:N", title="Series"),
-                    alt.Tooltip("Value:Q", title="Sales", format=",.2f"),
-                    alt.Tooltip("SharePct:Q", title="% of row total", format=".0%"),
-                ],
-            )
-        )
-
-        labels = (
-            alt.Chart(long_df[long_df["Label"] != ""])
-            .mark_text(
-                align="left",
-                dx=10,
-                baseline="middle",
-                fontSize=15,
-                fontWeight="bold",
-            )
-            .encode(
-                y=y_enc,
-                yOffset=yoff_enc,
-                x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax], nice=True)),
-                text="Label:N",
-                color=color_enc,
-            )
-        )
-
-        return (rules + dots + labels).properties(height=height)
-
-    def prep_sku_movers():
-        sA = dfA.groupby("SKU", as_index=False).agg(Current=("Sales", "sum"))
-        sB = dfB.groupby("SKU", as_index=False).agg(Compare=("Sales", "sum"))
-        sku = sA.merge(sB, on="SKU", how="outer").fillna(0.0)
-        sku["Delta"] = sku["Current"] - sku["Compare"]
-        sku = sku[(sku["Current"] >= min_sales) | (sku["Compare"] >= min_sales)].copy()
-
-        inc = sku.sort_values(["Delta", "SKU"], ascending=[False, True]).head(10).copy()
-        dec = sku.sort_values(["Delta", "SKU"], ascending=[True, True]).head(10).copy()
-        inc["Start"] = 0.0
-        dec["Start"] = 0.0
-        return inc, dec
-
-    def mover_lollipop_chart(df: pd.DataFrame, metric_title: str, positive: bool, height: int = 430):
-        if df.empty:
-            return None
-
-        df = df.copy()
-        df["DeltaLabel"] = df["Delta"].map(money)
-
-        xmax = float(df["Delta"].max()) if positive else float(df["Delta"].abs().max())
-        xmax = xmax * 1.40 if xmax > 0 else 1.0
-
-        if positive:
-            order = alt.SortField(field="Delta", order="descending")
-            x_scale = alt.Scale(domain=[0, xmax], nice=True)
-            color = POSITIVE_BAR
-            align = "left"
-            dx = 10
-        else:
-            order = alt.SortField(field="Delta", order="ascending")
-            x_scale = alt.Scale(domain=[-xmax, 0], nice=True)
-            color = NEGATIVE_BAR
-            align = "right"
-            dx = -10
-
-        y_enc = alt.Y(
-            "SKU:N",
-            sort=order,
-            title="",
-            scale=alt.Scale(paddingInner=0.35, paddingOuter=0.18),
-        )
-
-        rules = (
-            alt.Chart(df)
-            .mark_rule(strokeWidth=2.5, color=color)
-            .encode(
-                y=y_enc,
-                x=alt.X("Start:Q", scale=x_scale, title=metric_title),
-                x2="Delta:Q",
-            )
-        )
-
-        dots = (
-            alt.Chart(df)
-            .mark_circle(size=150, color=color)
-            .encode(
-                y=y_enc,
-                x=alt.X("Delta:Q", scale=x_scale, title=metric_title),
-                tooltip=[
-                    alt.Tooltip("SKU:N", title="SKU"),
-                    alt.Tooltip("Current:Q", title=a_lbl, format=",.2f"),
-                    alt.Tooltip("Compare:Q", title=b_lbl, format=",.2f"),
-                    alt.Tooltip("Delta:Q", title="Change", format=",.2f"),
-                ],
-            )
-        )
-
-        labels = (
-            alt.Chart(df)
-            .mark_text(
-                align=align,
-                dx=dx,
-                color=color,
-                fontSize=15,
-                fontWeight="bold",
-            )
-            .encode(
-                y=y_enc,
-                x=alt.X("Delta:Q", scale=x_scale),
-                text="DeltaLabel:N",
-            )
-        )
-
-        return (rules + dots + labels).properties(height=height)
-
-    sales_col, units_col = st.columns(2)
-
-    with sales_col:
-        st.markdown(f"#### Sales Total ({a_lbl} vs {b_lbl})")
-        sales_chart = stacked_total_chart(
-            metric_name="Sales",
-            df_cur=dfA,
-            df_cmp=dfB,
-            fallback_cur=float(kA["Sales"]),
-            fallback_cmp=float(kB["Sales"]),
-        )
-        st.altair_chart(sales_chart, use_container_width=True)
-
-    with units_col:
-        st.markdown(f"#### Units Total ({a_lbl} vs {b_lbl})")
-        units_chart = stacked_total_chart(
-            metric_name="Units",
-            df_cur=dfA,
-            df_cmp=dfB,
-            fallback_cur=float(kA["Units"]),
-            fallback_cmp=float(kB["Units"]),
-        )
-        st.altair_chart(units_chart, use_container_width=True)
-
-    st.write("")
-
-    change_rows = collect_change_contributors(dfA, dfB)
-
-    st.markdown("#### Sales Change Compare")
-    st.caption("Totals: 1 block = $25,000 • Retailer changes: 1 block = $1,000")
-
-    block_chart = simple_period_block_chart(
-        current_value=float(kA["Sales"]),
-        compare_value=float(kB["Sales"]),
-        current_label=a_lbl,
-        compare_label=b_lbl,
-        changes_df=change_rows,
-    )
-    st.altair_chart(block_chart, use_container_width=True)
-
-    st.write("")
-
-    retailer = prep_compare_metric(dfA, dfB, "Retailer", metric="Sales", top_n=10)
-    vendor = prep_compare_metric(dfA, dfB, "Vendor", metric="Sales", top_n=10)
-
-    left, right = st.columns(2)
-
-    with left:
-        st.markdown("#### Top Retailers")
-        retailer_long = prep_grouped_share(retailer, "Retailer")
-        if retailer_long.empty:
-            st.caption("No retailer data available.")
-        else:
-            retailer_chart = grouped_lollipop_chart(retailer_long, "Retailer", height=560)
-            st.altair_chart(retailer_chart, use_container_width=True)
-
-    with right:
-        st.markdown("#### Top Vendors")
-        vendor_long = prep_grouped_share(vendor, "Vendor")
-        if vendor_long.empty:
-            st.caption("No vendor data available.")
-        else:
-            vendor_chart = grouped_lollipop_chart(vendor_long, "Vendor", height=560)
-            st.altair_chart(vendor_chart, use_container_width=True)
-
-    st.write("")
-
-    inc, dec = prep_sku_movers()
-
-    left2, right2 = st.columns(2)
-
-    with left2:
-        st.markdown("#### Top SKU Increases")
-        if inc.empty:
-            st.caption("No increasing SKUs found.")
-        else:
-            inc_chart = mover_lollipop_chart(inc, "Sales Change", positive=True, height=430)
-            st.altair_chart(inc_chart, use_container_width=True)
-
-    with right2:
-        st.markdown("#### Top SKU Decreases")
-        if dec.empty:
-            st.caption("No declining SKUs found.")
-        else:
-            dec_chart = mover_lollipop_chart(dec, "Sales Change", positive=False, height=430)
-            st.altair_chart(dec_chart, use_container_width=True)
-
-
-def render_standard_view(
-    dfA: pd.DataFrame,
-    dfB: pd.DataFrame,
-    kA: dict,
-    kB: dict,
-    a_lbl: str,
-    b_lbl: str,
-    compare_mode: str,
-    min_sales: float,
-):
-    def render_shaded_total_table(df: pd.DataFrame, height: int = 760):
-        st.dataframe(df, use_container_width=True, hide_index=True, height=height)
+    dfA = ctx["dfA"]
+    dfB = ctx["dfB"]
+    kA = ctx["kA"]
+    kB = ctx["kB"]
+    a_lbl = ctx["a_lbl"]
+    b_lbl = ctx["b_lbl"]
+    compare_mode = ctx["compare_mode"]
+    min_sales = ctx["min_sales"]
+    min_units = ctx["min_units"]
+    df_scope = ctx["df_scope"]
+    pA = ctx["pA"]
+    df_hist_for_new = ctx["df_hist_for_new"]
+    show_full_history_lifecycle = ctx["show_full_history_lifecycle"]
+    driver_level = ctx["driver_level"]
 
     def pct_change(cur, prev):
         if prev == 0:
@@ -884,272 +44,1191 @@ def render_standard_view(
 
     def _delta_html(cur: float, prev: float, is_money: bool):
         d = cur - prev
-        pc = pct_change(cur, prev)
         color = "#2e7d32" if d > 0 else ("#c62828" if d < 0 else "var(--text-color)")
         arrow = "▲ " if d > 0 else ("▼ " if d < 0 else "")
         abs_s = money(d) if is_money else (f"{d:,.0f}" if abs(d) >= 1 else f"{d:,.2f}")
         return (
             f"<span class='delta-abs' style='color:{color}'>{arrow}{abs_s}</span>"
-            f"<span class='delta-pct' style='color:{color}'>({pct_fmt(pc)})</span>"
+            f"<span class='delta-pct' style='color:{color}'>({pct_fmt(pct_change(cur, prev))})</span>"
         )
 
-    def kdelta(key: str) -> str:
+    def kdelta(key: str):
         cur = float(kA.get(key, 0.0))
         prev = float(kB.get(key, 0.0))
         return _delta_html(cur, prev, is_money=(key in ("Sales", "ASP")))
 
+    def _top_by_current(level: str):
+        a = dfA.groupby(level, as_index=False).agg(Sales=("Sales", "sum"), Units=("Units", "sum"))
+        b = dfB.groupby(level, as_index=False).agg(Sales=("Sales", "sum"), Units=("Units", "sum"))
+        m = a.merge(b, on=level, how="outer", suffixes=("_A", "_B")).fillna(0.0)
+        if m.empty:
+            return None
+        row = m.sort_values("Sales_A", ascending=False).iloc[0]
+        return str(row[level]), float(row["Sales_A"]), float(row["Sales_B"])
+
     def _top_by_increase(level: str):
-        a = dfA.groupby(level, as_index=False).agg(Sales_A=("Sales", "sum"))
-        b = dfB.groupby(level, as_index=False).agg(Sales_B=("Sales", "sum"))
-        m = a.merge(b, on=level, how="outer").fillna(0.0)
-        m["Δ"] = m["Sales_A"] - m["Sales_B"]
+        a = dfA.groupby(level, as_index=False).agg(Sales=("Sales", "sum"))
+        b = dfB.groupby(level, as_index=False).agg(Sales=("Sales", "sum"))
+        m = a.merge(b, on=level, how="outer", suffixes=("_A", "_B")).fillna(0.0)
         if m.empty:
             return None
-        r = m.sort_values("Δ", ascending=False).iloc[0]
-        return str(r[level]), float(r["Sales_A"]), float(r["Sales_B"])
-
-    def _top_decrease(level: str):
-        a = dfA.groupby(level, as_index=False).agg(Sales_A=("Sales", "sum"))
-        b = dfB.groupby(level, as_index=False).agg(Sales_B=("Sales", "sum"))
-        m = a.merge(b, on=level, how="outer").fillna(0.0)
         m["Δ"] = m["Sales_A"] - m["Sales_B"]
-        if m.empty:
+        row = m.sort_values("Δ", ascending=False).iloc[0]
+        return str(row[level]), float(row["Sales_A"]), float(row["Sales_B"])
+
+    def _style_delta_cols(
+        df_display: pd.DataFrame,
+        df_numeric: pd.DataFrame,
+        delta_cols: list[str],
+        bold_total: bool = False,
+    ):
+        def style_row(row):
+            idx = row.name
+            styles = [""] * len(df_display.columns)
+
+            is_total = False
+            if bold_total:
+                first_val = str(df_display.iloc[idx, 0]) if idx < len(df_display) else ""
+                is_total = first_val == "TOTAL"
+
+            for j, col in enumerate(df_display.columns):
+                style_bits = []
+                if is_total:
+                    style_bits.append("font-weight:800; border-top:2px solid rgba(128,128,128,0.4);")
+                if col in delta_cols and col in df_numeric.columns:
+                    val = pd.to_numeric(df_numeric.loc[idx, col], errors="coerce")
+                    if pd.notna(val):
+                        if val > 0:
+                            style_bits.append("color:#2e7d32; font-weight:700;")
+                        elif val < 0:
+                            style_bits.append("color:#c62828; font-weight:700;")
+                styles[j] = " ".join(style_bits)
+            return styles
+
+        return df_display.style.apply(style_row, axis=1)
+
+    def _parse_weeks(label: str):
+        if label == "All weeks":
             return None
-        r = m.sort_values("Δ", ascending=True).iloc[0]
-        return str(r[level]), float(r["Sales_A"]), float(r["Sales_B"])
+        return int(str(label).split()[0])
 
-    def _top_two_with_compare(df_sel: pd.DataFrame, df_other: pd.DataFrame, level: str):
-        if df_sel.empty:
-            return []
-        cur = df_sel.groupby(level, as_index=False).agg(Sales=("Sales", "sum"), Units=("Units", "sum"))
-        if not df_other.empty:
-            oth = df_other.groupby(level, as_index=False).agg(
-                Other_Sales=("Sales", "sum"),
-                Other_Units=("Units", "sum"),
-            )
-        else:
-            oth = pd.DataFrame(columns=[level, "Other_Sales", "Other_Units"])
-        m = cur.merge(oth, on=level, how="left").fillna(0.0)
-        total_sales = float(m["Sales"].sum())
-        total_units = float(m["Units"].sum())
-        out = []
-        for _, r in m.sort_values(["Sales", level], ascending=[False, True]).head(2).iterrows():
-            sales = float(r["Sales"])
-            units = float(r["Units"])
-            out.append(
-                {
-                    "name": str(r[level]),
-                    "sales": sales,
-                    "other_sales": float(r["Other_Sales"]),
-                    "share": (sales / total_sales) if total_sales else np.nan,
-                    "units": units,
-                    "other_units": float(r["Other_Units"]),
-                    "unit_share": (units / total_units) if total_units else np.nan,
-                }
-            )
-        return out
+    def _fmt_metric_value(v: float, metric: str) -> str:
+        if pd.isna(v):
+            return ""
+        return money(v) if metric == "Sales" else f"{float(v):,.0f}"
 
-    cur_sku = dfA.groupby("SKU", as_index=False).agg(Sales=("Sales", "sum"), Units=("Units", "sum"))
-    cmp_sku = dfB.groupby("SKU", as_index=False).agg(Sales=("Sales", "sum"), Units=("Units", "sum"))
+    def _colorize_delta_value(v: float, metric: str) -> str:
+        if pd.isna(v):
+            return ""
+        sign = "+" if v > 0 else ""
+        return f"{sign}{_fmt_metric_value(v, metric)}"
 
-    cur_only = cur_sku.merge(
-        cmp_sku[["SKU", "Sales"]].rename(columns={"Sales": "Compare_Sales"}),
-        on="SKU",
-        how="left",
-    ).fillna(0.0)
-    cur_only = cur_only[(cur_only["Sales"] > 0) & (cur_only["Compare_Sales"] <= 0)].copy()
+    def _short_week_label(dt_val) -> str:
+        d = pd.to_datetime(dt_val)
+        return f"{d.month}/{d.day}"
 
-    cmp_only = cmp_sku.merge(
-        cur_sku[["SKU", "Sales"]].rename(columns={"Sales": "Current_Sales"}),
-        on="SKU",
-        how="left",
-    ).fillna(0.0)
-    cmp_only = cmp_only[(cmp_only["Sales"] > 0) & (cmp_only["Current_Sales"] <= 0)].copy()
+    def _build_hierarchy(df_cur: pd.DataFrame, df_cmp: pd.DataFrame, group_col: str) -> pd.DataFrame:
+        a = df_cur.groupby(group_col, as_index=False).agg(Sales_A=("Sales", "sum"))
+        b = df_cmp.groupby(group_col, as_index=False).agg(Sales_B=("Sales", "sum"))
+        out = a.merge(b, on=group_col, how="outer").fillna(0.0)
+        out["Sales_Δ"] = out["Sales_A"] - out["Sales_B"]
+        total_delta = float(out["Sales_Δ"].sum()) if not out.empty else 0.0
+        out["Contribution_%"] = (out["Sales_Δ"] / total_delta) if total_delta != 0 else 0.0
+        return out.sort_values("Sales_Δ", ascending=False).reset_index(drop=True)
 
-    new_count = int(len(cur_only))
-    new_sales = float(cur_only["Sales"].sum())
-    lost_count = int(len(cmp_only))
-    lost_sales = float(cmp_only["Sales"].sum())
-    net_count = new_count - lost_count
-    net_sales = new_sales - lost_sales
-    net_pct = (net_sales / lost_sales) if lost_sales != 0 else (np.nan if net_sales == 0 else np.inf)
+    def _display_hierarchy(df_in: pd.DataFrame, group_col: str, height: int = 420):
+        show = df_in.copy()
+        numeric = show.copy()
 
-    n1, n2, n3 = st.columns(3)
-    with n1:
-        count_sales_card("New SKUs", new_count, new_sales, color="#2e7d32", signed_sales=True)
-    with n2:
-        count_sales_card("Lost SKUs", lost_count, -lost_sales, color="#c62828", signed_sales=True)
-    with n3:
-        count_sales_card(
-            "Net New vs Lost",
-            net_count,
-            net_sales,
-            color=("#2e7d32" if net_sales > 0 else ("#c62828" if net_sales < 0 else "var(--text-color)")),
-            signed_sales=True,
-            pct=net_pct,
+        show["Sales_A"] = show["Sales_A"].map(money)
+        show["Sales_B"] = show["Sales_B"].map(money)
+        show["Sales_Δ"] = show["Sales_Δ"].map(money)
+        show["Contribution_%"] = show["Contribution_%"].map(pct_fmt)
+
+        show = rename_ab_columns(show, a_lbl, b_lbl)
+        numeric = rename_ab_columns(numeric, a_lbl, b_lbl)
+
+        sales_a_col = f"Sales ({a_lbl})"
+        sales_b_col = f"Sales ({b_lbl})" if b_lbl else "Sales (Comparison)"
+        cols = [group_col, sales_a_col, sales_b_col, "Sales_Δ", "Contribution_%"]
+
+        styled = _style_delta_cols(show[cols], numeric[cols], ["Sales_Δ"], bold_total=False)
+        st.dataframe(
+            styled,
+            use_container_width=True,
+            height=height,
+            hide_index=True,
+            column_config={
+                group_col: st.column_config.TextColumn(width="medium"),
+                sales_a_col: st.column_config.TextColumn(width="small"),
+                sales_b_col: st.column_config.TextColumn(width="small"),
+                "Sales_Δ": st.column_config.TextColumn(width="small"),
+                "Contribution_%": st.column_config.TextColumn(width="small"),
+            },
         )
 
-    st.write("")
-    g1, g2, g3, g4 = st.columns(4)
-    with g1:
-        selection_total_card(f"{a_lbl} Total", kA, kB)
-        st.write("")
-        selection_total_card(f"{b_lbl} Total", kB, kA)
-    with g2:
-        top_two_card(f"Top 2 Retailers ({a_lbl})", _top_two_with_compare(dfA, dfB, "Retailer"))
-        st.write("")
-        top_two_card(f"Top 2 Retailers ({b_lbl})", _top_two_with_compare(dfB, dfA, "Retailer"))
-    with g3:
-        top_two_card(f"Top 2 Vendors ({a_lbl})", _top_two_with_compare(dfA, dfB, "Vendor"))
-        st.write("")
-        top_two_card(f"Top 2 Vendors ({b_lbl})", _top_two_with_compare(dfB, dfA, "Vendor"))
-    with g4:
-        top_two_card(f"Top 2 SKUs ({a_lbl})", _top_two_with_compare(dfA, dfB, "SKU"))
-        st.write("")
-        top_two_card(f"Top 2 SKUs ({b_lbl})", _top_two_with_compare(dfB, dfA, "SKU"))
+    def _compute_lifecycle_custom(df_src: pd.DataFrame, lookback_weeks: int) -> pd.DataFrame:
+        d = df_src.copy()
+        if d.empty or "WeekEnd" not in d.columns or "SKU" not in d.columns:
+            return pd.DataFrame()
+
+        d["WeekEnd"] = pd.to_datetime(d["WeekEnd"], errors="coerce")
+        d = d[d["WeekEnd"].notna()].copy()
+        if d.empty:
+            return pd.DataFrame()
+
+        all_weeks = sorted(d["WeekEnd"].dropna().unique().tolist())
+        if not all_weeks:
+            return pd.DataFrame()
+
+        sel_weeks = all_weeks[-lookback_weeks:] if len(all_weeks) >= lookback_weeks else all_weeks
+        if not sel_weeks:
+            return pd.DataFrame()
+
+        end_week = max(sel_weeks)
+        look = d[d["WeekEnd"].isin(sel_weeks)].copy()
+        hist = d[d["WeekEnd"] <= end_week].copy()
+
+        sku_week = (
+            look.groupby(["SKU", "WeekEnd"], as_index=False)
+            .agg(Sales=("Sales", "sum"))
+        )
+
+        sku_tot = (
+            look.groupby("SKU", as_index=False)
+            .agg(
+                Sales_lookback=("Sales", "sum"),
+            )
+        )
+
+        last_week_sales = (
+            look[look["WeekEnd"] == end_week]
+            .groupby("SKU", as_index=False)
+            .agg(Last_Week_Sales=("Sales", "sum"))
+        )
+
+        prev_week = sel_weeks[-2] if len(sel_weeks) >= 2 else None
+        if prev_week is not None:
+            prev_week_sales = (
+                look[look["WeekEnd"] == prev_week]
+                .groupby("SKU", as_index=False)
+                .agg(Prev_Week_Sales=("Sales", "sum"))
+            )
+        else:
+            prev_week_sales = pd.DataFrame(columns=["SKU", "Prev_Week_Sales"])
+
+        first_last = (
+            hist.groupby("SKU", as_index=False)
+            .agg(
+                First_Sale=("WeekEnd", "min"),
+                Last_Sale=("WeekEnd", "max"),
+            )
+        )
+
+        pivot = sku_week.pivot_table(index="SKU", columns="WeekEnd", values="Sales", aggfunc="sum", fill_value=0.0)
+        pivot = pivot.reindex(columns=sel_weeks, fill_value=0.0)
+
+        if pivot.empty:
+            out = sku_tot.merge(first_last, on="SKU", how="left")
+            out = out.merge(last_week_sales, on="SKU", how="left")
+            out = out.merge(prev_week_sales, on="SKU", how="left")
+            return out
+
+        weeks_with_sales = (pivot > 0).sum(axis=1)
+        diffs = pivot.diff(axis=1).iloc[:, 1:] if pivot.shape[1] >= 2 else pd.DataFrame(index=pivot.index)
+        weeks_up = (diffs > 0).sum(axis=1) if not diffs.empty else pd.Series(0, index=pivot.index)
+        weeks_down = (diffs < 0).sum(axis=1) if not diffs.empty else pd.Series(0, index=pivot.index)
+        avg_weekly_sales = pivot.mean(axis=1)
+
+        trend_vals = []
+        stage_vals = []
+
+        inactive_cutoff = end_week - pd.Timedelta(weeks=12)
+
+        for sku in pivot.index:
+            vals = pivot.loc[sku].astype(float).tolist()
+            active_weeks = int((np.array(vals) > 0).sum())
+            first_val = vals[0] if vals else 0.0
+            last_val = vals[-1] if vals else 0.0
+
+            row_fl = first_last[first_last["SKU"] == sku]
+            sku_last_sale = pd.to_datetime(row_fl["Last_Sale"].iloc[0]) if not row_fl.empty else pd.NaT
+
+            growth_pct = np.nan
+            if first_val > 0:
+                growth_pct = (last_val - first_val) / first_val
+
+            non_zero_vals = [v for v in vals if v > 0]
+            mean_non_zero = float(np.mean(non_zero_vals)) if non_zero_vals else 0.0
+
+            if len(vals) >= 2:
+                if last_val > vals[-2]:
+                    trend = "Up"
+                elif last_val < vals[-2]:
+                    trend = "Down"
+                else:
+                    trend = "Flat"
+            else:
+                trend = "Flat"
+
+            if pd.notna(sku_last_sale) and sku_last_sale <= inactive_cutoff:
+                stage = "Inactive 12+ weeks"
+            elif active_weeks == 0:
+                stage = "Dormant"
+            elif active_weeks <= max(2, min(3, lookback_weeks // 4)):
+                stage = "Launch"
+            elif pd.notna(growth_pct) and growth_pct >= 0.25 and last_val >= mean_non_zero * 0.75:
+                stage = "Growth"
+            elif active_weeks >= max(3, lookback_weeks // 3) and pd.notna(growth_pct) and growth_pct <= -0.20:
+                stage = "Decline"
+            else:
+                stage = "Mature"
+
+            trend_vals.append(trend)
+            stage_vals.append(stage)
+
+        trend_df = pd.DataFrame(
+            {
+                "SKU": pivot.index,
+                "Trend": trend_vals,
+                "Weeks With Sales": weeks_with_sales.values,
+                "Weeks Up": weeks_up.reindex(pivot.index).fillna(0).astype(int).values,
+                "Weeks Down": weeks_down.reindex(pivot.index).fillna(0).astype(int).values,
+                "Avg_Weekly_Sales": avg_weekly_sales.values,
+                "Stage": stage_vals,
+            }
+        )
+
+        out = sku_tot.merge(last_week_sales, on="SKU", how="left")
+        out = out.merge(prev_week_sales, on="SKU", how="left")
+        out = out.merge(first_last, on="SKU", how="left")
+        out = out.merge(trend_df, on="SKU", how="left")
+
+        out["Last_Week_Sales"] = out["Last_Week_Sales"].fillna(0.0)
+        out["Prev_Week_Sales"] = out["Prev_Week_Sales"].fillna(0.0)
+        out["Avg_Weekly_Sales"] = out["Avg_Weekly_Sales"].fillna(0.0)
+        out["WoW_Sales_Δ"] = out["Last_Week_Sales"] - out["Prev_Week_Sales"]
+        out["Last_Week_vs_Avg"] = out["Last_Week_Sales"] - out["Avg_Weekly_Sales"]
+
+        return out.sort_values(["Sales_lookback", "SKU"], ascending=[False, True]).reset_index(drop=True)
+
+    first_ever = first_sale_ever(df_hist_for_new, pA)
+    placements = new_placement(df_hist_for_new, pA)
+
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    with c1:
+        kpi_card("Total Sales", money(kA["Sales"]), kdelta("Sales"))
+    with c2:
+        kpi_card("Total Units", f"{kA['Units']:,.0f}", kdelta("Units"))
+    with c3:
+        kpi_card("Avg Selling Price", money(kA["ASP"]), kdelta("ASP"))
+    with c4:
+        kpi_card("Active SKUs", f"{kA['Active SKUs']:,}", kdelta("Active SKUs"))
+    with c5:
+        kpi_card("First Sales", f"{len(first_ever):,}", "")
+    with c6:
+        kpi_card("New Placements", f"{len(placements):,}", "")
 
     st.write("")
-    i1, i2, i3 = st.columns(3)
+
+    r1c1, r1c2, r1c3 = st.columns(3)
+    tR = _top_by_current("Retailer")
+    tV = _top_by_current("Vendor")
+    tS = _top_by_current("SKU")
+    with r1c1:
+        if tR:
+            leader_sales_card("Top Retailer (Sales)", tR[0], tR[1], tR[2])
+    with r1c2:
+        if tV:
+            leader_sales_card("Top Vendor (Sales)", tV[0], tV[1], tV[2])
+    with r1c3:
+        if tS:
+            leader_sales_card("Top SKU (Sales)", tS[0], tS[1], tS[2])
+
+    r2c1, r2c2, r2c3 = st.columns(3)
     iR = _top_by_increase("Retailer")
     iV = _top_by_increase("Vendor")
     iS = _top_by_increase("SKU")
-    with i1:
+    with r2c1:
         if iR:
             biggest_increase_card("Retailer w/ Biggest Increase", iR[0], iR[1], iR[2])
-    with i2:
+    with r2c2:
         if iV:
             biggest_increase_card("Vendor w/ Biggest Increase", iV[0], iV[1], iV[2])
-    with i3:
+    with r2c3:
         if iS:
             biggest_increase_card("SKU w/ Biggest Increase", iS[0], iS[1], iS[2])
 
-    d1, d2, d3 = st.columns(3)
-    decR = _top_decrease("Retailer")
-    decV = _top_decrease("Vendor")
-    decS = _top_decrease("SKU")
-    with d1:
-        if decR:
-            biggest_increase_card("Retailer w/ Biggest Decrease", decR[0], decR[1], decR[2])
-    with d2:
-        if decV:
-            biggest_increase_card("Vendor w/ Biggest Decrease", decV[0], decV[1], decV[2])
-    with d3:
-        if decS:
-            biggest_increase_card("SKU w/ Biggest Decrease", decS[0], decS[1], decS[2])
+    st.write("")
+    st.subheader("Drivers (Contribution to change)")
+    if compare_mode == "None":
+        st.info("Select a comparison mode to compute drivers.")
+    else:
+        drv = drivers(dfA, dfB, driver_level)
+        drv_show = drv.copy()
+        drv_show = drv_show[(drv_show["Sales_A"] >= min_sales) | (drv_show["Sales_B"] >= min_sales)]
+
+        pos = drv_show[drv_show["Sales_Δ"] > 0].head(10).copy()
+        neg = drv_show[drv_show["Sales_Δ"] < 0].sort_values("Sales_Δ").head(10).copy()
+
+        for d in (pos, neg):
+            d["Sales_A"] = d["Sales_A"].map(money)
+            d["Sales_B"] = d["Sales_B"].map(money)
+            d["Sales_Δ"] = d["Sales_Δ"].map(lambda v: f"{money(v)}")
+            d["Contribution_%"] = d["Contribution_%"].map(pct_fmt)
+
+        left, right = st.columns(2)
+        pos_disp = rename_ab_columns(pos, a_lbl, b_lbl)
+        neg_disp = rename_ab_columns(neg, a_lbl, b_lbl)
+        sales_a_col = f"Sales ({a_lbl})"
+        sales_b_col = f"Sales ({b_lbl})" if b_lbl else "Sales (Comparison)"
+
+        with left:
+            st.markdown("**Top Positive Contributors**")
+            render_df(pos_disp[[driver_level, sales_a_col, sales_b_col, "Sales_Δ", "Contribution_%"]], height=320)
+        with right:
+            st.markdown("**Top Negative Contributors**")
+            render_df(neg_disp[[driver_level, sales_a_col, sales_b_col, "Sales_Δ", "Contribution_%"]], height=320)
 
     st.divider()
-    st.subheader("Current Only / Compare Only Activity")
+    st.subheader("Weekly Detail (Retailer/Vendor x Weeks)")
 
-    cur_s = dfA.groupby("SKU", as_index=False).agg(Current_Units=("Units", "sum"), Current_Sales=("Sales", "sum"))
-    cmp_s = dfB.groupby("SKU", as_index=False).agg(Compare_Units=("Units", "sum"), Compare_Sales=("Sales", "sum"))
+    with st.expander("Advanced Weekly Detail Settings", expanded=False):
+        adv1, adv2, adv3, adv4 = st.columns(4)
 
-    lost = cmp_s.merge(cur_s, on="SKU", how="left").fillna(0.0)
-    lost = lost[(lost["Compare_Sales"] > 0) & (lost["Current_Sales"] <= 0)].copy().sort_values(
-        "Compare_Sales", ascending=False
-    )
-
-    new_act = cur_s.merge(cmp_s, on="SKU", how="left").fillna(0.0)
-    new_act = new_act[(new_act["Current_Sales"] > 0) & (new_act["Compare_Sales"] <= 0)].copy().sort_values(
-        "Current_Sales", ascending=False
-    )
-
-    lcol, rcol = st.columns(2)
-    with lcol:
-        st.markdown("**Lost Activity — sold in compare, zero in current**")
-        if lost.empty:
-            st.caption("None.")
-        else:
-            show_lost = lost[["SKU", "Compare_Units", "Compare_Sales"]].rename(
-                columns={"Compare_Units": "Units", "Compare_Sales": "Sales"}
-            ).copy()
-            show_lost["Units"] = -show_lost["Units"]
-            show_lost["Sales"] = -show_lost["Sales"]
-            total_row = pd.DataFrame(
-                [{"SKU": "Total", "Units": show_lost["Units"].sum(), "Sales": show_lost["Sales"].sum()}]
+        with adv1:
+            pivot_dim = st.selectbox(
+                "Pivot rows by",
+                options=["Retailer", "Vendor"],
+                index=0,
+                key="std_weekly_pivot_dim",
             )
-            show_lost = pd.concat([show_lost, total_row], ignore_index=True)
-            show_lost["Units"] = show_lost["Units"].map(lambda v: f"{v:,.0f}")
-            show_lost["Sales"] = show_lost["Sales"].map(money)
-            render_df(show_lost, height=360)
 
-    with rcol:
-        st.markdown("**New Activity — sold in current, zero in compare**")
-        if new_act.empty:
-            st.caption("None.")
-        else:
-            show_new = new_act[["SKU", "Current_Units", "Current_Sales"]].rename(
-                columns={"Current_Units": "Units", "Current_Sales": "Sales"}
-            ).copy()
-            total_row = pd.DataFrame(
-                [{"SKU": "Total", "Units": show_new["Units"].sum(), "Sales": show_new["Sales"].sum()}]
+        with adv2:
+            weekly_metric = st.selectbox(
+                "Metric",
+                options=["Sales", "Units"],
+                index=0,
+                key="std_weekly_metric",
             )
-            show_new = pd.concat([show_new, total_row], ignore_index=True)
-            show_new["Units"] = show_new["Units"].map(lambda v: f"{v:,.0f}")
-            show_new["Sales"] = show_new["Sales"].map(money)
-            render_df(show_new, height=360)
+
+        with adv3:
+            display_timeframe = st.selectbox(
+                "Display Time Frame",
+                options=["4 weeks", "8 weeks", "13 weeks", "26 weeks", "52 weeks", "All weeks"],
+                index=2,
+                key="std_weekly_display_timeframe",
+            )
+
+        with adv4:
+            avg_window_label = st.selectbox(
+                "Average Window",
+                options=["None", "4 weeks", "8 weeks", "13 weeks", "26 weeks", "52 weeks"],
+                index=1,
+                key="std_weekly_avg_window",
+            )
+
+    d_all = df_scope.copy()
+    d_all = d_all[(d_all["Sales"] >= min_sales) | (d_all["Units"] >= min_units)].copy()
+
+    if d_all.empty:
+        st.caption("No rows match the current thresholds.")
+    else:
+        wk_metric = d_all.groupby([pivot_dim, "WeekEnd"], as_index=False).agg(Value=(weekly_metric, "sum"))
+        wk_metric["WeekEnd"] = pd.to_datetime(wk_metric["WeekEnd"], errors="coerce")
+        wk_metric = wk_metric[wk_metric["WeekEnd"].notna()].copy()
+
+        all_weeks = sorted(pd.to_datetime(wk_metric["WeekEnd"].dropna().unique()).tolist())
+        display_n = _parse_weeks(display_timeframe)
+        avg_n = None if avg_window_label == "None" else int(str(avg_window_label).split()[0])
+
+        display_weeks = all_weeks[-display_n:] if display_n is not None else all_weeks
+        display_weeks_set = set(display_weeks)
+
+        wk_disp = wk_metric[wk_metric["WeekEnd"].isin(display_weeks_set)].copy()
+
+        week_map = {pd.to_datetime(w): _short_week_label(w) for w in display_weeks}
+        wk_disp["Week"] = wk_disp["WeekEnd"].map(week_map)
+
+        piv = wk_disp.pivot_table(
+            index=pivot_dim,
+            columns="Week",
+            values="Value",
+            aggfunc="sum",
+            fill_value=0.0,
+        )
+
+        row_order = sorted(wk_disp[pivot_dim].dropna().unique().tolist())
+        piv = piv.reindex(row_order)
+
+        display_week_labels = [_short_week_label(w) for w in display_weeks]
+        existing_week_cols = [c for c in display_week_labels if c in piv.columns]
+        piv = piv.reindex(columns=existing_week_cols, fill_value=0.0)
+
+        numeric = piv.copy()
+
+        if len(existing_week_cols) >= 2:
+            last_col = existing_week_cols[-1]
+            prev_col = existing_week_cols[-2]
+            numeric["Δ vs prior"] = numeric[last_col] - numeric[prev_col]
+        else:
+            numeric["Δ vs prior"] = 0.0
+
+        if avg_n is None:
+            numeric["Avg"] = np.nan
+            numeric["Δ vs avg"] = np.nan
+        else:
+            avg_source_weeks = all_weeks[-avg_n:]
+            avg_source = wk_metric.copy()
+            avg_source["Week"] = avg_source["WeekEnd"].map(lambda w: _short_week_label(w))
+            piv_avg = avg_source.pivot_table(
+                index=pivot_dim,
+                columns="Week",
+                values="Value",
+                aggfunc="sum",
+                fill_value=0.0,
+            )
+            piv_avg = piv_avg.reindex(index=numeric.index)
+            avg_existing_cols = [_short_week_label(w) for w in avg_source_weeks]
+            avg_existing_cols = [c for c in avg_existing_cols if c in piv_avg.columns]
+
+            if avg_existing_cols:
+                numeric["Avg"] = piv_avg[avg_existing_cols].mean(axis=1)
+                current_col = existing_week_cols[-1] if existing_week_cols else None
+                numeric["Δ vs avg"] = numeric[current_col] - numeric["Avg"] if current_col is not None else np.nan
+            else:
+                numeric["Avg"] = np.nan
+                numeric["Δ vs avg"] = np.nan
+
+        total_row = pd.DataFrame([numeric.sum(numeric_only=True)], index=["TOTAL"])
+        numeric = pd.concat([numeric, total_row], axis=0)
+
+        display_df = numeric.copy()
+        for c in existing_week_cols:
+            display_df[c] = display_df[c].map(lambda x: _fmt_metric_value(x, weekly_metric))
+
+        display_df["Δ vs prior"] = display_df["Δ vs prior"].map(
+            lambda x: _colorize_delta_value(x, weekly_metric)
+        )
+        display_df["Avg"] = display_df["Avg"].map(lambda x: _fmt_metric_value(x, weekly_metric))
+        display_df["Δ vs avg"] = display_df["Δ vs avg"].map(lambda x: _colorize_delta_value(x, weekly_metric))
+
+        display_df = display_df.reset_index().rename(columns={"index": pivot_dim})
+        numeric_reset = numeric.reset_index().rename(columns={"index": pivot_dim})
+
+        weekly_cols = [pivot_dim] + existing_week_cols + ["Δ vs prior", "Avg", "Δ vs avg"]
+
+        styled_weekly = _style_delta_cols(
+            display_df[weekly_cols],
+            numeric_reset[weekly_cols],
+            ["Δ vs prior", "Δ vs avg"],
+            bold_total=True,
+        )
+
+        col_cfg = {pivot_dim: st.column_config.TextColumn(width="medium")}
+        for c in existing_week_cols:
+            col_cfg[c] = st.column_config.TextColumn(width="small")
+        col_cfg["Δ vs prior"] = st.column_config.TextColumn(width="small")
+        col_cfg["Avg"] = st.column_config.TextColumn(width="small")
+        col_cfg["Δ vs avg"] = st.column_config.TextColumn(width="small")
+
+        st.dataframe(
+            styled_weekly,
+            use_container_width=True,
+            height=560,
+            hide_index=True,
+            column_config=col_cfg,
+        )
+
+    st.subheader("Movers & Trend Leaders")
+    if compare_mode == "None":
+        st.info("Select a comparison mode to compute increasing/declining vs the compare period.")
+    else:
+        a = dfA.groupby("SKU", as_index=False).agg(Sales_A=("Sales", "sum"), Units_A=("Units", "sum"))
+        b = dfB.groupby("SKU", as_index=False).agg(Sales_B=("Sales", "sum"), Units_B=("Units", "sum"))
+        m = a.merge(b, on="SKU", how="outer").fillna(0.0)
+        m["Sales (Current)"] = m["Sales_A"]
+        m["Sales (Compare)"] = m["Sales_B"]
+        m["Sales Δ"] = m["Sales_A"] - m["Sales_B"]
+        m["Δ %"] = np.where(m["Sales_B"] != 0, m["Sales Δ"] / m["Sales_B"], np.nan)
+        m = m[
+            (m["Sales_A"] >= min_sales)
+            | (m["Sales_B"] >= min_sales)
+            | (m["Units_A"] >= min_units)
+            | (m["Units_B"] >= min_units)
+        ].copy()
+
+        inc = m[m["Sales Δ"] > 0].sort_values("Sales Δ", ascending=False).head(10)
+        dec = m[m["Sales Δ"] < 0].sort_values("Sales Δ", ascending=True).head(10)
+
+        def _disp(df_in: pd.DataFrame) -> pd.DataFrame:
+            if df_in.empty:
+                return df_in
+            out = df_in[["SKU", "Sales (Current)", "Sales (Compare)", "Sales Δ", "Δ %"]].copy()
+            out["Sales (Current)"] = out["Sales (Current)"].map(money)
+            out["Sales (Compare)"] = out["Sales (Compare)"].map(money)
+            out["Sales Δ"] = out["Sales Δ"].map(money)
+            out["Δ %"] = out["Δ %"].map(pct_fmt)
+            return out
+
+        inc_disp = _disp(inc)
+        dec_disp = _disp(dec)
+
+        mom = build_momentum(df_scope[df_scope["WeekEnd"] <= pA.end], "SKU", lookback_weeks=8)
+        trend_leaders_disp = (
+            mom.sort_values("Slope", ascending=False)
+            .head(10)[["SKU", "Trend", "Slope", "Weeks Up", "Weeks Down", "Sales (lookback)"]]
+            .copy()
+            if not mom.empty
+            else pd.DataFrame(columns=["SKU", "Trend", "Slope", "Weeks Up", "Weeks Down", "Sales (lookback)"])
+        )
+        if not trend_leaders_disp.empty:
+            trend_leaders_disp["Sales (lookback)"] = trend_leaders_disp["Sales (lookback)"].map(money)
+            trend_leaders_disp["Slope"] = trend_leaders_disp["Slope"].map(lambda v: f"{v:,.2f}")
+
+        a, b, c = st.columns(3)
+        with a:
+            st.markdown("**Top Increasing**")
+            render_df(inc_disp, height=320) if not inc_disp.empty else st.caption("None.")
+        with b:
+            st.markdown("**Top Declining**")
+            render_df(dec_disp, height=320) if not dec_disp.empty else st.caption("None.")
+        with c:
+            st.markdown("**Trend Leaders (slope over last 8 weeks)**")
+            render_df(trend_leaders_disp, height=320)
 
     st.divider()
-    st.subheader("Comparison Detail")
+    st.subheader("New Activity")
 
-    pivot_dim = st.selectbox("Compare rows by", options=["Retailer", "Vendor"], index=0, key="mod_compare_dim")
-    comp_a = dfA.groupby(pivot_dim, as_index=False).agg(Sales_A=("Sales", "sum"))
-    comp_b = dfB.groupby(pivot_dim, as_index=False).agg(Sales_B=("Sales", "sum"))
-    comp = comp_a.merge(comp_b, on=pivot_dim, how="outer").fillna(0.0)
-    comp["Difference"] = comp["Sales_A"] - comp["Sales_B"]
-    comp["% Change"] = np.where(comp["Sales_B"] != 0, comp["Difference"] / comp["Sales_B"], np.nan)
-    comp = comp.sort_values("Sales_A", ascending=False)
+    a, b = st.columns(2)
+    with a:
+        st.markdown("**First Sale Ever (Launches)**")
+        if first_ever.empty:
+            st.caption("None in this period.")
+        else:
+            fe = first_ever.copy()
+            fe["FirstWeek"] = pd.to_datetime(fe["FirstWeek"], errors="coerce")
+            if "FirstRetailer" in fe.columns:
+                fe["Retailer"] = fe["FirstRetailer"]
+            if "Sales" not in fe.columns:
+                if "FirstSales" in fe.columns:
+                    fe["Sales"] = fe["FirstSales"]
+                else:
+                    fe["Sales"] = np.nan
+            fe["Date"] = fe["FirstWeek"].dt.date.astype(str)
+            fe["Sales"] = fe["Sales"].map(lambda v: "" if pd.isna(v) else money(v))
+            cols = [c for c in ["SKU", "Retailer", "Date", "Sales"] if c in fe.columns]
+            render_df(fe[cols], height=300)
 
-    total = pd.DataFrame(
-        [
-            {
-                pivot_dim: "Total",
-                "Sales_A": comp["Sales_A"].sum(),
-                "Sales_B": comp["Sales_B"].sum(),
-                "Difference": comp["Difference"].sum(),
-                "% Change": np.nan if comp["Sales_B"].sum() == 0 else comp["Difference"].sum() / comp["Sales_B"].sum(),
-            }
+    with b:
+        st.markdown("**New Retailer Placements**")
+        if placements.empty:
+            st.caption("None in this period.")
+        else:
+            pl = placements.copy()
+            pl["FirstWeek"] = pd.to_datetime(pl["FirstWeek"], errors="coerce")
+            if "Sales" not in pl.columns:
+                if "FirstSales" in pl.columns:
+                    pl["Sales"] = pl["FirstSales"]
+                else:
+                    pl["Sales"] = np.nan
+            pl["Date"] = pl["FirstWeek"].dt.date.astype(str)
+            pl["Sales"] = pl["Sales"].map(lambda v: "" if pd.isna(v) else money(v))
+            cols = [c for c in ["SKU", "Retailer", "Date", "Sales"] if c in pl.columns]
+            render_df(pl[cols], height=300)
+
+    st.divider()
+    st.header("Strategic Intelligence")
+
+    st.subheader("1) Contribution Tree (Where did change come from?)")
+    if compare_mode == "None":
+        st.info("Select a comparison mode to use the contribution tree.")
+    else:
+        level1_choice = st.selectbox(
+            "Level 1 View",
+            ["Retailer", "Vendor"],
+            index=0,
+            key="std_contrib_level1_choice",
+        )
+
+        if level1_choice == "Retailer":
+            level1_col = "Retailer"
+            level2_col = "Vendor"
+            level3_col = "SKU"
+        else:
+            level1_col = "Vendor"
+            level2_col = "Retailer"
+            level3_col = "SKU"
+
+        lvl1 = _build_hierarchy(dfA, dfB, level1_col)
+        st.markdown(f"**Level 1 — {level1_col}s**")
+        _display_hierarchy(lvl1, level1_col, height=500)
+
+        lvl1_options = ["(none)"] + lvl1[level1_col].dropna().astype(str).tolist()
+        pick1 = st.selectbox(
+            f"Select {level1_col} for Level 2",
+            lvl1_options,
+            index=0,
+            key="std_contrib_pick1",
+        )
+
+        if pick1 != "(none)":
+            dfA_l2 = dfA[dfA[level1_col].astype(str) == str(pick1)].copy()
+            dfB_l2 = dfB[dfB[level1_col].astype(str) == str(pick1)].copy()
+
+            lvl2 = _build_hierarchy(dfA_l2, dfB_l2, level2_col)
+            st.markdown(f"**Level 2 — {level2_col}s inside {pick1}**")
+            _display_hierarchy(lvl2, level2_col, height=500)
+
+            lvl2_options = ["(none)"] + lvl2[level2_col].dropna().astype(str).tolist()
+            pick2 = st.selectbox(
+                f"Select {level2_col} for Level 3",
+                lvl2_options,
+                index=0,
+                key="std_contrib_pick2",
+            )
+
+            if pick2 != "(none)":
+                dfA_l3 = dfA_l2[dfA_l2[level2_col].astype(str) == str(pick2)].copy()
+                dfB_l3 = dfB_l2[dfB_l2[level2_col].astype(str) == str(pick2)].copy()
+
+                lvl3 = _build_hierarchy(dfA_l3, dfB_l3, level3_col)
+                st.markdown(f"**Level 3 — {level3_col}s inside {pick1} → {pick2}**")
+                _display_hierarchy(lvl3, level3_col, height=520)
+
+    st.subheader("2) SKU Lifecycle (Launch → Growth → Mature → Decline → Dormant)")
+
+    with st.expander("Advanced SKU Lifecycle Settings", expanded=False):
+        lc1, lc2 = st.columns(2)
+        with lc1:
+            lifecycle_timeframe_label = st.selectbox(
+                "Lifecycle Timeframe",
+                ["4 weeks", "8 weeks", "13 weeks", "26 weeks", "52 weeks"],
+                index=1,
+                key="std_lifecycle_timeframe",
+            )
+        with lc2:
+            stage_filter = st.multiselect(
+                "Stages",
+                ["Launch", "Growth", "Mature", "Decline", "Dormant", "Inactive 12+ weeks"],
+                default=["Launch", "Growth", "Mature", "Decline", "Dormant", "Inactive 12+ weeks"],
+                key="std_lifecycle_stage_filter",
+            )
+
+    lifecycle_weeks = int(lifecycle_timeframe_label.split()[0])
+
+    life_df_src = df_hist_for_new if show_full_history_lifecycle else df_scope
+    life = _compute_lifecycle_custom(life_df_src, lifecycle_weeks)
+
+    if life.empty:
+        st.caption("Not enough data to compute lifecycle.")
+    else:
+        if stage_filter:
+            life = life[life["Stage"].isin(stage_filter)].copy()
+
+        stage_counts = life["Stage"].value_counts().reset_index()
+        stage_counts.columns = ["Stage", "Count"]
+
+        stage_order = [
+            "Launch",
+            "Growth",
+            "Mature",
+            "Decline",
+            "Dormant",
+            "Inactive 12+ weeks",
         ]
-    )
-    comp_show = pd.concat([comp, total], ignore_index=True)
-    show = rename_ab_columns(comp_show.copy(), a_lbl, b_lbl)
-    sales_a_col = f"Sales ({a_lbl})"
-    sales_b_col = f"Sales ({b_lbl})" if b_lbl else "Sales (Comparison)"
-    show[sales_a_col] = show[sales_a_col].map(money)
-    show[sales_b_col] = show[sales_b_col].map(money)
-    show["Difference"] = show["Difference"].map(money)
-    show["% Change"] = show["% Change"].map(pct_fmt)
-    render_shaded_total_table(show[[pivot_dim, sales_a_col, sales_b_col, "Difference", "% Change"]], height=900)
+        stage_counts["Stage"] = pd.Categorical(stage_counts["Stage"], categories=stage_order, ordered=True)
+        stage_counts = stage_counts.sort_values("Stage").reset_index(drop=True)
+
+        st.markdown("**Stage Summary**")
+        render_df(stage_counts, height=220)
+
+        st.markdown("**Lifecycle Detail**")
+        life_show = life.copy()
+
+        if min_sales > 0 and "Sales_lookback" in life_show.columns:
+            life_show = life_show[life_show["Sales_lookback"] >= min_sales].copy()
+
+        rename_map = {
+            "Sales_lookback": "Sales (lookback)",
+            "Last_Week_Sales": "Last Week Sales",
+            "Avg_Weekly_Sales": "Avg Weekly Sales",
+            "Last_Week_vs_Avg": "Last Week vs Avg",
+            "WoW_Sales_Δ": "WoW Sales Δ",
+        }
+        life_show = life_show.rename(columns=rename_map)
+
+        cols = [
+            c for c in [
+                "SKU",
+                "Stage",
+                "Trend",
+                "Sales (lookback)",
+                "Last Week Sales",
+                "Avg Weekly Sales",
+                "Last Week vs Avg",
+                "WoW Sales Δ",
+                "Weeks Up",
+                "Weeks Down",
+                "Weeks With Sales",
+            ]
+            if c in life_show.columns
+        ]
+
+        numeric_life = life_show[cols].copy()
+
+        total_row = {"SKU": "TOTAL"}
+        for c in cols:
+            if c == "SKU":
+                continue
+            if c in ["Stage", "Trend"]:
+                total_row[c] = ""
+            elif c in ["Sales (lookback)", "Last Week Sales", "Avg Weekly Sales", "Last Week vs Avg", "WoW Sales Δ"]:
+                total_row[c] = pd.to_numeric(numeric_life[c], errors="coerce").fillna(0).sum()
+            elif c in ["Weeks Up", "Weeks Down", "Weeks With Sales"]:
+                total_row[c] = pd.to_numeric(numeric_life[c], errors="coerce").fillna(0).sum()
+            else:
+                total_row[c] = ""
+
+        numeric_life = pd.concat([numeric_life, pd.DataFrame([total_row])], ignore_index=True)
+        life_show = numeric_life.copy()
+
+        for c in ["Sales (lookback)", "Last Week Sales", "Avg Weekly Sales", "Last Week vs Avg", "WoW Sales Δ"]:
+            if c in life_show.columns:
+                if c in ["Last Week vs Avg", "WoW Sales Δ"]:
+                    life_show[c] = life_show[c].map(
+                        lambda v: "" if pd.isna(v) else f"{'+' if float(v) > 0 else ''}{money(float(v))}"
+                    )
+                else:
+                    life_show[c] = life_show[c].map(
+                        lambda v: "" if pd.isna(v) else money(float(v))
+                    )
+
+        if "Weeks With Sales" in life_show.columns:
+            life_show["Weeks With Sales"] = life_show["Weeks With Sales"].map(
+                lambda v: "" if pd.isna(v) else f"{int(float(v)):,}"
+            )
+
+        if "Weeks Up" in life_show.columns:
+            life_show["Weeks Up"] = life_show["Weeks Up"].map(
+                lambda v: "" if pd.isna(v) else f"{int(float(v)):,}"
+            )
+
+        if "Weeks Down" in life_show.columns:
+            life_show["Weeks Down"] = life_show["Weeks Down"].map(
+                lambda v: "" if pd.isna(v) else f"{int(float(v)):,}"
+            )
+
+        life_cfg = {"SKU": st.column_config.TextColumn(width="medium")}
+        for c in cols:
+            if c != "SKU":
+                life_cfg[c] = st.column_config.TextColumn(width="small")
+
+        styled_life = _style_delta_cols(
+            life_show[cols],
+            numeric_life[cols],
+            ["Last Week vs Avg", "WoW Sales Δ"],
+            bold_total=True,
+        )
+
+        st.dataframe(
+            styled_life,
+            use_container_width=True,
+            height=620,
+            hide_index=True,
+            column_config=life_cfg,
+        )
 
     st.divider()
-    st.subheader("Movers")
+    st.subheader("3) Opportunity Detector (Find expansion + gaps)")
+    if compare_mode == "None":
+        st.info("Select a comparison mode to power opportunity signals (needs a comparison).")
+    else:
+        opp = opportunity_detector(df_hist_for_new, dfA, dfB, pA)
+        tabs = st.tabs(list(opp.keys()))
+        for t, (name, odf) in zip(tabs, opp.items()):
+            with t:
+                render_df(odf, height=420) if not odf.empty else st.caption(
+                    "No signals found with current filters/thresholds."
+                )
 
-    a = dfA.groupby("SKU", as_index=False).agg(Sales_A=("Sales", "sum"))
-    b = dfB.groupby("SKU", as_index=False).agg(Sales_B=("Sales", "sum"))
-    m = a.merge(b, on="SKU", how="outer").fillna(0.0)
-    m["Difference"] = m["Sales_A"] - m["Sales_B"]
-    m["% Change"] = np.where(m["Sales_B"] != 0, m["Difference"] / m["Sales_B"], np.nan)
-    m = m[(m["Sales_A"] >= min_sales) | (m["Sales_B"] >= min_sales)].copy()
 
-    inc = m[m["Difference"] > 0].sort_values("Difference", ascending=False).head(15).copy()
-    dec = m[m["Difference"] < 0].sort_values("Difference", ascending=True).head(15).copy()
+def render_visual_only(ctx: dict):
+    dfA = ctx["dfA"]
+    dfB = ctx["dfB"]
+    kA = ctx["kA"]
+    kB = ctx["kB"]
+    a_lbl = ctx["a_lbl"]
+    b_lbl = ctx["b_lbl"]
+    compare_mode = ctx["compare_mode"]
+    driver_level = ctx["driver_level"]
 
-    for ddf in (inc, dec):
-        ddf.rename(columns={"Sales_A": f"Sales ({a_lbl})", "Sales_B": f"Sales ({b_lbl})"}, inplace=True)
-        ddf[f"Sales ({a_lbl})"] = ddf[f"Sales ({a_lbl})"].map(money)
-        ddf[f"Sales ({b_lbl})"] = ddf[f"Sales ({b_lbl})"].map(money)
-        ddf["Difference"] = ddf["Difference"].map(money)
-        ddf["% Change"] = ddf["% Change"].map(pct_fmt)
+    st.subheader("Standard Intelligence • Visual Analytics")
 
-    x, y = st.columns(2)
-    with x:
-        st.markdown("**Top Increasing**")
-        if not inc.empty:
-            render_df(inc[["SKU", f"Sales ({a_lbl})", f"Sales ({b_lbl})", "Difference", "% Change"]], height=360)
+    if compare_mode == "None":
+        st.info("Select a comparison mode to use Standard Intelligence visual analytics.")
+        return
+
+    POSITIVE_BAR = "#2e7d32"
+    NEGATIVE_BAR = "#c62828"
+    NEUTRAL_BAR = "#808080"
+
+    def _totals_df(metric: str) -> pd.DataFrame:
+        cur = float(kA.get(metric, 0.0))
+        cmpv = float(kB.get(metric, 0.0))
+
+        if cur > cmpv:
+            cur_color = POSITIVE_BAR
+            cmp_color = NEGATIVE_BAR
+        elif cur < cmpv:
+            cur_color = NEGATIVE_BAR
+            cmp_color = POSITIVE_BAR
         else:
-            st.caption("None.")
-    with y:
-        st.markdown("**Top Declining**")
-        if not dec.empty:
-            render_df(dec[["SKU", f"Sales ({a_lbl})", f"Sales ({b_lbl})", "Difference", "% Change"]], height=360)
-        else:
-            st.caption("None.")
+            cur_color = NEUTRAL_BAR
+            cmp_color = NEUTRAL_BAR
+
+        label_fmt = money if metric == "Sales" else (lambda x: f"{x:,.0f}")
+        return pd.DataFrame(
+            [
+                {"Period": a_lbl, "Value": cur, "Label": label_fmt(cur), "Color": cur_color},
+                {"Period": b_lbl, "Value": cmpv, "Label": label_fmt(cmpv), "Color": cmp_color},
+            ]
+        )
+
+    def _render_total_bars(df: pd.DataFrame, title: str, x_title: str):
+        if df.empty:
+            st.info("No total data available.")
+            return
+
+        xmax = float(df["Value"].max()) if not df.empty else 0.0
+        xmax = xmax * 1.05 if xmax > 0 else 1.0
+
+        bars = (
+            alt.Chart(df)
+            .mark_bar(cornerRadiusTopRight=6, cornerRadiusBottomRight=6)
+            .encode(
+                y=alt.Y(
+                    "Period:N",
+                    title="",
+                    sort=df["Period"].tolist(),
+                    axis=alt.Axis(labelFontSize=20),
+                ),
+                x=alt.X(
+                    "Value:Q",
+                    title=x_title,
+                    scale=alt.Scale(domain=[0, xmax]),
+                    axis=alt.Axis(labelFontSize=18, titleFontSize=20),
+                ),
+                color=alt.Color("Color:N", scale=None, legend=None),
+                tooltip=[
+                    alt.Tooltip("Period:N", title="Period"),
+                    alt.Tooltip("Value:Q", title=x_title, format=",.2f" if x_title == "Sales" else ",.0f"),
+                ],
+            )
+            .properties(height=150, title=title)
+        )
+
+        text = (
+            alt.Chart(df)
+            .mark_text(
+                align="right",
+                dx=-12,
+                fontSize=22,
+                fontWeight="bold",
+                color="white",
+            )
+            .encode(
+                y=alt.Y("Period:N", sort=df["Period"].tolist()),
+                x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax])),
+                text="Label:N",
+            )
+        )
+
+        st.altair_chart(bars + text, use_container_width=True)
+
+    def _contributors_df(level: str) -> pd.DataFrame:
+        drv = drivers(dfA, dfB, level)
+        if drv is None or drv.empty:
+            return pd.DataFrame()
+
+        out = drv.copy()
+        out[level] = out[level].astype(str)
+        out["Label"] = out["Sales_Δ"].map(money)
+        return out
+
+    def _sku_increase_decline_df() -> pd.DataFrame:
+        a = dfA.groupby("SKU", as_index=False).agg(Current=("Sales", "sum"))
+        b = dfB.groupby("SKU", as_index=False).agg(Compare=("Sales", "sum"))
+        out = a.merge(b, on="SKU", how="outer").fillna(0.0)
+        out["Sales_Δ"] = out["Current"] - out["Compare"]
+        out["Label"] = out["Sales_Δ"].map(money)
+        return out
+
+    def _top2_compare_df(dim: str) -> pd.DataFrame:
+        cur = dfA.groupby(dim, as_index=False).agg(Current=("Sales", "sum"))
+        cmpv = dfB.groupby(dim, as_index=False).agg(Compare=("Sales", "sum"))
+        out = cur.merge(cmpv, on=dim, how="outer").fillna(0.0)
+        out["Total"] = out["Current"] + out["Compare"]
+        out = out.sort_values(["Total", dim], ascending=[False, True]).head(2).copy()
+        out["Entity"] = out[dim].astype(str)
+        return out
+
+    def _render_positive_lollipop_list(
+        df: pd.DataFrame,
+        y_col: str,
+        value_col: str,
+        title: str,
+    ):
+        if df.empty:
+            st.info(f"No data available for {title.lower()}.")
+            return
+
+        xmax = float(df[value_col].max()) if not df.empty else 0.0
+        xmax = xmax * 1.15 if xmax > 0 else 1.0
+        df = df.copy()
+        df["Zero"] = 0.0
+
+        rules = (
+            alt.Chart(df)
+            .mark_rule(strokeWidth=3, color=POSITIVE_BAR)
+            .encode(
+                y=alt.Y(
+                    f"{y_col}:N",
+                    sort=None,
+                    title="",
+                    axis=alt.Axis(labelLimit=320, labelFontSize=20),
+                ),
+                x=alt.X(
+                    "Zero:Q",
+                    scale=alt.Scale(domain=[0, xmax]),
+                    title="Sales Change",
+                    axis=alt.Axis(labelFontSize=18, titleFontSize=20),
+                ),
+                x2=f"{value_col}:Q",
+            )
+        )
+
+        dots = (
+            alt.Chart(df)
+            .mark_circle(size=220, color=POSITIVE_BAR)
+            .encode(
+                y=alt.Y(f"{y_col}:N", sort=None, title="", axis=alt.Axis(labelLimit=320, labelFontSize=20)),
+                x=alt.X(f"{value_col}:Q", scale=alt.Scale(domain=[0, xmax]), title="Sales Change"),
+                tooltip=[
+                    alt.Tooltip(f"{y_col}:N", title="Name"),
+                    alt.Tooltip(f"{value_col}:Q", title="Change", format=",.2f"),
+                ],
+            )
+        )
+
+        text = (
+            alt.Chart(df)
+            .mark_text(dx=10, align="left", fontSize=20, fontWeight="bold", color=POSITIVE_BAR)
+            .encode(
+                y=alt.Y(f"{y_col}:N", sort=None, title="", axis=alt.Axis(labelLimit=320, labelFontSize=20)),
+                x=alt.X(f"{value_col}:Q", scale=alt.Scale(domain=[0, xmax]), title="Sales Change"),
+                text="Label:N",
+            )
+        )
+
+        st.altair_chart((rules + dots + text).properties(height=max(280, len(df) * 42), title=title), use_container_width=True)
+
+    def _render_negative_lollipop_list(
+        df: pd.DataFrame,
+        y_col: str,
+        value_col: str,
+        title: str,
+        show_right_labels: bool = False,
+    ):
+        if df.empty:
+            st.info(f"No data available for {title.lower()}.")
+            return
+
+        xmax = float(df[value_col].abs().max()) if not df.empty else 0.0
+        xmax = xmax * 1.15 if xmax > 0 else 1.0
+
+        df = df.copy()
+        df["RightEdge"] = 0.0
+
+        rules = (
+            alt.Chart(df)
+            .mark_rule(strokeWidth=3, color=NEGATIVE_BAR)
+            .encode(
+                y=alt.Y(
+                    f"{y_col}:N",
+                    sort=None,
+                    title="",
+                    axis=alt.Axis(labelLimit=320, labelFontSize=20) if not show_right_labels else alt.Axis(labels=False, ticks=False, domain=False),
+                ),
+                x=alt.X(
+                    "RightEdge:Q",
+                    scale=alt.Scale(domain=[-xmax, 0]),
+                    title="Sales Change",
+                    axis=alt.Axis(labelFontSize=18, titleFontSize=20),
+                ),
+                x2=f"{value_col}:Q",
+            )
+        )
+
+        dots = (
+            alt.Chart(df)
+            .mark_circle(size=220, color=NEGATIVE_BAR)
+            .encode(
+                y=alt.Y(
+                    f"{y_col}:N",
+                    sort=None,
+                    title="",
+                    axis=alt.Axis(labelLimit=320, labelFontSize=20) if not show_right_labels else alt.Axis(labels=False, ticks=False, domain=False),
+                ),
+                x=alt.X(f"{value_col}:Q", scale=alt.Scale(domain=[-xmax, 0]), title="Sales Change"),
+                tooltip=[
+                    alt.Tooltip(f"{y_col}:N", title="Name"),
+                    alt.Tooltip(f"{value_col}:Q", title="Change", format=",.2f"),
+                ],
+            )
+        )
+
+        value_text = (
+            alt.Chart(df)
+            .mark_text(dx=-10, align="right", fontSize=20, fontWeight="bold", color=NEGATIVE_BAR)
+            .encode(
+                y=alt.Y(
+                    f"{y_col}:N",
+                    sort=None,
+                    title="",
+                    axis=alt.Axis(labelLimit=320, labelFontSize=20) if not show_right_labels else alt.Axis(labels=False, ticks=False, domain=False),
+                ),
+                x=alt.X(f"{value_col}:Q", scale=alt.Scale(domain=[-xmax, 0]), title="Sales Change"),
+                text="Label:N",
+            )
+        )
+
+        layers = [rules, dots, value_text]
+
+        if show_right_labels:
+            name_text = (
+                alt.Chart(df)
+                .mark_text(dx=10, align="left", fontSize=20, fontWeight="bold")
+                .encode(
+                    y=alt.Y(f"{y_col}:N", sort=None, title="", axis=alt.Axis(labels=False, ticks=False, domain=False)),
+                    x=alt.value(0),
+                    text=f"{y_col}:N",
+                )
+            )
+            layers.append(name_text)
+
+        st.altair_chart(alt.layer(*layers).properties(height=max(280, len(df) * 42), title=title), use_container_width=True)
+
+    def _render_compare_lollipop(df: pd.DataFrame, title: str):
+        if df.empty:
+            st.info(f"No data available for {title.lower()}.")
+            return
+
+        long_df = pd.DataFrame(
+            [
+                {"Entity": row["Entity"], "Period": a_lbl, "Value": float(row["Current"])}
+                for _, row in df.iterrows()
+            ] + [
+                {"Entity": row["Entity"], "Period": b_lbl, "Value": float(row["Compare"])}
+                for _, row in df.iterrows()
+            ]
+        )
+        long_df["RowLabel"] = long_df["Entity"] + " • " + long_df["Period"]
+        long_df["Label"] = long_df["Value"].map(money)
+        long_df["Zero"] = 0.0
+
+        xmax = float(long_df["Value"].max()) if not long_df.empty else 0.0
+        xmax = xmax * 1.15 if xmax > 0 else 1.0
+
+        rules = (
+            alt.Chart(long_df)
+            .mark_rule(strokeWidth=3)
+            .encode(
+                y=alt.Y(
+                    "RowLabel:N",
+                    sort=None,
+                    title="",
+                    axis=alt.Axis(labelLimit=420, labelFontSize=18),
+                ),
+                x=alt.X(
+                    "Zero:Q",
+                    scale=alt.Scale(domain=[0, xmax]),
+                    title="Sales",
+                    axis=alt.Axis(labelFontSize=18, titleFontSize=20),
+                ),
+                x2="Value:Q",
+                color=alt.Color("Period:N", title="", legend=alt.Legend(labelFontSize=18)),
+            )
+        )
+
+        dots = (
+            alt.Chart(long_df)
+            .mark_circle(size=220)
+            .encode(
+                y=alt.Y("RowLabel:N", sort=None, title="", axis=alt.Axis(labelLimit=420, labelFontSize=18)),
+                x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax]), title="Sales"),
+                color=alt.Color("Period:N", title="", legend=None),
+                tooltip=[
+                    alt.Tooltip("Entity:N", title="Name"),
+                    alt.Tooltip("Period:N", title="Period"),
+                    alt.Tooltip("Value:Q", title="Sales", format=",.2f"),
+                ],
+            )
+        )
+
+        text = (
+            alt.Chart(long_df)
+            .mark_text(dx=10, align="left", fontSize=18, fontWeight="bold")
+            .encode(
+                y=alt.Y("RowLabel:N", sort=None, title="", axis=alt.Axis(labelLimit=420, labelFontSize=18)),
+                x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax]), title="Sales"),
+                text="Label:N",
+                color=alt.Color("Period:N", legend=None),
+            )
+        )
+
+        st.altair_chart(
+            (rules + dots + text).properties(height=max(240, len(long_df) * 38), title=title),
+            use_container_width=True,
+        )
+
+    st.markdown("### Totals")
+    t1, t2 = st.columns(2)
+    with t1:
+        _render_total_bars(_totals_df("Sales"), "Total Sales • Current vs Compare", "Sales")
+    with t2:
+        _render_total_bars(_totals_df("Units"), "Total Units • Current vs Compare", "Units")
+
+    st.markdown("### Contributors")
+    contrib_df = _contributors_df(driver_level)
+    if contrib_df.empty:
+        st.info("No contributor data available.")
+    else:
+        pos = contrib_df[contrib_df["Sales_Δ"] > 0].sort_values("Sales_Δ", ascending=False).head(10).copy()
+        neg = contrib_df[contrib_df["Sales_Δ"] < 0].sort_values("Sales_Δ", ascending=True).head(10).copy()
+
+        c1, c2 = st.columns(2)
+        with c1:
+            _render_positive_lollipop_list(pos, driver_level, "Sales_Δ", "Top Positive Contributors")
+        with c2:
+            _render_negative_lollipop_list(neg, driver_level, "Sales_Δ", "Top Negative Contributors", show_right_labels=False)
+
+    st.markdown("### SKU Movers")
+    sku_df = _sku_increase_decline_df()
+    inc = sku_df[sku_df["Sales_Δ"] > 0].sort_values("Sales_Δ", ascending=False).head(10).copy()
+    dec = sku_df[sku_df["Sales_Δ"] < 0].sort_values("Sales_Δ", ascending=True).head(10).copy()
+
+    s1, s2 = st.columns(2)
+    with s1:
+        _render_positive_lollipop_list(inc, "SKU", "Sales_Δ", "Top Increasing SKUs")
+    with s2:
+        _render_negative_lollipop_list(dec, "SKU", "Sales_Δ", "Top Declining SKUs", show_right_labels=True)
+
+    st.markdown("### Top 2 Compared Between Current and Compare")
+    r1, r2 = st.columns(2)
+    with r1:
+        _render_compare_lollipop(_top2_compare_df("Retailer"), "Top 2 Retailers")
+    with r2:
+        _render_compare_lollipop(_top2_compare_df("Vendor"), "Top 2 Vendors")
+
+    _render_compare_lollipop(_top2_compare_df("SKU"), "Top 2 SKUs")
