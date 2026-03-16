@@ -873,6 +873,15 @@ def render_visual_only(ctx: dict):
     NEGATIVE_BAR = "#c62828"
     NEUTRAL_BAR = "#808080"
 
+    def _label_kwargs(font_size: int = 20, color: str = "black"):
+        return {
+            "fontSize": font_size,
+            "fontWeight": "bold",
+            "color": color,
+            "stroke": "white",
+            "strokeWidth": 3,
+        }
+
     def _totals_df(metric: str) -> pd.DataFrame:
         cur = float(kA.get(metric, 0.0))
         cmpv = float(kB.get(metric, 0.0))
@@ -888,12 +897,14 @@ def render_visual_only(ctx: dict):
             cmp_color = NEUTRAL_BAR
 
         label_fmt = money if metric == "Sales" else (lambda x: f"{x:,.0f}")
-        return pd.DataFrame(
+        out = pd.DataFrame(
             [
                 {"Period": a_lbl, "Value": cur, "Label": label_fmt(cur), "Color": cur_color},
                 {"Period": b_lbl, "Value": cmpv, "Label": label_fmt(cmpv), "Color": cmp_color},
             ]
         )
+        out["MidX"] = out["Value"] / 2.0
+        return out
 
     def _render_total_bars(df: pd.DataFrame, title: str, x_title: str):
         if df.empty:
@@ -901,11 +912,11 @@ def render_visual_only(ctx: dict):
             return
 
         xmax = float(df["Value"].max()) if not df.empty else 0.0
-        xmax = xmax * 1.05 if xmax > 0 else 1.0
+        xmax = xmax * 1.03 if xmax > 0 else 1.0
 
         bars = (
             alt.Chart(df)
-            .mark_bar(cornerRadiusTopRight=6, cornerRadiusBottomRight=6)
+            .mark_bar(cornerRadiusTopRight=8, cornerRadiusBottomRight=8, size=56)
             .encode(
                 y=alt.Y(
                     "Period:N",
@@ -925,21 +936,15 @@ def render_visual_only(ctx: dict):
                     alt.Tooltip("Value:Q", title=x_title, format=",.2f" if x_title == "Sales" else ",.0f"),
                 ],
             )
-            .properties(height=150, title=title)
+            .properties(height=190, title=title)
         )
 
         text = (
             alt.Chart(df)
-            .mark_text(
-                align="right",
-                dx=-12,
-                fontSize=22,
-                fontWeight="bold",
-                color="white",
-            )
+            .mark_text(align="center", baseline="middle", **_label_kwargs(font_size=24, color="black"))
             .encode(
                 y=alt.Y("Period:N", sort=df["Period"].tolist()),
-                x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax])),
+                x=alt.X("MidX:Q", scale=alt.Scale(domain=[0, xmax])),
                 text="Label:N",
             )
         )
@@ -1023,7 +1028,7 @@ def render_visual_only(ctx: dict):
 
         text = (
             alt.Chart(df)
-            .mark_text(dx=10, align="left", fontSize=20, fontWeight="bold", color=POSITIVE_BAR)
+            .mark_text(dx=10, align="left", **_label_kwargs(font_size=20, color=POSITIVE_BAR))
             .encode(
                 y=alt.Y(f"{y_col}:N", sort=None, title="", axis=alt.Axis(labelLimit=320, labelFontSize=20)),
                 x=alt.X(f"{value_col}:Q", scale=alt.Scale(domain=[0, xmax]), title="Sales Change"),
@@ -1050,16 +1055,17 @@ def render_visual_only(ctx: dict):
         df = df.copy()
         df["RightEdge"] = 0.0
 
+        y_axis = (
+            alt.Axis(labels=False, ticks=False, domain=False)
+            if show_right_labels
+            else alt.Axis(labelLimit=320, labelFontSize=20)
+        )
+
         rules = (
             alt.Chart(df)
             .mark_rule(strokeWidth=3, color=NEGATIVE_BAR)
             .encode(
-                y=alt.Y(
-                    f"{y_col}:N",
-                    sort=None,
-                    title="",
-                    axis=alt.Axis(labelLimit=320, labelFontSize=20) if not show_right_labels else alt.Axis(labels=False, ticks=False, domain=False),
-                ),
+                y=alt.Y(f"{y_col}:N", sort=None, title="", axis=y_axis),
                 x=alt.X(
                     "RightEdge:Q",
                     scale=alt.Scale(domain=[-xmax, 0]),
@@ -1074,12 +1080,7 @@ def render_visual_only(ctx: dict):
             alt.Chart(df)
             .mark_circle(size=220, color=NEGATIVE_BAR)
             .encode(
-                y=alt.Y(
-                    f"{y_col}:N",
-                    sort=None,
-                    title="",
-                    axis=alt.Axis(labelLimit=320, labelFontSize=20) if not show_right_labels else alt.Axis(labels=False, ticks=False, domain=False),
-                ),
+                y=alt.Y(f"{y_col}:N", sort=None, title="", axis=y_axis),
                 x=alt.X(f"{value_col}:Q", scale=alt.Scale(domain=[-xmax, 0]), title="Sales Change"),
                 tooltip=[
                     alt.Tooltip(f"{y_col}:N", title="Name"),
@@ -1090,14 +1091,9 @@ def render_visual_only(ctx: dict):
 
         value_text = (
             alt.Chart(df)
-            .mark_text(dx=-10, align="right", fontSize=20, fontWeight="bold", color=NEGATIVE_BAR)
+            .mark_text(dx=-10, align="right", **_label_kwargs(font_size=20, color=NEGATIVE_BAR))
             .encode(
-                y=alt.Y(
-                    f"{y_col}:N",
-                    sort=None,
-                    title="",
-                    axis=alt.Axis(labelLimit=320, labelFontSize=20) if not show_right_labels else alt.Axis(labels=False, ticks=False, domain=False),
-                ),
+                y=alt.Y(f"{y_col}:N", sort=None, title="", axis=y_axis),
                 x=alt.X(f"{value_col}:Q", scale=alt.Scale(domain=[-xmax, 0]), title="Sales Change"),
                 text="Label:N",
             )
@@ -1108,7 +1104,7 @@ def render_visual_only(ctx: dict):
         if show_right_labels:
             name_text = (
                 alt.Chart(df)
-                .mark_text(dx=10, align="left", fontSize=20, fontWeight="bold")
+                .mark_text(dx=10, align="left", **_label_kwargs(font_size=20, color="black"))
                 .encode(
                     y=alt.Y(f"{y_col}:N", sort=None, title="", axis=alt.Axis(labels=False, ticks=False, domain=False)),
                     x=alt.value(0),
@@ -1178,12 +1174,11 @@ def render_visual_only(ctx: dict):
 
         text = (
             alt.Chart(long_df)
-            .mark_text(dx=10, align="left", fontSize=18, fontWeight="bold")
+            .mark_text(dx=10, align="left", **_label_kwargs(font_size=18, color="black"))
             .encode(
                 y=alt.Y("RowLabel:N", sort=None, title="", axis=alt.Axis(labelLimit=420, labelFontSize=18)),
                 x=alt.X("Value:Q", scale=alt.Scale(domain=[0, xmax]), title="Sales"),
                 text="Label:N",
-                color=alt.Color("Period:N", legend=None),
             )
         )
 
@@ -1211,7 +1206,7 @@ def render_visual_only(ctx: dict):
         with c1:
             _render_positive_lollipop_list(pos, driver_level, "Sales_Δ", "Top Positive Contributors")
         with c2:
-            _render_negative_lollipop_list(neg, driver_level, "Sales_Δ", "Top Negative Contributors", show_right_labels=False)
+            _render_negative_lollipop_list(neg, driver_level, "Sales_Δ", "Top Negative Contributors", show_right_labels=True)
 
     st.markdown("### SKU Movers")
     sku_df = _sku_increase_decline_df()
