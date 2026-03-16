@@ -277,167 +277,211 @@ def render_visual_executive_dashboard(
 
         return bars + labels
 
-    def largest_increase_contributor(df_cur: pd.DataFrame, df_cmp: pd.DataFrame):
-        best_label = "Largest Increase"
-        best_value = 0.0
+    def collect_change_contributors(df_cur: pd.DataFrame, df_cmp: pd.DataFrame) -> pd.DataFrame:
+        frames = []
 
         if "Retailer" in df_cur.columns and "Retailer" in df_cmp.columns:
-            retailer_cur = df_cur.groupby("Retailer", as_index=False).agg(Current=("Sales", "sum"))
-            retailer_cmp = df_cmp.groupby("Retailer", as_index=False).agg(Compare=("Sales", "sum"))
-            retailer = retailer_cur.merge(retailer_cmp, on="Retailer", how="outer").fillna(0.0)
-            retailer["Delta"] = retailer["Current"] - retailer["Compare"]
-            if not retailer.empty:
-                r = retailer.sort_values("Delta", ascending=False).iloc[0]
-                if float(r["Delta"]) > best_value:
-                    best_label = f'Retailer: {r["Retailer"]}'
-                    best_value = float(r["Delta"])
+            cur = df_cur.groupby("Retailer", as_index=False).agg(Current=("Sales", "sum"))
+            cmp = df_cmp.groupby("Retailer", as_index=False).agg(Compare=("Sales", "sum"))
+            tmp = cur.merge(cmp, on="Retailer", how="outer").fillna(0.0)
+            tmp["Label"] = tmp["Retailer"].astype(str).map(lambda x: f"Retailer: {x}")
+            tmp["Delta"] = tmp["Current"] - tmp["Compare"]
+            frames.append(tmp[["Label", "Delta"]])
 
         if "Vendor" in df_cur.columns and "Vendor" in df_cmp.columns:
-            vendor_cur = df_cur.groupby("Vendor", as_index=False).agg(Current=("Sales", "sum"))
-            vendor_cmp = df_cmp.groupby("Vendor", as_index=False).agg(Compare=("Sales", "sum"))
-            vendor = vendor_cur.merge(vendor_cmp, on="Vendor", how="outer").fillna(0.0)
-            vendor["Delta"] = vendor["Current"] - vendor["Compare"]
-            if not vendor.empty:
-                v = vendor.sort_values("Delta", ascending=False).iloc[0]
-                if float(v["Delta"]) > best_value:
-                    best_label = f'Vendor: {v["Vendor"]}'
-                    best_value = float(v["Delta"])
+            cur = df_cur.groupby("Vendor", as_index=False).agg(Current=("Sales", "sum"))
+            cmp = df_cmp.groupby("Vendor", as_index=False).agg(Compare=("Sales", "sum"))
+            tmp = cur.merge(cmp, on="Vendor", how="outer").fillna(0.0)
+            tmp["Label"] = tmp["Vendor"].astype(str).map(lambda x: f"Vendor: {x}")
+            tmp["Delta"] = tmp["Current"] - tmp["Compare"]
+            frames.append(tmp[["Label", "Delta"]])
 
-        return best_label, best_value
+        if not frames:
+            return pd.DataFrame(columns=["Label", "Delta"])
 
-    def largest_decrease_contributor(df_cur: pd.DataFrame, df_cmp: pd.DataFrame):
-        best_label = "Largest Decrease"
-        best_value = 0.0
+        out = pd.concat(frames, ignore_index=True)
+        out = out[np.isfinite(out["Delta"])].copy()
+        out = out[out["Delta"] != 0].copy()
+        out = out.drop_duplicates(subset=["Label"], keep="first")
 
-        if "Retailer" in df_cur.columns and "Retailer" in df_cmp.columns:
-            retailer_cur = df_cur.groupby("Retailer", as_index=False).agg(Current=("Sales", "sum"))
-            retailer_cmp = df_cmp.groupby("Retailer", as_index=False).agg(Compare=("Sales", "sum"))
-            retailer = retailer_cur.merge(retailer_cmp, on="Retailer", how="outer").fillna(0.0)
-            retailer["Delta"] = retailer["Current"] - retailer["Compare"]
-            if not retailer.empty:
-                r = retailer.sort_values("Delta", ascending=True).iloc[0]
-                if float(r["Delta"]) < best_value:
-                    best_label = f'Retailer: {r["Retailer"]}'
-                    best_value = float(r["Delta"])
+        pos = out[out["Delta"] > 0].sort_values(["Delta", "Label"], ascending=[False, True]).copy()
+        neg = out[out["Delta"] < 0].sort_values(["Delta", "Label"], ascending=[True, True]).copy()
 
-        if "Vendor" in df_cur.columns and "Vendor" in df_cmp.columns:
-            vendor_cur = df_cur.groupby("Vendor", as_index=False).agg(Current=("Sales", "sum"))
-            vendor_cmp = df_cmp.groupby("Vendor", as_index=False).agg(Compare=("Sales", "sum"))
-            vendor = vendor_cur.merge(vendor_cmp, on="Vendor", how="outer").fillna(0.0)
-            vendor["Delta"] = vendor["Current"] - vendor["Compare"]
-            if not vendor.empty:
-                v = vendor.sort_values("Delta", ascending=True).iloc[0]
-                if float(v["Delta"]) < best_value:
-                    best_label = f'Vendor: {v["Vendor"]}'
-                    best_value = float(v["Delta"])
-
-        return best_label, best_value
+        return pd.concat([pos, neg], ignore_index=True)
 
     def simple_period_block_chart(
         current_value: float,
         compare_value: float,
         current_label: str,
         compare_label: str,
-        largest_inc_label: str,
-        largest_inc_value: float,
-        largest_dec_label: str,
-        largest_dec_value: float,
+        changes_df: pd.DataFrame,
     ):
-        BLOCK_VALUE = 10000.0
+        BLOCK_VALUE = 30000.0
 
-        def total_label(v: float) -> str:
-            av = abs(v)
-            if av >= 1000000:
-                return f"${v/1000000:.2f}M"
-            if av >= 1000:
-                return f"${v/1000:.0f}k"
-            return f"${v:,.0f}"
+        def full_total_label(v: float) -> str:
+            return money(float(v))
 
-        def make_total_blocks(label: str, value: float, color_hex: str) -> pd.DataFrame:
-            rows = []
-            value = float(max(value, 0.0))
+        def abs_change_label(v: float) -> str:
+            return money(abs(float(v)))
 
-            if value <= 0:
-                return pd.DataFrame(
-                    [{
-                        "Period": label,
-                        "X0": 0.0,
-                        "X1": 0.0,
-                        "ColorHex": color_hex,
-                    }]
-                )
+        current_value = float(max(current_value, 0.0))
+        compare_value = float(max(compare_value, 0.0))
 
-            n_blocks = int(np.ceil(value / BLOCK_VALUE))
-            for i in range(n_blocks):
-                start = i * BLOCK_VALUE
-                end = min((i + 1) * BLOCK_VALUE, value)
+        current_color = POSITIVE_BAR if current_value > compare_value else (NEGATIVE_BAR if current_value < compare_value else NEUTRAL_BAR)
+
+        rows = [
+            {
+                "Period": compare_label,
+                "Kind": "total",
+                "Value": compare_value,
+                "Direction": "right",
+                "ColorHex": "#ff7f0e",
+                "Side": "right",
+                "Text": full_total_label(compare_value),
+            }
+        ]
+
+        if changes_df is not None and not changes_df.empty:
+            for _, r in changes_df.iterrows():
+                delta = float(r["Delta"])
                 rows.append(
                     {
-                        "Period": label,
-                        "X0": start,
-                        "X1": end,
-                        "ColorHex": color_hex,
+                        "Period": str(r["Label"]),
+                        "Kind": "change",
+                        "Value": abs(delta),
+                        "Direction": "right" if delta > 0 else "left",
+                        "ColorHex": POSITIVE_BAR if delta > 0 else NEGATIVE_BAR,
+                        "Side": "right" if delta > 0 else "left",
+                        "Text": abs_change_label(delta),
                     }
                 )
-            return pd.DataFrame(rows)
 
-        def make_center_blocks(label: str, value: float, direction: str, color_hex: str, center_x: float) -> pd.DataFrame:
-            rows = []
-            value = abs(float(value))
+        rows.append(
+            {
+                "Period": current_label,
+                "Kind": "total",
+                "Value": current_value,
+                "Direction": "right",
+                "ColorHex": current_color,
+                "Side": "right",
+                "Text": full_total_label(current_value),
+            }
+        )
 
-            if value <= 0:
-                return pd.DataFrame(
-                    [{
-                        "Period": label,
-                        "X0": center_x,
-                        "X1": center_x,
-                        "ColorHex": color_hex,
-                    }]
-                )
+        row_df = pd.DataFrame(rows)
 
-            n_blocks = int(np.ceil(value / BLOCK_VALUE))
-            for i in range(n_blocks):
-                piece_start = i * BLOCK_VALUE
-                piece_end = min((i + 1) * BLOCK_VALUE, value)
+        total_max = float(max(compare_value, current_value, BLOCK_VALUE))
+        change_max = float(row_df.loc[row_df["Kind"] == "change", "Value"].max()) if (row_df["Kind"] == "change").any() else BLOCK_VALUE
+        change_max = max(change_max, BLOCK_VALUE)
 
-                if direction == "right":
-                    x0 = center_x + piece_start
-                    x1 = center_x + piece_end
-                else:
-                    x0 = center_x - piece_end
-                    x1 = center_x - piece_start
-
-                rows.append(
-                    {
-                        "Period": label,
-                        "X0": x0,
-                        "X1": x1,
-                        "ColorHex": color_hex,
-                    }
-                )
-            return pd.DataFrame(rows)
-
-        pos_value = float(max(largest_inc_value, 0.0))
-        neg_value = float(abs(min(largest_dec_value, 0.0)))
-
-        total_max = max(float(current_value), float(compare_value), BLOCK_VALUE)
-        change_max = max(pos_value, neg_value, BLOCK_VALUE)
-
-        xmax = max(total_max, change_max * 2.0)
+        total_bar_space = total_max * 1.40
+        change_bar_space = change_max * 2.60
+        xmax = float(max(total_bar_space, change_bar_space, BLOCK_VALUE * 4))
         xmax = float(np.ceil(xmax / BLOCK_VALUE) * BLOCK_VALUE)
         center_x = xmax / 2.0
 
-        compare_blocks = make_total_blocks(compare_label, float(compare_value), "#ff7f0e")
-        negative_blocks = make_center_blocks(largest_dec_label, neg_value, "left", "#c62828", center_x)
-        positive_blocks = make_center_blocks(largest_inc_label, pos_value, "right", "#2e7d32", center_x)
-        current_blocks = make_total_blocks(current_label, float(current_value), "#1f77b4")
+        block_rows = []
+        total_label_rows = []
 
-        block_df = pd.concat(
-            [compare_blocks, negative_blocks, positive_blocks, current_blocks],
-            ignore_index=True,
-        )
+        for _, r in row_df.iterrows():
+            value = float(max(r["Value"], 0.0))
+            if r["Kind"] == "total":
+                if value <= 0:
+                    block_rows.append(
+                        {
+                            "Period": r["Period"],
+                            "X0": 0.0,
+                            "X1": 0.0,
+                            "ColorHex": r["ColorHex"],
+                        }
+                    )
+                    total_label_rows.append(
+                        {
+                            "Period": r["Period"],
+                            "X": 0.0,
+                            "Text": r["Text"],
+                            "ColorHex": r["ColorHex"],
+                            "Side": r["Side"],
+                        }
+                    )
+                else:
+                    n_blocks = int(np.ceil(value / BLOCK_VALUE))
+                    for i in range(n_blocks):
+                        x0 = i * BLOCK_VALUE
+                        x1 = min((i + 1) * BLOCK_VALUE, value)
+                        block_rows.append(
+                            {
+                                "Period": r["Period"],
+                                "X0": x0,
+                                "X1": x1,
+                                "ColorHex": r["ColorHex"],
+                            }
+                        )
+                    total_label_rows.append(
+                        {
+                            "Period": r["Period"],
+                            "X": value,
+                            "Text": r["Text"],
+                            "ColorHex": r["ColorHex"],
+                            "Side": "right",
+                        }
+                    )
+            else:
+                if value <= 0:
+                    block_rows.append(
+                        {
+                            "Period": r["Period"],
+                            "X0": center_x,
+                            "X1": center_x,
+                            "ColorHex": r["ColorHex"],
+                        }
+                    )
+                    total_label_rows.append(
+                        {
+                            "Period": r["Period"],
+                            "X": center_x,
+                            "Text": r["Text"],
+                            "ColorHex": r["ColorHex"],
+                            "Side": r["Side"],
+                        }
+                    )
+                else:
+                    n_blocks = int(np.ceil(value / BLOCK_VALUE))
+                    for i in range(n_blocks):
+                        piece_start = i * BLOCK_VALUE
+                        piece_end = min((i + 1) * BLOCK_VALUE, value)
 
-        order = [compare_label, largest_dec_label, largest_inc_label, current_label]
+                        if r["Direction"] == "right":
+                            x0 = center_x + piece_start
+                            x1 = center_x + piece_end
+                        else:
+                            x0 = center_x - piece_end
+                            x1 = center_x - piece_start
+
+                        block_rows.append(
+                            {
+                                "Period": r["Period"],
+                                "X0": x0,
+                                "X1": x1,
+                                "ColorHex": r["ColorHex"],
+                            }
+                        )
+
+                    total_label_rows.append(
+                        {
+                            "Period": r["Period"],
+                            "X": center_x + value if r["Direction"] == "right" else center_x - value,
+                            "Text": r["Text"],
+                            "ColorHex": r["ColorHex"],
+                            "Side": r["Side"],
+                        }
+                    )
+
+        block_df = pd.DataFrame(block_rows)
+        totals_df = pd.DataFrame(total_label_rows)
+        order = row_df["Period"].tolist()
+
+        chart_height = max(230, 44 * len(order))
 
         bars = (
             alt.Chart(block_df)
@@ -449,52 +493,18 @@ def render_visual_executive_dashboard(
                 color=alt.Color("ColorHex:N", scale=None, legend=None),
                 tooltip=[alt.Tooltip("Period:N", title="Period")],
             )
-            .properties(height=230)
+            .properties(height=chart_height)
         )
 
-        center_rule_df = pd.DataFrame([{"Center": center_x}])
         center_rule = (
-            alt.Chart(center_rule_df)
+            alt.Chart(pd.DataFrame([{"Center": center_x}]))
             .mark_rule(color="#7a7a7a", strokeDash=[4, 4], strokeWidth=1.5)
             .encode(x=alt.X("Center:Q", scale=alt.Scale(domain=[0, xmax])))
         )
 
-        totals_df = pd.DataFrame(
-            [
-                {
-                    "Period": compare_label,
-                    "X": float(compare_value),
-                    "Text": total_label(float(compare_value)),
-                    "ColorHex": "#ff7f0e",
-                    "Side": "right",
-                },
-                {
-                    "Period": largest_dec_label,
-                    "X": center_x - neg_value,
-                    "Text": total_label(float(neg_value)),
-                    "ColorHex": "#c62828",
-                    "Side": "left",
-                },
-                {
-                    "Period": largest_inc_label,
-                    "X": center_x + pos_value,
-                    "Text": total_label(float(pos_value)),
-                    "ColorHex": "#2e7d32",
-                    "Side": "right",
-                },
-                {
-                    "Period": current_label,
-                    "X": float(current_value),
-                    "Text": total_label(float(current_value)),
-                    "ColorHex": "#1f77b4",
-                    "Side": "right",
-                },
-            ]
-        )
-
         right_labels = (
             alt.Chart(totals_df[totals_df["Side"] == "right"])
-            .mark_text(align="left", dx=8, fontSize=12, fontWeight="bold")
+            .mark_text(align="left", dx=10, fontSize=12, fontWeight="bold", clip=False)
             .encode(
                 y=alt.Y("Period:N", sort=order),
                 x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
@@ -505,7 +515,7 @@ def render_visual_executive_dashboard(
 
         left_labels = (
             alt.Chart(totals_df[totals_df["Side"] == "left"])
-            .mark_text(align="right", dx=-8, fontSize=12, fontWeight="bold")
+            .mark_text(align="right", dx=-10, fontSize=12, fontWeight="bold", clip=False)
             .encode(
                 y=alt.Y("Period:N", sort=order),
                 x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
@@ -743,8 +753,7 @@ def render_visual_executive_dashboard(
 
     st.write("")
 
-    inc_label, inc_value = largest_increase_contributor(dfA, dfB)
-    dec_label, dec_value = largest_decrease_contributor(dfA, dfB)
+    change_rows = collect_change_contributors(dfA, dfB)
 
     st.markdown(f"#### Sales Blocks ({a_lbl} vs {b_lbl})")
     block_chart = simple_period_block_chart(
@@ -752,10 +761,7 @@ def render_visual_executive_dashboard(
         compare_value=float(kB["Sales"]),
         current_label=a_lbl,
         compare_label=b_lbl,
-        largest_inc_label=inc_label,
-        largest_inc_value=float(inc_value),
-        largest_dec_label=dec_label,
-        largest_dec_value=float(dec_value),
+        changes_df=change_rows,
     )
     st.altair_chart(block_chart, use_container_width=True)
 
