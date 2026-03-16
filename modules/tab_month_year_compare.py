@@ -202,7 +202,7 @@ def render_visual_executive_dashboard(
             )
 
             xmax = float(chart_df["Value"].max()) if not chart_df.empty else 0.0
-            label_pad = max(xmax * 0.04, 1.0)
+            label_pad = max(xmax * 0.03, 1.0)
             xmax = xmax + label_pad if xmax > 0 else 1.0
 
             bars = (
@@ -248,7 +248,7 @@ def render_visual_executive_dashboard(
         )
 
         xmax = float(totals["Value"].max()) if not totals.empty else 0.0
-        label_pad = max(xmax * 0.04, 1.0)
+        label_pad = max(xmax * 0.03, 1.0)
         xmax = xmax + label_pad if xmax > 0 else 1.0
 
         bars = (
@@ -381,12 +381,19 @@ def render_visual_executive_dashboard(
 
         change_max = max(change_max, CHANGE_BLOCK_VALUE)
 
-        left_pad = change_max + max(CHANGE_BLOCK_VALUE * 4, change_max * 0.08)
-        right_needed_for_changes = left_pad + change_max + max(CHANGE_BLOCK_VALUE * 4, change_max * 0.08)
-        right_needed_for_totals = total_max + max(TOTAL_BLOCK_VALUE * 2, total_max * 0.03)
+        # Center the change lanes off the compare bar midpoint whenever possible.
+        # If the compare midpoint is too far left to fit the largest negative move,
+        # push it right just enough so negatives still fit.
+        center_from_compare = compare_value / 2.0
+        min_center_needed = change_max + max(CHANGE_BLOCK_VALUE * 2, change_max * 0.04)
+        center_x = max(center_from_compare, min_center_needed)
+        center_x = float(np.ceil(center_x / CHANGE_BLOCK_VALUE) * CHANGE_BLOCK_VALUE)
 
-        center_x = float(np.ceil(left_pad / CHANGE_BLOCK_VALUE) * CHANGE_BLOCK_VALUE)
-        xmax = float(np.ceil(max(right_needed_for_changes, right_needed_for_totals) / CHANGE_BLOCK_VALUE) * CHANGE_BLOCK_VALUE)
+        right_needed_for_changes = center_x + change_max + max(CHANGE_BLOCK_VALUE * 2, change_max * 0.04)
+        right_needed_for_totals = total_max + max(TOTAL_BLOCK_VALUE, total_max * 0.02)
+
+        xmax = float(max(right_needed_for_changes, right_needed_for_totals))
+        xmax = float(np.ceil(xmax / CHANGE_BLOCK_VALUE) * CHANGE_BLOCK_VALUE)
 
         block_rows = []
         total_label_rows = []
@@ -495,12 +502,12 @@ def render_visual_executive_dashboard(
 
         bars = (
             alt.Chart(block_df)
-            .mark_rect(stroke="white", strokeWidth=1)
+            .mark_bar(stroke="white", strokeWidth=1)
             .encode(
                 y=alt.Y("Period:N", sort=order, title=""),
                 x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, xmax])),
                 x2="X1:Q",
-                fill=alt.Fill("ColorHex:N", scale=None, legend=None),
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
                 tooltip=[alt.Tooltip("Period:N", title="Period")],
             )
             .properties(height=chart_height)
