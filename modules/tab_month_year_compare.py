@@ -529,8 +529,7 @@ def render_visual_executive_dashboard(
         pos_other = float(pos.iloc[top_n_each_side:]["Delta"].sum()) if len(pos) > top_n_each_side else 0.0
         neg_other = float(neg.iloc[top_n_each_side:]["Delta"].sum()) if len(neg) > top_n_each_side else 0.0
 
-        steps = []
-        steps.append({"Label": b_lbl, "Amount": compare_total, "Type": "total"})
+        steps = [{"Label": b_lbl, "Amount": compare_total, "Type": "total"}]
 
         for _, r in pos_keep.iterrows():
             steps.append({"Label": str(r[level]), "Amount": float(r["Delta"]), "Type": "positive"})
@@ -545,110 +544,231 @@ def render_visual_executive_dashboard(
             steps.append({"Label": "Other Negative", "Amount": neg_other, "Type": "negative"})
 
         steps.append({"Label": a_lbl, "Amount": current_total, "Type": "total"})
+        return pd.DataFrame(steps)
 
-        wf = pd.DataFrame(steps)
-
-        starts = []
-        ends = []
-        running = compare_total
-
-        for i, row in wf.iterrows():
-            if row["Type"] == "total":
-                if i == 0:
-                    start = 0.0
-                    end = compare_total
-                    running = compare_total
-                else:
-                    start = 0.0
-                    end = current_total
-            else:
-                start = running
-                end = running + float(row["Amount"])
-                running = end
-
-            starts.append(start)
-            ends.append(end)
-
-        wf["Y0"] = starts
-        wf["Y1"] = ends
-        wf["BarStart"] = wf[["Y0", "Y1"]].min(axis=1)
-        wf["BarEnd"] = wf[["Y0", "Y1"]].max(axis=1)
-        wf["DisplayAmount"] = wf["Amount"].map(money)
-        wf["ColorType"] = wf["Type"]
-        wf["SortOrder"] = list(range(len(wf)))
-        wf["LabelY"] = np.where(wf["Type"] == "negative", wf["BarStart"], wf["BarEnd"])
-        return wf
-
-    def waterfall_chart(wf: pd.DataFrame, height: int = 520):
+    def waterfall_chart(wf: pd.DataFrame, height: int = 560):
         if wf.empty:
             return None
 
-        color_scale = alt.Scale(
-            domain=["positive", "negative", "total"],
-            range=[POSITIVE_BAR, NEGATIVE_BAR, TOTAL_BAR],
-        )
+        BLOCK_VALUE = 10000.0
+        blue_top = "#1f77b4"
+        green_pos = "#2e7d32"
+        red_neg = "#c62828"
 
-        y_sort = wf["Label"].tolist()
+        def block_label(v: float) -> str:
+            av = abs(v)
+            if av >= 1000:
+                s = f"${av/1000:.1f}k".replace(".0k", "k")
+            else:
+                s = f"${av:,.0f}"
+            return s if v >= 0 else f"-{s}"
 
-        bars = (
-            alt.Chart(wf)
-            .mark_bar()
-            .encode(
-                y=alt.Y("Label:N", sort=y_sort, title=""),
-                x=alt.X("BarStart:Q", title="Sales"),
-                x2="BarEnd:Q",
-                color=alt.Color("ColorType:N", scale=color_scale, legend=None),
-                tooltip=[
-                    alt.Tooltip("Label:N", title="Category"),
-                    alt.Tooltip("Amount:Q", title="Change", format=",.2f"),
-                    alt.Tooltip("Y1:Q", title="Running Total", format=",.2f"),
-                ],
-            )
-            .properties(height=height)
-        )
+        def make_block_rows(label: str, value: float, color_hex: str, section: str):
+            rows = []
+            if abs(value) < 1e-9:
+                rows.append(
+                    {
+                        "Label": label,
+                        "BlockNum": 1,
+                        "X0": 0.0,
+                        "X1": 0.0,
+                        "BlockCenter": 0.0,
+                        "BlockText": "$0",
+                        "ColorHex": color_hex,
+                        "Section": section,
+                    }
+                )
+                return rows
 
-        connector_df = wf.iloc[1:-1].copy()
-        if not connector_df.empty:
-            connector_df["PrevEnd"] = wf["Y1"].shift(1).iloc[1:-1].values
-            connector_df["YPrev"] = wf["Label"].shift(1).iloc[1:-1].values
-            connector_df["YCurr"] = connector_df["Label"]
+            sign = 1 if value > 0 else -1
+            abs_val = abs(value)
+            n_blocks = int(np.ceil(abs_val / BLOCK_VALUE))
 
-            connectors = (
-                alt.Chart(connector_df)
-                .mark_rule(color="#999999", strokeDash=[4, 3])
+            for i in range(n_blocks):
+                start_mag = i * BLOCK_VALUE
+                end_mag = min((i + 1) * BLOCK_VALUE, abs_val)
+                piece = end_mag - start_mag
+
+                if sign > 0:
+                    x0 = start_mag
+                    x1 = end_mag
+                    block_amt = piece
+                else:
+                    x0 = -end_mag
+                    x1 = -start_mag
+                    block_amt = -piece
+
+                rows.append(
+                    {
+                        "Label": label,
+                        "BlockNum": i + 1,
+                        "X0": x0,
+                        "X1": x1,
+                        "BlockCenter": (x0 + x1) / 2.0,
+                        "BlockText": block_label(block_amt),
+                        "ColorHex": color_hex,
+                        "Section": section,
+                    }
+                )
+            return rows
+
+        top_label = str(wf.iloc[0]["Label"])
+        bottom_label = str(wf.iloc[-1]["Label"])
+        top_amount = float(wf.iloc[0]["Amount"])
+        bottom_amount = float(wf.iloc[-1]["Amount"])
+        bottom_total_color = red_neg if bottom_amount > top_amount else green_pos
+
+        mid = wf.iloc[1:-1].copy()
+
+        top_blocks = pd.DataFrame(make_block_rows(top_label, top_amount, blue_top, "top"))
+        bottom_blocks = pd.DataFrame(make_block_rows(bottom_label, bottom_amount, bottom_total_color, "bottom"))
+
+        if mid.empty:
+            total_df = pd.concat([top_blocks, bottom_blocks], ignore_index=True)
+            order = [top_label, bottom_label]
+
+            bars = (
+                alt.Chart(total_df)
+                .mark_rect(stroke="white", strokeWidth=1)
                 .encode(
-                    y=alt.Y("YPrev:N", sort=y_sort),
-                    y2=alt.Y2("YCurr:N"),
-                    x=alt.X("PrevEnd:Q"),
+                    y=alt.Y("Label:N", sort=order, title=""),
+                    x=alt.X("X0:Q", title="Sales"),
+                    x2="X1:Q",
+                    color=alt.Color("ColorHex:N", scale=None, legend=None),
+                    tooltip=[
+                        alt.Tooltip("Label:N", title="Category"),
+                        alt.Tooltip("BlockText:N", title="Block"),
+                    ],
+                )
+                .properties(height=140)
+            )
+
+            labels = (
+                alt.Chart(total_df)
+                .mark_text(fontSize=10, fontWeight="bold", color="white")
+                .encode(
+                    y=alt.Y("Label:N", sort=order),
+                    x=alt.X("BlockCenter:Q"),
+                    text="BlockText:N",
                 )
             )
-        else:
-            connectors = alt.Chart(pd.DataFrame({"Label": [], "PrevEnd": []})).mark_rule()
 
-        pos_labels_df = wf[wf["Type"] != "negative"].copy()
-        neg_labels_df = wf[wf["Type"] == "negative"].copy()
+            return bars + labels
 
-        pos_labels = (
-            alt.Chart(pos_labels_df)
-            .mark_text(fontSize=12, fontWeight="bold", dx=8, align="left", color="#111111")
+        mid["CenteredValue"] = mid["Amount"]
+        mid["ColorHex"] = np.where(mid["CenteredValue"] >= 0, green_pos, red_neg)
+
+        mid_block_rows = []
+        for _, r in mid.iterrows():
+            mid_block_rows.extend(
+                make_block_rows(
+                    label=str(r["Label"]),
+                    value=float(r["CenteredValue"]),
+                    color_hex=str(r["ColorHex"]),
+                    section="mid",
+                )
+            )
+        )
+        mid_blocks = pd.DataFrame(mid_block_rows)
+
+        contrib_abs_max = float(np.abs(mid["CenteredValue"]).max()) if not mid.empty else 0.0
+        total_max = max(abs(top_amount), abs(bottom_amount), contrib_abs_max)
+        contrib_domain = max(BLOCK_VALUE, np.ceil(contrib_abs_max / BLOCK_VALUE) * BLOCK_VALUE)
+        total_domain = max(BLOCK_VALUE, np.ceil(total_max / BLOCK_VALUE) * BLOCK_VALUE)
+
+        order = [top_label] + mid["Label"].tolist() + [bottom_label]
+
+        top_bar = (
+            alt.Chart(top_blocks)
+            .mark_rect(stroke="white", strokeWidth=1)
             .encode(
-                y=alt.Y("Label:N", sort=y_sort),
-                x=alt.X("LabelY:Q"),
-                text=alt.Text("DisplayAmount:N"),
+                y=alt.Y("Label:N", sort=order, title=""),
+                x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, total_domain])),
+                x2="X1:Q",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+                tooltip=[
+                    alt.Tooltip("Label:N", title="Compare Period"),
+                    alt.Tooltip("BlockText:N", title="Block"),
+                ],
             )
         )
 
-        neg_labels = (
-            alt.Chart(neg_labels_df)
-            .mark_text(fontSize=12, fontWeight="bold", dx=-8, align="right", color="#111111")
+        top_labels = (
+            alt.Chart(top_blocks)
+            .mark_text(fontSize=10, fontWeight="bold", color="white")
             .encode(
-                y=alt.Y("Label:N", sort=y_sort),
-                x=alt.X("LabelY:Q"),
-                text=alt.Text("DisplayAmount:N"),
+                y=alt.Y("Label:N", sort=order),
+                x=alt.X("BlockCenter:Q", scale=alt.Scale(domain=[0, total_domain])),
+                text="BlockText:N",
             )
         )
 
-        return connectors + bars + pos_labels + neg_labels
+        mid_bars = (
+            alt.Chart(mid_blocks)
+            .mark_rect(stroke="white", strokeWidth=1)
+            .encode(
+                y=alt.Y("Label:N", sort=order, title=""),
+                x=alt.X("X0:Q", title="Contribution", scale=alt.Scale(domain=[-contrib_domain, contrib_domain])),
+                x2="X1:Q",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+                tooltip=[
+                    alt.Tooltip("Label:N", title="Category"),
+                    alt.Tooltip("BlockText:N", title="Block"),
+                ],
+            )
+        )
+
+        zero_line = (
+            alt.Chart(pd.DataFrame({"x": [0]}))
+            .mark_rule(color="#666666", strokeDash=[4, 4])
+            .encode(x="x:Q")
+        )
+
+        mid_labels = (
+            alt.Chart(mid_blocks)
+            .mark_text(fontSize=10, fontWeight="bold", color="white")
+            .encode(
+                y=alt.Y("Label:N", sort=order),
+                x=alt.X("BlockCenter:Q", scale=alt.Scale(domain=[-contrib_domain, contrib_domain])),
+                text="BlockText:N",
+            )
+        )
+
+        bottom_bar = (
+            alt.Chart(bottom_blocks)
+            .mark_rect(stroke="white", strokeWidth=1)
+            .encode(
+                y=alt.Y("Label:N", sort=order, title=""),
+                x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, total_domain])),
+                x2="X1:Q",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+                tooltip=[
+                    alt.Tooltip("Label:N", title="Current Period"),
+                    alt.Tooltip("BlockText:N", title="Block"),
+                ],
+            )
+        )
+
+        bottom_labels = (
+            alt.Chart(bottom_blocks)
+            .mark_text(fontSize=10, fontWeight="bold", color="white")
+            .encode(
+                y=alt.Y("Label:N", sort=order),
+                x=alt.X("BlockCenter:Q", scale=alt.Scale(domain=[0, total_domain])),
+                text="BlockText:N",
+            )
+        )
+
+        top_section = (top_bar + top_labels).properties(height=70)
+        middle_section = (zero_line + mid_bars + mid_labels).properties(height=max(220, len(mid) * 34))
+        bottom_section = (bottom_bar + bottom_labels).properties(height=70)
+
+        return alt.vconcat(
+            top_section,
+            middle_section,
+            bottom_section,
+            spacing=12,
+        ).resolve_scale(x="independent")
 
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -689,13 +809,13 @@ def render_visual_executive_dashboard(
     retailer_wf = prep_waterfall_bridge(dfA, dfB, "Retailer", top_n_each_side=8)
     if not retailer_wf.empty:
         st.markdown("#### Retailer Contribution to Change")
-        retailer_chart = waterfall_chart(retailer_wf, height=520)
+        retailer_chart = waterfall_chart(retailer_wf, height=560)
         st.altair_chart(retailer_chart, use_container_width=True)
 
     vendor_wf = prep_waterfall_bridge(dfA, dfB, "Vendor", top_n_each_side=8)
     if not vendor_wf.empty:
         st.markdown("#### Vendor Contribution to Change")
-        vendor_chart = waterfall_chart(vendor_wf, height=520)
+        vendor_chart = waterfall_chart(vendor_wf, height=560)
         st.altair_chart(vendor_chart, use_container_width=True)
 
     retailer = prep_compare_metric(dfA, dfB, "Retailer", metric="Sales", top_n=10)
