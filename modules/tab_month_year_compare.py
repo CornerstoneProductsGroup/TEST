@@ -544,6 +544,8 @@ def render_visual_executive_dashboard(
         if wf.empty:
             return None
 
+        BLOCK_VALUE = 10000.0
+
         blue_top = "#1f77b4"
         green_pos = "#2e7d32"
         red_neg = "#c62828"
@@ -556,108 +558,149 @@ def render_visual_executive_dashboard(
         bottom_total_color = red_neg if bottom_amount > top_amount else green_pos
 
         mid = wf.iloc[1:-1].copy()
+
+        def make_block_rows(label: str, value: float, color_hex: str, section: str):
+            rows = []
+            if value == 0:
+                rows.append(
+                    {
+                        "Label": label,
+                        "BlockNum": 0,
+                        "X0": 0.0,
+                        "X1": 0.0,
+                        "BlockCenter": 0.0,
+                        "BlockText": "$0",
+                        "ColorHex": color_hex,
+                        "Section": section,
+                    }
+                )
+                return rows
+
+            sign = 1 if value > 0 else -1
+            abs_val = abs(value)
+            n_blocks = int(np.ceil(abs_val / BLOCK_VALUE))
+
+            for i in range(n_blocks):
+                start_mag = i * BLOCK_VALUE
+                end_mag = min((i + 1) * BLOCK_VALUE, abs_val)
+
+                if sign > 0:
+                    x0 = start_mag
+                    x1 = end_mag
+                    block_amt = end_mag - start_mag
+                else:
+                    x0 = -end_mag
+                    x1 = -start_mag
+                    block_amt = -(end_mag - start_mag)
+
+                rows.append(
+                    {
+                        "Label": label,
+                        "BlockNum": i + 1,
+                        "X0": x0,
+                        "X1": x1,
+                        "BlockCenter": (x0 + x1) / 2.0,
+                        "BlockText": money(block_amt),
+                        "ColorHex": color_hex,
+                        "Section": section,
+                    }
+                )
+            return rows
+
+        top_blocks = pd.DataFrame(make_block_rows(top_label, top_amount, blue_top, "top"))
+        bottom_blocks = pd.DataFrame(make_block_rows(bottom_label, bottom_amount, bottom_total_color, "bottom"))
+
         if mid.empty:
-            total_df = pd.DataFrame(
-                [
-                    {"Label": top_label, "Value": top_amount, "ColorHex": blue_top, "DisplayAmount": money(top_amount)},
-                    {"Label": bottom_label, "Value": bottom_amount, "ColorHex": bottom_total_color, "DisplayAmount": money(bottom_amount)},
-                ]
-            )
+            total_df = pd.concat([top_blocks, bottom_blocks], ignore_index=True)
+            order = [top_label, bottom_label]
 
             bars = (
                 alt.Chart(total_df)
-                .mark_bar()
+                .mark_rect(stroke="white", strokeWidth=1)
                 .encode(
-                    y=alt.Y("Label:N", sort=[top_label, bottom_label], title=""),
-                    x=alt.X("Value:Q", title="Sales"),
+                    y=alt.Y("Label:N", sort=order, title=""),
+                    x=alt.X("X0:Q", title="Sales"),
+                    x2="X1:Q",
                     color=alt.Color("ColorHex:N", scale=None, legend=None),
                     tooltip=[
                         alt.Tooltip("Label:N", title="Category"),
-                        alt.Tooltip("Value:Q", title="Amount", format=",.2f"),
+                        alt.Tooltip("BlockText:N", title="Block"),
                     ],
                 )
-                .properties(height=160)
+                .properties(height=140)
             )
 
             labels = (
                 alt.Chart(total_df)
-                .mark_text(dx=8, align="left", fontSize=12, fontWeight="bold", color="#111111")
+                .mark_text(fontSize=10, fontWeight="bold", color="white")
                 .encode(
-                    y=alt.Y("Label:N", sort=[top_label, bottom_label]),
-                    x=alt.X("Value:Q"),
-                    text="DisplayAmount:N",
+                    y=alt.Y("Label:N", sort=order),
+                    x=alt.X("BlockCenter:Q"),
+                    text="BlockText:N",
                 )
             )
 
             return bars + labels
 
         mid["CenteredValue"] = mid["Amount"]
-        mid["BarStart"] = np.where(mid["CenteredValue"] >= 0, 0.0, mid["CenteredValue"])
-        mid["BarEnd"] = np.where(mid["CenteredValue"] >= 0, mid["CenteredValue"], 0.0)
         mid["ColorHex"] = np.where(mid["CenteredValue"] >= 0, green_pos, red_neg)
-        mid["LabelX"] = np.where(mid["CenteredValue"] >= 0, mid["BarEnd"], mid["BarStart"])
-        mid["DisplayAmount"] = mid["Amount"].map(money)
+
+        mid_block_rows = []
+        for _, r in mid.iterrows():
+            mid_block_rows.extend(
+                make_block_rows(
+                    label=str(r["Label"]),
+                    value=float(r["CenteredValue"]),
+                    color_hex=str(r["ColorHex"]),
+                    section="mid",
+                )
+            )
+        )
+        mid_blocks = pd.DataFrame(mid_block_rows)
 
         contrib_abs_max = float(np.abs(mid["CenteredValue"]).max()) if not mid.empty else 0.0
         total_max = max(abs(top_amount), abs(bottom_amount), contrib_abs_max)
-        contrib_domain = contrib_abs_max * 1.20 if contrib_abs_max > 0 else 1.0
-        total_domain = total_max * 1.10 if total_max > 0 else 1.0
-
-        top_df = pd.DataFrame(
-            [{
-                "Label": top_label,
-                "Value": top_amount,
-                "ColorHex": blue_top,
-                "DisplayAmount": money(top_amount),
-            }]
-        )
-
-        bottom_df = pd.DataFrame(
-            [{
-                "Label": bottom_label,
-                "Value": bottom_amount,
-                "ColorHex": bottom_total_color,
-                "DisplayAmount": money(bottom_amount),
-            }]
-        )
+        contrib_domain = max(BLOCK_VALUE, np.ceil(contrib_abs_max / BLOCK_VALUE) * BLOCK_VALUE)
+        total_domain = max(BLOCK_VALUE, np.ceil(total_max / BLOCK_VALUE) * BLOCK_VALUE)
 
         order = [top_label] + mid["Label"].tolist() + [bottom_label]
 
         top_bar = (
-            alt.Chart(top_df)
-            .mark_bar()
+            alt.Chart(top_blocks)
+            .mark_rect(stroke="white", strokeWidth=1)
             .encode(
                 y=alt.Y("Label:N", sort=order, title=""),
-                x=alt.X("Value:Q", title="Sales", scale=alt.Scale(domain=[0, total_domain])),
+                x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, total_domain])),
+                x2="X1:Q",
                 color=alt.Color("ColorHex:N", scale=None, legend=None),
                 tooltip=[
                     alt.Tooltip("Label:N", title="Compare Period"),
-                    alt.Tooltip("Value:Q", title="Amount", format=",.2f"),
+                    alt.Tooltip("BlockText:N", title="Block"),
                 ],
             )
         )
 
-        top_label_layer = (
-            alt.Chart(top_df)
-            .mark_text(dx=8, align="left", fontSize=12, fontWeight="bold", color="#111111")
+        top_labels = (
+            alt.Chart(top_blocks)
+            .mark_text(fontSize=10, fontWeight="bold", color="white")
             .encode(
                 y=alt.Y("Label:N", sort=order),
-                x=alt.X("Value:Q", scale=alt.Scale(domain=[0, total_domain])),
-                text="DisplayAmount:N",
+                x=alt.X("BlockCenter:Q", scale=alt.Scale(domain=[0, total_domain])),
+                text="BlockText:N",
             )
         )
 
         mid_bars = (
-            alt.Chart(mid)
-            .mark_bar()
+            alt.Chart(mid_blocks)
+            .mark_rect(stroke="white", strokeWidth=1)
             .encode(
                 y=alt.Y("Label:N", sort=order, title=""),
-                x=alt.X("BarStart:Q", title="Contribution", scale=alt.Scale(domain=[-contrib_domain, contrib_domain])),
-                x2="BarEnd:Q",
+                x=alt.X("X0:Q", title="Contribution", scale=alt.Scale(domain=[-contrib_domain, contrib_domain])),
+                x2="X1:Q",
                 color=alt.Color("ColorHex:N", scale=None, legend=None),
                 tooltip=[
                     alt.Tooltip("Label:N", title="Category"),
-                    alt.Tooltip("Amount:Q", title="Contribution", format=",.2f"),
+                    alt.Tooltip("BlockText:N", title="Block"),
                 ],
             )
         )
@@ -668,53 +711,44 @@ def render_visual_executive_dashboard(
             .encode(x="x:Q")
         )
 
-        pos_labels = (
-            alt.Chart(mid[mid["CenteredValue"] >= 0])
-            .mark_text(dx=8, align="left", fontSize=12, fontWeight="bold", color="#111111")
+        mid_labels = (
+            alt.Chart(mid_blocks)
+            .mark_text(fontSize=10, fontWeight="bold", color="white")
             .encode(
                 y=alt.Y("Label:N", sort=order),
-                x=alt.X("LabelX:Q", scale=alt.Scale(domain=[-contrib_domain, contrib_domain])),
-                text="DisplayAmount:N",
-            )
-        )
-
-        neg_labels = (
-            alt.Chart(mid[mid["CenteredValue"] < 0])
-            .mark_text(dx=-8, align="right", fontSize=12, fontWeight="bold", color="#111111")
-            .encode(
-                y=alt.Y("Label:N", sort=order),
-                x=alt.X("LabelX:Q", scale=alt.Scale(domain=[-contrib_domain, contrib_domain])),
-                text="DisplayAmount:N",
+                x=alt.X("BlockCenter:Q", scale=alt.Scale(domain=[-contrib_domain, contrib_domain])),
+                text="BlockText:N",
             )
         )
 
         bottom_bar = (
-            alt.Chart(bottom_df)
-            .mark_bar()
+            alt.Chart(bottom_blocks)
+            .mark_rect(stroke="white", strokeWidth=1)
             .encode(
                 y=alt.Y("Label:N", sort=order, title=""),
-                x=alt.X("Value:Q", title="Sales", scale=alt.Scale(domain=[0, total_domain])),
+                x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, total_domain])),
+                x2="X1:Q",
                 color=alt.Color("ColorHex:N", scale=None, legend=None),
                 tooltip=[
                     alt.Tooltip("Label:N", title="Current Period"),
-                    alt.Tooltip("Value:Q", title="Amount", format=",.2f"),
+                    alt.Tooltip("BlockText:N", title="Block"),
                 ],
             )
         )
 
-        bottom_label_layer = (
-            alt.Chart(bottom_df)
-            .mark_text(dx=8, align="left", fontSize=12, fontWeight="bold", color="#111111")
+        bottom_labels = (
+            alt.Chart(bottom_blocks)
+            .mark_text(fontSize=10, fontWeight="bold", color="white")
             .encode(
                 y=alt.Y("Label:N", sort=order),
-                x=alt.X("Value:Q", scale=alt.Scale(domain=[0, total_domain])),
-                text="DisplayAmount:N",
+                x=alt.X("BlockCenter:Q", scale=alt.Scale(domain=[0, total_domain])),
+                text="BlockText:N",
             )
         )
 
-        top_section = (top_bar + top_label_layer).properties(height=70)
-        middle_section = (zero_line + mid_bars + pos_labels + neg_labels).properties(height=max(220, len(mid) * 34))
-        bottom_section = (bottom_bar + bottom_label_layer).properties(height=70)
+        top_section = (top_bar + top_labels).properties(height=70)
+        middle_section = (zero_line + mid_bars + mid_labels).properties(height=max(220, len(mid) * 34))
+        bottom_section = (bottom_bar + bottom_labels).properties(height=70)
 
         return alt.vconcat(
             top_section,
