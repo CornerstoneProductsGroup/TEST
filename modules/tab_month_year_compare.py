@@ -576,13 +576,7 @@ def render_visual_executive_dashboard(
         wf["DisplayAmount"] = wf["Amount"].map(money)
         wf["ColorType"] = wf["Type"]
         wf["SortOrder"] = list(range(len(wf)))
-        wf["LabelY"] = np.where(
-            wf["Type"] == "negative",
-            wf["BarStart"],
-            wf["BarEnd"],
-        )
-        wf["LabelDy"] = np.where(wf["Type"] == "negative", 12, -8)
-
+        wf["LabelY"] = np.where(wf["Type"] == "negative", wf["BarStart"], wf["BarEnd"])
         return wf
 
     def waterfall_chart(wf: pd.DataFrame, height: int = 420):
@@ -614,40 +608,47 @@ def render_visual_executive_dashboard(
         )
 
         connector_df = wf.iloc[1:-1].copy()
-        connector_df["PrevEnd"] = wf["Y1"].shift(1).iloc[1:-1].values
-        connector_df["XPrev"] = wf["Label"].shift(1).iloc[1:-1].values
-        connector_df["XCurr"] = connector_df["Label"]
+        if not connector_df.empty:
+            connector_df["PrevEnd"] = wf["Y1"].shift(1).iloc[1:-1].values
+            connector_df["XPrev"] = wf["Label"].shift(1).iloc[1:-1].values
+            connector_df["XCurr"] = connector_df["Label"]
 
-        connectors = (
-            alt.Chart(connector_df)
-            .mark_rule(color="#999999", strokeDash=[4, 3])
-            .encode(
-                x=alt.X("XPrev:N", sort=x_sort),
-                x2=alt.X2("XCurr:N"),
-                y=alt.Y("PrevEnd:Q"),
+            connectors = (
+                alt.Chart(connector_df)
+                .mark_rule(color="#999999", strokeDash=[4, 3])
+                .encode(
+                    x=alt.X("XPrev:N", sort=x_sort),
+                    x2=alt.X2("XCurr:N"),
+                    y=alt.Y("PrevEnd:Q"),
+                )
             )
-        )
+        else:
+            connectors = alt.Chart(pd.DataFrame({"Label": [], "PrevEnd": []})).mark_rule()
 
-        label_df = wf.copy()
-        label_df["DisplayLabel"] = np.where(
-            wf["Type"] == "total",
-            wf["Amount"].map(money),
-            wf["Amount"].map(money),
-        )
+        pos_labels_df = wf[wf["Type"] != "negative"].copy()
+        neg_labels_df = wf[wf["Type"] == "negative"].copy()
 
-        labels = (
-            alt.Chart(label_df)
-            .mark_text(fontSize=12, fontWeight="bold")
+        pos_labels = (
+            alt.Chart(pos_labels_df)
+            .mark_text(fontSize=12, fontWeight="bold", dy=-8, color="#111111")
             .encode(
                 x=alt.X("Label:N", sort=x_sort),
                 y=alt.Y("LabelY:Q"),
-                text="DisplayLabel:N",
-                dy=alt.value(0),
-                color=alt.value("#111111"),
+                text=alt.Text("DisplayAmount:N"),
             )
         )
 
-        return connectors + bars + labels
+        neg_labels = (
+            alt.Chart(neg_labels_df)
+            .mark_text(fontSize=12, fontWeight="bold", dy=12, color="#111111")
+            .encode(
+                x=alt.X("Label:N", sort=x_sort),
+                y=alt.Y("LabelY:Q"),
+                text=alt.Text("DisplayAmount:N"),
+            )
+        )
+
+        return connectors + bars + pos_labels + neg_labels
 
     c1, c2, c3 = st.columns(3)
     with c1:
