@@ -105,6 +105,7 @@ def render_visual_executive_dashboard(
     NEGATIVE_BAR = "#c62828"
     TOTAL_BAR = "#4e79a7"
     NEUTRAL_BAR = "#808080"
+    BLOCK_VALUE = 10000.0
 
     def is_year_label(lbl: str) -> bool:
         return bool(re.fullmatch(r"\d{4}", str(lbl or "").strip()))
@@ -510,7 +511,7 @@ def render_visual_executive_dashboard(
 
         return (rules + dots + labels).properties(height=height)
 
-    def prep_waterfall_bridge(df_cur: pd.DataFrame, df_cmp: pd.DataFrame, level: str, top_n_each_side: int = 8):
+    def prep_contribution_bridge(df_cur: pd.DataFrame, df_cmp: pd.DataFrame, level: str, top_n_each_side: int = 8):
         cur = df_cur.groupby(level, dropna=False, as_index=False).agg(Current=("Sales", "sum"))
         cmp = df_cmp.groupby(level, dropna=False, as_index=False).agg(Compare=("Sales", "sum"))
         out = cur.merge(cmp, on=level, how="outer").fillna(0.0)
@@ -546,77 +547,77 @@ def render_visual_executive_dashboard(
         steps.append({"Label": a_lbl, "Amount": current_total, "Type": "total"})
         return pd.DataFrame(steps)
 
-    def waterfall_chart(wf: pd.DataFrame, height: int = 560):
+    def block_label(v: float) -> str:
+        av = abs(v)
+        if av >= 1000:
+            s = f"${av/1000:.1f}k".replace(".0k", "k")
+        else:
+            s = f"${av:,.0f}"
+        return s if v >= 0 else f"-{s}"
+
+    def make_block_rows(label: str, value: float, color_hex: str, section: str):
+        rows = []
+        if abs(value) < 1e-9:
+            rows.append(
+                {
+                    "Label": label,
+                    "BlockNum": 1,
+                    "X0": 0.0,
+                    "X1": 0.0,
+                    "BlockCenter": 0.0,
+                    "BlockText": "$0",
+                    "ColorHex": color_hex,
+                    "Section": section,
+                }
+            )
+            return rows
+
+        sign = 1 if value > 0 else -1
+        abs_val = abs(value)
+        n_blocks = int(np.ceil(abs_val / BLOCK_VALUE))
+
+        for i in range(n_blocks):
+            start_mag = i * BLOCK_VALUE
+            end_mag = min((i + 1) * BLOCK_VALUE, abs_val)
+            piece = end_mag - start_mag
+
+            if sign > 0:
+                x0 = start_mag
+                x1 = end_mag
+                block_amt = piece
+            else:
+                x0 = -end_mag
+                x1 = -start_mag
+                block_amt = -piece
+
+            rows.append(
+                {
+                    "Label": label,
+                    "BlockNum": i + 1,
+                    "X0": x0,
+                    "X1": x1,
+                    "BlockCenter": (x0 + x1) / 2.0,
+                    "BlockText": block_label(block_amt),
+                    "ColorHex": color_hex,
+                    "Section": section,
+                }
+            )
+        return rows
+
+    def contribution_block_chart(wf: pd.DataFrame, height: int = 560):
         if wf.empty:
             return None
 
-        BLOCK_VALUE = 10000.0
         blue_top = "#1f77b4"
         green_pos = "#2e7d32"
         red_neg = "#c62828"
-
-        def block_label(v: float) -> str:
-            av = abs(v)
-            if av >= 1000:
-                s = f"${av/1000:.1f}k".replace(".0k", "k")
-            else:
-                s = f"${av:,.0f}"
-            return s if v >= 0 else f"-{s}"
-
-        def make_block_rows(label: str, value: float, color_hex: str, section: str):
-            rows = []
-            if abs(value) < 1e-9:
-                rows.append(
-                    {
-                        "Label": label,
-                        "BlockNum": 1,
-                        "X0": 0.0,
-                        "X1": 0.0,
-                        "BlockCenter": 0.0,
-                        "BlockText": "$0",
-                        "ColorHex": color_hex,
-                        "Section": section,
-                    }
-                )
-                return rows
-
-            sign = 1 if value > 0 else -1
-            abs_val = abs(value)
-            n_blocks = int(np.ceil(abs_val / BLOCK_VALUE))
-
-            for i in range(n_blocks):
-                start_mag = i * BLOCK_VALUE
-                end_mag = min((i + 1) * BLOCK_VALUE, abs_val)
-                piece = end_mag - start_mag
-
-                if sign > 0:
-                    x0 = start_mag
-                    x1 = end_mag
-                    block_amt = piece
-                else:
-                    x0 = -end_mag
-                    x1 = -start_mag
-                    block_amt = -piece
-
-                rows.append(
-                    {
-                        "Label": label,
-                        "BlockNum": i + 1,
-                        "X0": x0,
-                        "X1": x1,
-                        "BlockCenter": (x0 + x1) / 2.0,
-                        "BlockText": block_label(block_amt),
-                        "ColorHex": color_hex,
-                        "Section": section,
-                    }
-                )
-            return rows
 
         top_label = str(wf.iloc[0]["Label"])
         bottom_label = str(wf.iloc[-1]["Label"])
         top_amount = float(wf.iloc[0]["Amount"])
         bottom_amount = float(wf.iloc[-1]["Amount"])
-        bottom_total_color = red_neg if bottom_amount > top_amount else green_pos
+
+        bottom_total_color = green_pos if bottom_amount > top_amount else red_neg
 
         mid = wf.iloc[1:-1].copy()
 
@@ -652,7 +653,6 @@ def render_visual_executive_dashboard(
                     text="BlockText:N",
                 )
             )
-
             return bars + labels
 
         mid["CenteredValue"] = mid["Amount"]
@@ -806,16 +806,16 @@ def render_visual_executive_dashboard(
 
     st.write("")
 
-    retailer_wf = prep_waterfall_bridge(dfA, dfB, "Retailer", top_n_each_side=8)
+    retailer_wf = prep_contribution_bridge(dfA, dfB, "Retailer", top_n_each_side=8)
     if not retailer_wf.empty:
         st.markdown("#### Retailer Contribution to Change")
-        retailer_chart = waterfall_chart(retailer_wf, height=560)
+        retailer_chart = contribution_block_chart(retailer_wf, height=560)
         st.altair_chart(retailer_chart, use_container_width=True)
 
-    vendor_wf = prep_waterfall_bridge(dfA, dfB, "Vendor", top_n_each_side=8)
+    vendor_wf = prep_contribution_bridge(dfA, dfB, "Vendor", top_n_each_side=8)
     if not vendor_wf.empty:
         st.markdown("#### Vendor Contribution to Change")
-        vendor_chart = waterfall_chart(vendor_wf, height=560)
+        vendor_chart = contribution_block_chart(vendor_wf, height=560)
         st.altair_chart(vendor_chart, use_container_width=True)
 
     retailer = prep_compare_metric(dfA, dfB, "Retailer", metric="Sales", top_n=10)
