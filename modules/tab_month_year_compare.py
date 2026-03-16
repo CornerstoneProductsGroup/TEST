@@ -96,6 +96,9 @@ def render_visual_executive_dashboard(
     NEGATIVE_BAR = "#c62828"
     NEUTRAL_BAR = "#808080"
 
+    TOTAL_BLOCK_VALUE = 25000.0
+    CHANGE_BLOCK_VALUE = 1000.0
+
     def is_year_label(lbl: str) -> bool:
         return bool(re.fullmatch(r"\d{4}", str(lbl or "").strip()))
 
@@ -302,8 +305,6 @@ def render_visual_executive_dashboard(
         compare_label: str,
         changes_df: pd.DataFrame,
     ):
-        BLOCK_VALUE = 5000.0
-
         def full_total_label(v: float) -> str:
             return money(float(v))
 
@@ -313,7 +314,11 @@ def render_visual_executive_dashboard(
         current_value = float(max(current_value, 0.0))
         compare_value = float(max(compare_value, 0.0))
 
-        current_color = POSITIVE_BAR if current_value > compare_value else (NEGATIVE_BAR if current_value < compare_value else NEUTRAL_BAR)
+        current_color = (
+            POSITIVE_BAR
+            if current_value > compare_value
+            else (NEGATIVE_BAR if current_value < compare_value else NEUTRAL_BAR)
+        )
 
         rows = [
             {
@@ -324,6 +329,7 @@ def render_visual_executive_dashboard(
                 "ColorHex": "#ff7f0e",
                 "Side": "right",
                 "Text": full_total_label(compare_value),
+                "BlockValue": TOTAL_BLOCK_VALUE,
             }
         ]
 
@@ -339,6 +345,7 @@ def render_visual_executive_dashboard(
                         "ColorHex": POSITIVE_BAR if delta > 0 else NEGATIVE_BAR,
                         "Side": "right" if delta > 0 else "left",
                         "Text": abs_change_label(delta),
+                        "BlockValue": CHANGE_BLOCK_VALUE,
                     }
                 )
 
@@ -351,19 +358,24 @@ def render_visual_executive_dashboard(
                 "ColorHex": current_color,
                 "Side": "right",
                 "Text": full_total_label(current_value),
+                "BlockValue": TOTAL_BLOCK_VALUE,
             }
         )
 
         row_df = pd.DataFrame(rows)
 
-        total_max = float(max(compare_value, current_value, BLOCK_VALUE))
-        change_max = float(row_df.loc[row_df["Kind"] == "change", "Value"].max()) if (row_df["Kind"] == "change").any() else BLOCK_VALUE
-        change_max = max(change_max, BLOCK_VALUE)
+        total_max = float(max(compare_value, current_value, TOTAL_BLOCK_VALUE))
+        if (row_df["Kind"] == "change").any():
+            change_max = float(row_df.loc[row_df["Kind"] == "change", "Value"].max())
+        else:
+            change_max = CHANGE_BLOCK_VALUE
 
-        total_bar_space = total_max * 1.40
-        change_bar_space = change_max * 2.60
-        xmax = float(max(total_bar_space, change_bar_space, BLOCK_VALUE * 4))
-        xmax = float(np.ceil(xmax / BLOCK_VALUE) * BLOCK_VALUE)
+        change_max = max(change_max, CHANGE_BLOCK_VALUE)
+
+        total_bar_space = total_max * 1.35
+        change_bar_space = change_max * 2.80
+        xmax = float(max(total_bar_space, change_bar_space, TOTAL_BLOCK_VALUE * 4))
+        xmax = float(np.ceil(xmax / CHANGE_BLOCK_VALUE) * CHANGE_BLOCK_VALUE)
         center_x = xmax / 2.0
 
         block_rows = []
@@ -371,6 +383,8 @@ def render_visual_executive_dashboard(
 
         for _, r in row_df.iterrows():
             value = float(max(r["Value"], 0.0))
+            block_value = float(r["BlockValue"])
+
             if r["Kind"] == "total":
                 if value <= 0:
                     block_rows.append(
@@ -391,10 +405,10 @@ def render_visual_executive_dashboard(
                         }
                     )
                 else:
-                    n_blocks = int(np.ceil(value / BLOCK_VALUE))
+                    n_blocks = int(np.ceil(value / block_value))
                     for i in range(n_blocks):
-                        x0 = i * BLOCK_VALUE
-                        x1 = min((i + 1) * BLOCK_VALUE, value)
+                        x0 = i * block_value
+                        x1 = min((i + 1) * block_value, value)
                         block_rows.append(
                             {
                                 "Period": r["Period"],
@@ -432,10 +446,10 @@ def render_visual_executive_dashboard(
                         }
                     )
                 else:
-                    n_blocks = int(np.ceil(value / BLOCK_VALUE))
+                    n_blocks = int(np.ceil(value / block_value))
                     for i in range(n_blocks):
-                        piece_start = i * BLOCK_VALUE
-                        piece_end = min((i + 1) * BLOCK_VALUE, value)
+                        piece_start = i * block_value
+                        piece_end = min((i + 1) * block_value, value)
 
                         if r["Direction"] == "right":
                             x0 = center_x + piece_start
@@ -741,7 +755,11 @@ def render_visual_executive_dashboard(
 
     change_rows = collect_change_contributors(dfA, dfB)
 
-    st.markdown(f"#### Sales Blocks ({a_lbl} vs {b_lbl})")
+    st.markdown(
+        f"#### Sales Blocks ({a_lbl} vs {b_lbl})"
+    )
+    st.caption("Totals: 1 block = $25,000 • Retailer changes: 1 block = $1,000")
+
     block_chart = simple_period_block_chart(
         current_value=float(kA["Sales"]),
         compare_value=float(kB["Sales"]),
