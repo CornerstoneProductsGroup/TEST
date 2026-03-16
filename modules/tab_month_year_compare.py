@@ -616,7 +616,7 @@ def render_visual_executive_dashboard(
         long_df["Start"] = 0.0
         return long_df
 
-        def grouped_lollipop_chart(long_df: pd.DataFrame, dim_name: str, height: int = 620):
+    def grouped_lollipop_chart(long_df: pd.DataFrame, dim_name: str, height: int = 620):
         if long_df.empty:
             return None
 
@@ -636,13 +636,13 @@ def render_visual_executive_dashboard(
             f"{dim_name}:N",
             sort=alt.SortField(field="SortTotal", order="descending"),
             title="",
-            scale=alt.Scale(paddingInner=0.30, paddingOuter=0.16),
+            scale=alt.Scale(paddingInner=0.22, paddingOuter=0.12),
         )
 
         yoff_enc = alt.YOffset(
             "Series:N",
             sort=[a_lbl, b_lbl],
-            scale=alt.Scale(paddingInner=0.15, paddingOuter=0.35),
+            scale=alt.Scale(paddingInner=0.02, paddingOuter=0.55),
         )
 
         rules = (
