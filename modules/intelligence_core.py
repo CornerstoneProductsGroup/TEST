@@ -331,19 +331,17 @@ def run_app():
             )
             timeframe = "Custom Months" if multi_granularity == "Month" else "Custom Years"
 
-            current_one = st.selectbox(
-                f"Current {multi_granularity}",
+            current_labels_sel = st.multiselect(
+                f"Current {multi_granularity}(s)",
                 options=period_options,
-                index=(len(period_options) - 1 if period_options else 0),
+                default=[period_options[-1]] if period_options else [],
             )
-            compare_one = st.selectbox(
-                f"Compare {multi_granularity}",
+            compare_labels_sel = st.multiselect(
+                f"Compare {multi_granularity}(s)",
                 options=period_options,
-                index=(len(period_options) - 2 if len(period_options) > 1 else 0),
+                default=[period_options[-2]] if len(period_options) > 1 else [],
             )
 
-            current_labels_sel = [current_one] if current_one else []
-            compare_labels_sel = [compare_one] if compare_one else []
             compare_mode = "Custom selection" if compare_labels_sel else "None"
 
         elif analysis_view == "Lookup Center":

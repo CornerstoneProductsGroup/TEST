@@ -877,6 +877,12 @@ def render_visual_only(ctx: dict):
     TITLE_TEXT_COLOR = "#F3F4F6" if is_dark else "#111111"
     LABEL_INSIDE_BAR_COLOR = "#000000"
     OUTLINE_COLOR = "#111111" if is_dark else "#FFFFFF"
+    
+    # Adaptive label text colors - high contrast readable on both light and dark backgrounds
+    LABEL_TEXT_COLOR = "#F3F4F6" if is_dark else "#111111"
+    LABEL_POSITIVE_COLOR = "#FFFFFF" if is_dark else "#1B5E20"  # White for dark, dark green for light
+    LABEL_NEGATIVE_COLOR = "#FFFFFF" if is_dark else "#B71C1C"   # White for dark, dark red for light
+    LABEL_NEUTRAL_COLOR = "#FFFFFF" if is_dark else "#424242"    # White for dark, dark gray for light
 
     TOTAL_BLOCK_VALUE = 30000.0
     CHANGE_BLOCK_VALUE = 1000.0
@@ -1125,6 +1131,17 @@ def render_visual_only(ctx: dict):
         block_df = pd.DataFrame(block_rows)
         labels_df = pd.DataFrame(label_rows)
         order = row_df["Period"].tolist()
+        
+        # Map bar colors to label colors for readability on both light and dark backgrounds
+        def _get_label_color(color_hex: str) -> str:
+            if color_hex == POSITIVE_BAR:
+                return LABEL_POSITIVE_COLOR
+            elif color_hex == NEGATIVE_BAR:
+                return LABEL_NEGATIVE_COLOR
+            else:
+                return LABEL_NEUTRAL_COLOR
+        
+        labels_df["LabelColor"] = labels_df["ColorHex"].apply(_get_label_color)
 
         def _bar_layer(df_sub: pd.DataFrame, color_hex: str):
             if df_sub.empty:
@@ -1172,23 +1189,23 @@ def render_visual_only(ctx: dict):
 
         layers.append(
             alt.Chart(labels_df[labels_df["Side"] == "right"])
-            .mark_text(align="left", dx=8, fontSize=15, fontWeight="bold")
+            .mark_text(align="left", dx=8, fontSize=15, fontWeight="bold", stroke="#000000", strokeWidth=0.5)
             .encode(
                 y=alt.Y("Period:N", sort=order),
                 x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
                 text="Text:N",
-                color=alt.Color("ColorHex:N", scale=None, legend=None),
+                color=alt.Color("LabelColor:N", scale=None, legend=None),
             )
         )
 
         layers.append(
             alt.Chart(labels_df[labels_df["Side"] == "left"])
-            .mark_text(align="right", dx=-8, fontSize=15, fontWeight="bold")
+            .mark_text(align="right", dx=-8, fontSize=15, fontWeight="bold", stroke="#000000", strokeWidth=0.5)
             .encode(
                 y=alt.Y("Period:N", sort=order),
                 x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
                 text="Text:N",
-                color=alt.Color("ColorHex:N", scale=None, legend=None),
+                color=alt.Color("LabelColor:N", scale=None, legend=None),
             )
         )
 
@@ -1273,11 +1290,12 @@ def render_visual_only(ctx: dict):
 
         labels = (
             alt.Chart(df)
-            .mark_text(align="left", dx=8, color=POSITIVE_BAR, fontSize=13, fontWeight="bold")
+            .mark_text(align="left", dx=8, fontSize=13, fontWeight="bold", stroke="#000000", strokeWidth=0.5)
             .encode(
                 y=y_enc,
                 x=alt.X("Sales_Δ:Q", scale=alt.Scale(domain=[0, xmax])),
                 text="Label:N",
+                color=alt.ColorValue(LABEL_POSITIVE_COLOR),
             )
         )
 
@@ -1344,21 +1362,23 @@ def render_visual_only(ctx: dict):
 
         value_labels = (
             alt.Chart(df)
-            .mark_text(align="right", dx=-8, color=NEGATIVE_BAR, fontSize=13, fontWeight="bold")
+            .mark_text(align="right", dx=-8, fontSize=13, fontWeight="bold", stroke="#000000", strokeWidth=0.5)
             .encode(
                 y=y_enc,
                 x=alt.X("Sales_Δ:Q", scale=alt.Scale(domain=[-xmax, 0])),
                 text="Label:N",
+                color=alt.ColorValue(LABEL_NEGATIVE_COLOR),
             )
         )
 
         name_labels = (
             alt.Chart(df)
-            .mark_text(align="left", dx=8, color=AXIS_TEXT_COLOR, fontSize=13, fontWeight="bold")
+            .mark_text(align="left", dx=8, fontSize=13, fontWeight="bold", stroke="#000000", strokeWidth=0.5)
             .encode(
                 y=y_enc,
                 x=alt.X("RightLabelX:Q", scale=alt.Scale(domain=[-xmax, 0])),
                 text=f"{y_col}:N",
+                color=alt.ColorValue(AXIS_TEXT_COLOR),
             )
         )
 
