@@ -196,8 +196,8 @@ def render_visual_executive_dashboard(
         if stacked.empty:
             chart_df = pd.DataFrame(
                 [
-                    {"Period": a_lbl, "Value": float(fallback_cur), "ColorHex": color_cur},
-                    {"Period": b_lbl, "Value": float(fallback_cmp), "ColorHex": color_cmp},
+                    {"Period": "Current", "Value": float(fallback_cur), "ColorHex": color_cur},
+                    {"Period": "Compare", "Value": float(fallback_cmp), "ColorHex": color_cmp},
                 ]
             )
 
@@ -208,7 +208,7 @@ def render_visual_executive_dashboard(
                 alt.Chart(chart_df)
                 .mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5)
                 .encode(
-                    y=alt.Y("Period:N", title="", sort=[a_lbl, b_lbl]),
+                    y=alt.Y("Period:N", title="", sort=["Compare", "Current"], axis=alt.Axis(labelFontSize=13)),
                     x=alt.X("Value:Q", title=metric_name, scale=alt.Scale(domain=[0, xmax])),
                     color=alt.Color("ColorHex:N", scale=None, legend=None),
                     tooltip=[
@@ -228,12 +228,12 @@ def render_visual_executive_dashboard(
                 .mark_text(
                     align="center",
                     baseline="middle",
-                    fontSize=14,
+                    fontSize=16,
                     fontWeight="bold",
                     color="#000000",
                 )
                 .encode(
-                    y=alt.Y("Period:N", sort=[a_lbl, b_lbl]),
+                    y=alt.Y("Period:N", sort=["Compare", "Current"]),
                     x=alt.X("LabelX:Q", scale=alt.Scale(domain=[0, xmax])),
                     text="Label:N",
                 )
@@ -251,6 +251,11 @@ def render_visual_executive_dashboard(
                 })
             )
         )
+        
+        # Replace period labels with "Current" and "Compare"
+        totals["DisplayPeriod"] = totals["Period"].map({a_lbl: "Current", b_lbl: "Compare"})
+        totals["SortKey"] = totals["DisplayPeriod"].map({"Compare": 0, "Current": 1})
+        totals = totals.sort_values("SortKey")
 
         xmax = float(totals["Value"].max()) if not totals.empty else 0.0
         xmax = xmax * 1.03 if xmax > 0 else 1.0
@@ -259,11 +264,11 @@ def render_visual_executive_dashboard(
             alt.Chart(totals)
             .mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5)
             .encode(
-                y=alt.Y("Period:N", title="", sort=[a_lbl, b_lbl]),
+                y=alt.Y("DisplayPeriod:N", title="", sort=["Compare", "Current"], axis=alt.Axis(labelFontSize=13)),
                 x=alt.X("Value:Q", title=metric_name, scale=alt.Scale(domain=[0, xmax])),
                 color=alt.Color("ColorHex:N", scale=None, legend=None),
                 tooltip=[
-                    alt.Tooltip("Period:N", title="Period"),
+                    alt.Tooltip("DisplayPeriod:N", title="Period"),
                     alt.Tooltip("Value:Q", title=metric_name, format=",.0f" if metric == "Units" else ",.2f"),
                 ],
             )
@@ -278,12 +283,12 @@ def render_visual_executive_dashboard(
             .mark_text(
                 align="center",
                 baseline="middle",
-                fontSize=14,
+                fontSize=16,
                 fontWeight="bold",
                 color="#000000",
             )
             .encode(
-                y=alt.Y("Period:N", sort=[a_lbl, b_lbl]),
+                y=alt.Y("DisplayPeriod:N", sort=["Compare", "Current"]),
                 x=alt.X("LabelX:Q", scale=alt.Scale(domain=[0, xmax])),
                 text="Label:N",
             )
@@ -514,7 +519,7 @@ def render_visual_executive_dashboard(
                 alt.Chart(df_sub)
                 .mark_bar(color=color_hex, stroke="white", strokeWidth=1)
                 .encode(
-                    y=alt.Y("Period:N", sort=order, title=""),
+                    y=alt.Y("Period:N", sort=order, title="", axis=alt.Axis(labelFontSize=13)),
                     x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, xmax])),
                     x2="X1:Q",
                     tooltip=[alt.Tooltip("Period:N", title="Period")],
@@ -637,6 +642,7 @@ def render_visual_executive_dashboard(
             sort=alt.SortField(field="SortTotal", order="descending"),
             title="",
             scale=alt.Scale(paddingInner=0.10, paddingOuter=0.08),
+            axis=alt.Axis(labelFontSize=14),
         )
 
         yoff_enc = alt.YOffset(
@@ -741,6 +747,7 @@ def render_visual_executive_dashboard(
             sort=order,
             title="",
             scale=alt.Scale(paddingInner=0.35, paddingOuter=0.18),
+            axis=alt.Axis(labelFontSize=13),
         )
 
         rules = (
@@ -820,8 +827,8 @@ def render_visual_executive_dashboard(
     block_chart = simple_period_block_chart(
         current_value=float(kA["Sales"]),
         compare_value=float(kB["Sales"]),
-        current_label=a_lbl,
-        compare_label=b_lbl,
+        current_label="Current",
+        compare_label="Compare",
         changes_df=change_rows,
     )
     st.altair_chart(block_chart, use_container_width=True)
