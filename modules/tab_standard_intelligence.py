@@ -1189,7 +1189,7 @@ def render_visual_only(ctx: dict):
 
         layers.append(
             alt.Chart(labels_df[labels_df["Side"] == "right"])
-            .mark_text(align="left", dx=8, fontSize=15, fontWeight="bold", stroke="#000000", strokeWidth=0.5)
+            .mark_text(align="left", dx=8, fontSize=16, fontWeight="bold")
             .encode(
                 y=alt.Y("Period:N", sort=order),
                 x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
@@ -1200,7 +1200,7 @@ def render_visual_only(ctx: dict):
 
         layers.append(
             alt.Chart(labels_df[labels_df["Side"] == "left"])
-            .mark_text(align="right", dx=-8, fontSize=15, fontWeight="bold", stroke="#000000", strokeWidth=0.5)
+            .mark_text(align="right", dx=-8, fontSize=16, fontWeight="bold")
             .encode(
                 y=alt.Y("Period:N", sort=order),
                 x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
@@ -1290,12 +1290,11 @@ def render_visual_only(ctx: dict):
 
         labels = (
             alt.Chart(df)
-            .mark_text(align="left", dx=8, fontSize=13, fontWeight="bold", stroke="#000000", strokeWidth=0.5)
+            .mark_text(align="left", dx=8, fontSize=14, fontWeight="bold", color=LABEL_POSITIVE_COLOR)
             .encode(
                 y=y_enc,
                 x=alt.X("Sales_Δ:Q", scale=alt.Scale(domain=[0, xmax])),
                 text="Label:N",
-                color=alt.ColorValue(LABEL_POSITIVE_COLOR),
             )
         )
 
@@ -1362,23 +1361,21 @@ def render_visual_only(ctx: dict):
 
         value_labels = (
             alt.Chart(df)
-            .mark_text(align="right", dx=-8, fontSize=13, fontWeight="bold", stroke="#000000", strokeWidth=0.5)
+            .mark_text(align="right", dx=-8, fontSize=14, fontWeight="bold", color=LABEL_NEGATIVE_COLOR)
             .encode(
                 y=y_enc,
                 x=alt.X("Sales_Δ:Q", scale=alt.Scale(domain=[-xmax, 0])),
                 text="Label:N",
-                color=alt.ColorValue(LABEL_NEGATIVE_COLOR),
             )
         )
 
         name_labels = (
             alt.Chart(df)
-            .mark_text(align="left", dx=8, fontSize=13, fontWeight="bold", stroke="#000000", strokeWidth=0.5)
+            .mark_text(align="left", dx=8, fontSize=14, fontWeight="bold", color=AXIS_TEXT_COLOR)
             .encode(
                 y=y_enc,
                 x=alt.X("RightLabelX:Q", scale=alt.Scale(domain=[-xmax, 0])),
                 text=f"{y_col}:N",
-                color=alt.ColorValue(AXIS_TEXT_COLOR),
             )
         )
 
