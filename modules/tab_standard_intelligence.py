@@ -1189,7 +1189,7 @@ def render_visual_only(ctx: dict):
 
         layers.append(
             alt.Chart(labels_df[labels_df["Side"] == "right"])
-            .mark_text(align="left", dx=8, fontSize=16, fontWeight="bold")
+            .mark_text(align="left", dx=8, fontSize=14, fontWeight="bold")
             .encode(
                 y=alt.Y("Period:N", sort=order),
                 x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
@@ -1200,7 +1200,7 @@ def render_visual_only(ctx: dict):
 
         layers.append(
             alt.Chart(labels_df[labels_df["Side"] == "left"])
-            .mark_text(align="right", dx=-8, fontSize=16, fontWeight="bold")
+            .mark_text(align="right", dx=-8, fontSize=14, fontWeight="bold")
             .encode(
                 y=alt.Y("Period:N", sort=order),
                 x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
