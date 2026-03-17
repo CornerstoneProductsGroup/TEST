@@ -1023,13 +1023,14 @@ def _render_sales_asp_units_combo_chart(summary_df: pd.DataFrame):
     order = work["PeriodLabel"].tolist()
 
     max_sales = float(work["Sales"].max()) if not work.empty else 0.0
-    sales_domain_max = max(max_sales * 1.28, 1.0)
+    sales_domain_max = max(max_sales * 1.42, 1.0)
 
-    asp_band_low = sales_domain_max * 0.66
-    asp_band_high = sales_domain_max * 0.77
+    # keep both lines clearly above bars and evenly separated
+    asp_band_low = sales_domain_max * 0.84
+    asp_band_high = sales_domain_max * 0.90
 
-    units_band_low = sales_domain_max * 0.84
-    units_band_high = sales_domain_max * 0.95
+    units_band_low = sales_domain_max * 0.94
+    units_band_high = sales_domain_max * 0.99
 
     asp_min = float(work["ASP"].min()) if not work.empty else 0.0
     asp_max = float(work["ASP"].max()) if not work.empty else 0.0
@@ -1050,8 +1051,8 @@ def _render_sales_asp_units_combo_chart(summary_df: pd.DataFrame):
     work["UnitsLabel"] = work["Units"].map(lambda v: f"{float(v):,.0f}")
 
     work["SalesLabelY"] = work["Sales"] * 0.90
-    work["ASPLabelY"] = work["ASPDisplayY"] + (sales_domain_max * 0.035)
-    work["UnitsLabelY"] = work["UnitsDisplayY"] + (sales_domain_max * 0.035)
+    work["ASPLabelY"] = work["ASPDisplayY"] + (sales_domain_max * 0.020)
+    work["UnitsLabelY"] = work["UnitsDisplayY"] + (sales_domain_max * 0.014)
 
     bars = (
         alt.Chart(work)
@@ -1135,7 +1136,7 @@ def _render_sales_asp_units_combo_chart(summary_df: pd.DataFrame):
     chart = (
         alt.layer(bars, sales_text, asp_line, asp_text, units_line, units_text)
         .properties(
-            height=540,
+            height=620,
             title="Sales with ASP and Units Overlay",
         )
         .configure_title(
@@ -1521,7 +1522,7 @@ def _make_sales_units_combo_figure(summary_df: pd.DataFrame, title: str = "Sales
 
 
 def _make_sales_asp_units_combo_figure(summary_df: pd.DataFrame, title: str = "Sales with ASP and Units Overlay"):
-    fig, ax1 = plt.subplots(figsize=(10.6, 5.4))
+    fig, ax1 = plt.subplots(figsize=(10.8, 6.0))
 
     if summary_df.empty:
         ax1.text(0.5, 0.5, "No data available", ha="center", va="center")
@@ -1542,7 +1543,7 @@ def _make_sales_asp_units_combo_figure(summary_df: pd.DataFrame, title: str = "S
     ax1.set_title(title, fontsize=14, fontweight="bold")
 
     max_sales = float(np.max(sales)) if len(sales) else 0.0
-    sales_domain_max = max(max_sales * 1.28, 1.0)
+    sales_domain_max = max(max_sales * 1.42, 1.0)
     ax1.set_ylim(0, sales_domain_max)
 
     for rect, val in zip(bars, sales):
@@ -1559,10 +1560,10 @@ def _make_sales_asp_units_combo_figure(summary_df: pd.DataFrame, title: str = "S
             fontweight="bold",
         )
 
-    asp_band_low = sales_domain_max * 0.66
-    asp_band_high = sales_domain_max * 0.77
-    units_band_low = sales_domain_max * 0.84
-    units_band_high = sales_domain_max * 0.95
+    asp_band_low = sales_domain_max * 0.84
+    asp_band_high = sales_domain_max * 0.90
+    units_band_low = sales_domain_max * 0.94
+    units_band_high = sales_domain_max * 0.99
 
     asp_min = float(np.min(asp)) if len(asp) else 0.0
     asp_max = float(np.max(asp)) if len(asp) else 0.0
@@ -1587,7 +1588,7 @@ def _make_sales_asp_units_combo_figure(summary_df: pd.DataFrame, title: str = "S
     for xi, disp_y, raw_val in zip(x, asp_display, asp):
         ax2.text(
             xi,
-            disp_y + (sales_domain_max * 0.03),
+            disp_y + (sales_domain_max * 0.018),
             money(float(raw_val)),
             ha="center",
             va="bottom",
@@ -1599,7 +1600,7 @@ def _make_sales_asp_units_combo_figure(summary_df: pd.DataFrame, title: str = "S
     for xi, disp_y, raw_val in zip(x, units_display, units):
         ax2.text(
             xi,
-            disp_y + (sales_domain_max * 0.03),
+            disp_y + (sales_domain_max * 0.012),
             f"{float(raw_val):,.0f}",
             ha="center",
             va="bottom",
@@ -1610,7 +1611,7 @@ def _make_sales_asp_units_combo_figure(summary_df: pd.DataFrame, title: str = "S
 
     handles1, labels1 = ax1.get_legend_handles_labels()
     handles2, labels2 = ax2.get_legend_handles_labels()
-    fig.legend(handles1 + handles2, labels1 + labels2, loc="upper left", bbox_to_anchor=(0.80, 0.92), frameon=False)
+    fig.legend(handles1 + handles2, labels1 + labels2, loc="upper left", bbox_to_anchor=(0.79, 0.92), frameon=False)
     fig.tight_layout(rect=[0, 0, 0.84, 1])
     return fig
 
@@ -1880,120 +1881,6 @@ def _all_years_radar_month_df(df_hist: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _render_radar_altair(df: pd.DataFrame):
-    if df.empty:
-        st.info("No radar data available.")
-        return
-
-    work = df.copy()
-    work["RadarValue"] = work["ScaledSalesOuter"] if "ScaledSalesOuter" in work.columns else work["ScaledSales"]
-    work["PointOrder"] = range(len(work))
-
-    radius_scale = alt.Scale(domain=[0, 1.35], rangeMin=0, rangeMax=320)
-
-    rings = pd.DataFrame({"r": [0.30, 0.60, 0.90, 1.20]})
-
-    ring_chart = (
-        alt.Chart(rings)
-        .mark_arc(fillOpacity=0, stroke=RING_GRAY, strokeOpacity=0.70, strokeWidth=1.1)
-        .encode(
-            theta=alt.Theta(value=360),
-            radius=alt.Radius("r:Q", scale=radius_scale),
-        )
-    )
-
-    spoke_rows = []
-    for _, row in work.iterrows():
-        spoke_rows.append(
-            {
-                "Month": row["Month"],
-                "SpokeID": row["Month"],
-                "Deg": row["MidDeg"],
-                "Radius": 0.0,
-                "PointOrder": 0,
-            }
-        )
-        spoke_rows.append(
-            {
-                "Month": row["Month"],
-                "SpokeID": row["Month"],
-                "Deg": row["MidDeg"],
-                "Radius": 1.20,
-                "PointOrder": 1,
-            }
-        )
-    spokes = pd.DataFrame(spoke_rows)
-
-    spoke_chart = (
-        alt.Chart(spokes)
-        .mark_line(stroke=RING_GRAY, strokeOpacity=0.60, strokeWidth=1.0)
-        .encode(
-            theta=alt.Theta("Deg:Q", scale=alt.Scale(domain=[0, 360])),
-            radius=alt.Radius("Radius:Q", scale=radius_scale),
-            detail="SpokeID:N",
-            order=alt.Order("PointOrder:Q", sort="ascending"),
-        )
-    )
-
-    radar_outline = (
-        alt.Chart(work)
-        .mark_line(
-            interpolate="linear-closed",
-            stroke=RING_GRAY,
-            strokeWidth=2.2,
-            point=alt.OverlayMarkDef(filled=True, size=70, color=RING_GRAY),
-        )
-        .encode(
-            theta=alt.Theta("MidDeg:Q", scale=alt.Scale(domain=[0, 360])),
-            radius=alt.Radius("RadarValue:Q", scale=radius_scale),
-            order=alt.Order("PointOrder:Q", sort="ascending"),
-            tooltip=[
-                alt.Tooltip("Month:N", title="Month"),
-                alt.Tooltip("TotalSales:Q", title="Sales", format=",.2f"),
-            ],
-        )
-    )
-
-    month_names = (
-        alt.Chart(work)
-        .mark_text(fontSize=14, fontWeight="bold", color=RING_GRAY)
-        .encode(
-            theta=alt.Theta("MidDeg:Q", scale=alt.Scale(domain=[0, 360])),
-            radius=alt.Radius("MonthLabelR:Q", scale=radius_scale),
-            text="Month:N",
-        )
-    )
-
-    value_labels = (
-        alt.Chart(work)
-        .mark_text(fontSize=11, color=TEXT_BLACK, fontWeight="bold")
-        .encode(
-            theta=alt.Theta("MidDeg:Q", scale=alt.Scale(domain=[0, 360])),
-            radius=alt.Radius("ValueLabelR:Q", scale=radius_scale),
-            text="SalesLabel:N",
-        )
-    )
-
-    chart = alt.layer(
-        ring_chart,
-        spoke_chart,
-        radar_outline,
-        value_labels,
-        month_names,
-    ).properties(
-        width=820,
-        height=820,
-        title="All-Years Sales Seasonality Radar (January at top, clockwise)",
-    ).configure_title(
-        anchor="start",
-        fontSize=16,
-        offset=12,
-        color=TEXT_LIGHT,
-    )
-
-    st.altair_chart(chart, use_container_width=True)
-
-
 def _make_pdf_radar_figure(df: pd.DataFrame):
     if df.empty:
         fig, ax = plt.subplots(figsize=(8.5, 8.5))
@@ -2020,10 +1907,29 @@ def _make_pdf_radar_figure(df: pd.DataFrame):
     ax.set_yticklabels(["25%", "50%", "75%", "100%"], fontsize=9)
     ax.set_ylim(0, 1.20)
 
-    ax.plot(angles, values, linewidth=2.0, color="#777777", marker="o", markersize=4)
+    ax.grid(True, color="#8A8F98", alpha=0.65, linewidth=1.0)
+    ax.spines["polar"].set_color("#8A8F98")
+    ax.spines["polar"].set_linewidth(1.2)
+
+    ax.plot(angles, values, linewidth=2.2, color=RADAR_LINE, marker="o", markersize=5)
+    ax.fill(angles, values, color=RADAR_FILL, alpha=0.45)
+
+    for angle, value, sales_label in zip(angles[:-1], values[:-1], df["SalesLabel"].tolist()):
+        label_r = max(0.20, value * 0.62)
+        ax.text(angle, label_r, sales_label, ha="center", va="center", fontsize=9, fontweight="bold", color="black")
 
     ax.set_title("All-Years Sales Seasonality Radar (January at top, clockwise)", pad=24, fontsize=14, fontweight="bold")
     return fig
+
+
+def _render_radar_altair(df: pd.DataFrame):
+    if df.empty:
+        st.info("No radar data available.")
+        return
+
+    fig = _make_pdf_radar_figure(df)
+    st.pyplot(fig, use_container_width=True)
+    plt.close(fig)
 
 
 def _fig_to_rl_image(fig, width_inches: float = 9.6) -> RLImage:
@@ -2100,14 +2006,6 @@ def build_visual_analytics_pdf_bytes(
     story.extend([title, Spacer(1, 6), subtitle, Spacer(1, 12)])
 
     summary_df = _period_summary_df(df_vis)
-
-    story.append(Paragraph("Sales and ASP by Selected Period", styles["Heading2"]))
-    story.append(_fig_to_rl_image(_make_sales_asp_combo_figure(summary_df, "Sales and ASP by Selected Period"), width_inches=9.8))
-    story.append(Spacer(1, 10))
-
-    story.append(Paragraph("Sales and Units by Selected Period", styles["Heading2"]))
-    story.append(_fig_to_rl_image(_make_sales_units_combo_figure(summary_df, "Sales and Units by Selected Period"), width_inches=9.8))
-    story.append(Spacer(1, 10))
 
     story.append(Paragraph("Sales with ASP and Units Overlay", styles["Heading2"]))
     story.append(_fig_to_rl_image(_make_sales_asp_units_combo_figure(summary_df, "Sales with ASP and Units Overlay"), width_inches=9.8))
@@ -2232,12 +2130,6 @@ def render_visual_only(ctx: dict):
         st.warning(f"PDF export unavailable: {e}")
 
     summary_df = _period_summary_df(df_vis)
-
-    st.markdown("### Sales and ASP by Selected Period")
-    _render_sales_asp_combo_chart(summary_df)
-
-    st.markdown("### Sales and Units by Selected Period")
-    _render_sales_units_combo_chart(summary_df)
 
     st.markdown("### Sales with ASP and Units Overlay")
     _render_sales_asp_units_combo_chart(summary_df)
