@@ -37,6 +37,11 @@ TEXT_TEAL = "#7FDBFF"
 RING_GRAY = "#8A8F98"
 UNITS_LINE = "#6B7280"
 
+# Chart-specific colors for Multi Compare
+CHART_BAR_GREY = "#808080"  # Medium grey for bar charts
+CHART_LINE_BLUE = "#0077B6"  # Blue for lines
+CHART_LINE_RED = "#E74C3C"   # Red for lines
+
 
 def _fmt_value(v: float, metric: str) -> str:
     return money(v) if metric == "Sales" else f"{float(v):,.0f}"
@@ -1056,7 +1061,7 @@ def _render_sales_asp_units_combo_chart(summary_df: pd.DataFrame):
 
     bars = (
         alt.Chart(work)
-        .mark_bar()
+        .mark_bar(color=CHART_BAR_GREY)
         .encode(
             x=alt.X("PeriodLabel:N", title="Period", sort=order),
             y=alt.Y("Sales:Q", title="Sales", scale=alt.Scale(domain=[0, sales_domain_max])),
@@ -1082,9 +1087,9 @@ def _render_sales_asp_units_combo_chart(summary_df: pd.DataFrame):
     asp_line = (
         alt.Chart(work)
         .mark_line(
-            point=alt.OverlayMarkDef(color=LINE_ACCENT, filled=True, size=80),
+            point=alt.OverlayMarkDef(color=CHART_LINE_RED, filled=True, size=80),
             strokeWidth=3,
-            color=LINE_ACCENT,
+            color=CHART_LINE_RED,
         )
         .encode(
             x=alt.X("PeriodLabel:N", sort=order),
@@ -1098,7 +1103,7 @@ def _render_sales_asp_units_combo_chart(summary_df: pd.DataFrame):
 
     asp_text = (
         alt.Chart(work)
-        .mark_text(color=LINE_ACCENT, fontWeight="bold", fontSize=13)
+        .mark_text(color=CHART_LINE_RED, fontWeight="bold", fontSize=13)
         .encode(
             x=alt.X("PeriodLabel:N", sort=order),
             y=alt.Y("ASPLabelY:Q", scale=alt.Scale(domain=[0, sales_domain_max])),
@@ -1109,9 +1114,9 @@ def _render_sales_asp_units_combo_chart(summary_df: pd.DataFrame):
     units_line = (
         alt.Chart(work)
         .mark_line(
-            point=alt.OverlayMarkDef(color=UNITS_LINE, filled=True, size=70),
+            point=alt.OverlayMarkDef(color=CHART_LINE_BLUE, filled=True, size=70),
             strokeWidth=3,
-            color=UNITS_LINE,
+            color=CHART_LINE_BLUE,
         )
         .encode(
             x=alt.X("PeriodLabel:N", sort=order),
@@ -1125,7 +1130,7 @@ def _render_sales_asp_units_combo_chart(summary_df: pd.DataFrame):
 
     units_text = (
         alt.Chart(work)
-        .mark_text(color=UNITS_LINE, fontWeight="bold", fontSize=13)
+        .mark_text(color=CHART_LINE_BLUE, fontWeight="bold", fontSize=13)
         .encode(
             x=alt.X("PeriodLabel:N", sort=order),
             y=alt.Y("UnitsLabelY:Q", scale=alt.Scale(domain=[0, sales_domain_max])),
@@ -1180,7 +1185,7 @@ def _render_avg_sales_units_per_sku_combo_chart(summary_df: pd.DataFrame):
 
     bars = (
         alt.Chart(work)
-        .mark_bar()
+        .mark_bar(color=CHART_BAR_GREY)
         .encode(
             x=alt.X("PeriodLabel:N", title="Period", sort=order),
             y=alt.Y(
@@ -1209,9 +1214,9 @@ def _render_avg_sales_units_per_sku_combo_chart(summary_df: pd.DataFrame):
     line = (
         alt.Chart(work)
         .mark_line(
-            point=alt.OverlayMarkDef(color=LINE_ACCENT, filled=True, size=80),
+            point=alt.OverlayMarkDef(color=CHART_LINE_RED, filled=True, size=80),
             strokeWidth=3,
-            color=LINE_ACCENT,
+            color=CHART_LINE_RED,
         )
         .encode(
             x=alt.X("PeriodLabel:N", sort=order),
@@ -1229,7 +1234,7 @@ def _render_avg_sales_units_per_sku_combo_chart(summary_df: pd.DataFrame):
 
     units_text = (
         alt.Chart(work)
-        .mark_text(color=LINE_ACCENT, fontWeight="bold", fontSize=13)
+        .mark_text(color=CHART_LINE_RED, fontWeight="bold", fontSize=13)
         .encode(
             x=alt.X("PeriodLabel:N", sort=order),
             y=alt.Y("UnitsLabelY:Q", scale=alt.Scale(domain=[0, sales_domain_max])),
