@@ -1239,6 +1239,7 @@ def render_visual_only(ctx: dict):
 
         df = df.copy()
         df["Zero"] = 0.0
+        df["RightLabelX"] = 0.0
         xmax = float(df["Sales_Δ"].max()) if not df.empty else 0.0
         xmax = xmax * 1.15 if xmax > 0 else 1.0
 
@@ -1246,11 +1247,7 @@ def render_visual_only(ctx: dict):
             f"{y_col}:N",
             sort=alt.SortField(field="Sales_Δ", order="descending"),
             title="",
-            axis=alt.Axis(
-                labelFontSize=AXIS_LABEL_FONTSIZE,
-                labelColor=AXIS_TEXT_COLOR,
-                labelLimit=Y_LABEL_LIMIT,
-            ),
+            axis=alt.Axis(labels=False, ticks=False, domain=False),
         )
 
         rules = (
@@ -1298,8 +1295,18 @@ def render_visual_only(ctx: dict):
             )
         )
 
+        name_labels = (
+            alt.Chart(df)
+            .mark_text(align="right", dx=-8, fontSize=14, fontWeight="bold", color=AXIS_TEXT_COLOR)
+            .encode(
+                y=y_enc,
+                x=alt.X("RightLabelX:Q", scale=alt.Scale(domain=[0, xmax])),
+                text=f"{y_col}:N",
+            )
+        )
+
         st.altair_chart(
-            (rules + dots + labels).properties(
+            (rules + dots + labels + name_labels).properties(
                 height=max(280, len(df) * 40),
                 title=alt.TitleParams(title, fontSize=CHART_TITLE_FONTSIZE, color=TITLE_TEXT_COLOR),
             ),
@@ -1313,6 +1320,7 @@ def render_visual_only(ctx: dict):
 
         df = df.copy()
         df["Zero"] = 0.0
+        df["RightLabelX"] = 0.0
         xmax = float(df["Sales_Δ"].abs().max()) if not df.empty else 0.0
         xmax = xmax * 1.15 if xmax > 0 else 1.0
 
@@ -1320,11 +1328,7 @@ def render_visual_only(ctx: dict):
             f"{y_col}:N",
             sort=alt.SortField(field="Sales_Δ", order="ascending"),
             title="",
-            axis=alt.Axis(
-                labelFontSize=AXIS_LABEL_FONTSIZE,
-                labelColor=AXIS_TEXT_COLOR,
-                labelLimit=Y_LABEL_LIMIT,
-            ),
+            axis=alt.Axis(labels=False, ticks=False, domain=False),
         )
 
         rules = (
@@ -1372,8 +1376,18 @@ def render_visual_only(ctx: dict):
             )
         )
 
+        name_labels = (
+            alt.Chart(df)
+            .mark_text(align="left", dx=8, fontSize=14, fontWeight="bold", color=AXIS_TEXT_COLOR)
+            .encode(
+                y=y_enc,
+                x=alt.X("RightLabelX:Q", scale=alt.Scale(domain=[-xmax, 0])),
+                text=f"{y_col}:N",
+            )
+        )
+
         st.altair_chart(
-            (rules + dots + value_labels).properties(
+            (rules + dots + value_labels + name_labels).properties(
                 height=max(280, len(df) * 40),
                 title=alt.TitleParams(title, fontSize=CHART_TITLE_FONTSIZE, color=TITLE_TEXT_COLOR),
             ),
