@@ -203,27 +203,21 @@ def _seasonality_tables(df_sel: pd.DataFrame, metric: str):
     d["MonthPeriod"] = d["WeekEnd"].dt.to_period("M")
     month = d.groupby("MonthPeriod", as_index=False).agg(
         Total=(metric, "sum"),
-        ActiveWeeks=("WeekEnd", "nunique"),
-    )
-    month["AvgWeekly"] = np.where(
-        month["ActiveWeeks"] != 0,
-        month["Total"] / month["ActiveWeeks"],
-        0.0,
     )
     month["MonthStart"] = month["MonthPeriod"].dt.to_timestamp()
     month = month.sort_values("MonthStart", ascending=True).reset_index(drop=True)
 
-    max_month = float(month["AvgWeekly"].max()) if not month.empty else 0.0
+    max_month = float(month["Total"].max()) if not month.empty else 0.0
     month["Period"] = month["MonthStart"].dt.strftime("%B %Y")
-    month["Visual"] = month["AvgWeekly"].map(lambda v: _bar(v, max_month, 10))
-    month["Value"] = month["AvgWeekly"].map(lambda v: _fmt_num(v, metric))
+    month["Visual"] = month["Total"].map(lambda v: _bar(v, max_month, 10))
+    month["Value"] = month["Total"].map(lambda v: _fmt_num(v, metric))
     month_show = month[["Period", "Visual", "Value"]].copy()
 
-    peak_row = month.sort_values("AvgWeekly", ascending=False).iloc[0] if max_month > 0 else None
-    nz_month = month[month["AvgWeekly"] > 0]
-    low_row = nz_month.sort_values("AvgWeekly", ascending=True).iloc[0] if not nz_month.empty else None
+    peak_row = month.sort_values("Total", ascending=False).iloc[0] if max_month > 0 else None
+    nz_month = month[month["Total"] > 0]
+    low_row = nz_month.sort_values("Total", ascending=True).iloc[0] if not nz_month.empty else None
 
-    nz = month["AvgWeekly"][month["AvgWeekly"] > 0]
+    nz = month["Total"][month["Total"] > 0]
     if len(nz) >= 2:
         ratio = float(nz.max() / nz.mean()) if float(nz.mean()) > 0 else 0.0
         strength = "High" if ratio >= 1.6 else ("Medium" if ratio >= 1.25 else "Low")
@@ -237,30 +231,24 @@ def _seasonality_tables(df_sel: pd.DataFrame, metric: str):
 
     quarter = d.groupby(["Year", "QuarterNum", "Quarter"], as_index=False).agg(
         Total=(metric, "sum"),
-        ActiveWeeks=("WeekEnd", "nunique"),
-    )
-    quarter["AvgWeekly"] = np.where(
-        quarter["ActiveWeeks"] != 0,
-        quarter["Total"] / quarter["ActiveWeeks"],
-        0.0,
     )
 
     # Most current year at top, quarters in chronological order within each year
     quarter = quarter.sort_values(["Year", "QuarterNum"], ascending=[False, True]).reset_index(drop=True)
 
-    max_quarter = float(quarter["AvgWeekly"].max()) if not quarter.empty else 0.0
-    quarter["Visual"] = quarter["AvgWeekly"].map(lambda v: _bar(v, max_quarter, 10))
-    quarter["Value"] = quarter["AvgWeekly"].map(lambda v: _fmt_num(v, metric))
+    max_quarter = float(quarter["Total"].max()) if not quarter.empty else 0.0
+    quarter["Visual"] = quarter["Total"].map(lambda v: _bar(v, max_quarter, 10))
+    quarter["Value"] = quarter["Total"].map(lambda v: _fmt_num(v, metric))
     quarter_show = quarter[["Year", "Quarter", "Visual", "Value"]].copy()
     quarter_show["Year"] = quarter_show["Year"].astype(str)
 
     peak_txt = (
-        f"{peak_row['Period']} • {_fmt_num(peak_row['AvgWeekly'], metric)}"
-        if peak_row is not None and peak_row["AvgWeekly"] > 0
+        f"{peak_row['Period']} • {_fmt_num(peak_row['Total'], metric)}"
+        if peak_row is not None and peak_row["Total"] > 0
         else "—"
     )
     low_txt = (
-        f"{low_row['Period']} • {_fmt_num(low_row['AvgWeekly'], metric)}"
+        f"{low_row['Period']} • {_fmt_num(low_row['Total'], metric)}"
         if low_row is not None
         else "—"
     )
@@ -918,7 +906,6 @@ def render(ctx: dict):
         _render_sku_breakdown(df_sel, metric)
 
     _render_seasonality_section(df_sel, metric, title="Seasonality")
-    _render_weekly_velocity(df_sel, lookup_type, metric)
 
     # Advanced Compare section (independent from above)
     st.write("")
