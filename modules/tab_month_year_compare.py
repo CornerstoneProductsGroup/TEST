@@ -1009,21 +1009,21 @@ def render_standard_view(
     st.write("")
     g1, g2, g3, g4 = st.columns(4)
     with g1:
-        selection_total_card(f"{a_lbl} Total", kA, kB)
+        selection_total_card("Current Total", kA, kB)
         st.write("")
-        selection_total_card(f"{b_lbl} Total", kB, kA)
+        selection_total_card("Compare Total", kB, kA)
     with g2:
-        top_two_card(f"Top 2 Retailers ({a_lbl})", _top_two_with_compare(dfA, dfB, "Retailer"))
+        top_two_card("Top 2 Retailers (Current)", _top_two_with_compare(dfA, dfB, "Retailer"))
         st.write("")
-        top_two_card(f"Top 2 Retailers ({b_lbl})", _top_two_with_compare(dfB, dfA, "Retailer"))
+        top_two_card("Top 2 Retailers (Compare)", _top_two_with_compare(dfB, dfA, "Retailer"))
     with g3:
-        top_two_card(f"Top 2 Vendors ({a_lbl})", _top_two_with_compare(dfA, dfB, "Vendor"))
+        top_two_card("Top 2 Vendors (Current)", _top_two_with_compare(dfA, dfB, "Vendor"))
         st.write("")
-        top_two_card(f"Top 2 Vendors ({b_lbl})", _top_two_with_compare(dfB, dfA, "Vendor"))
+        top_two_card("Top 2 Vendors (Compare)", _top_two_with_compare(dfB, dfA, "Vendor"))
     with g4:
-        top_two_card(f"Top 2 SKUs ({a_lbl})", _top_two_with_compare(dfA, dfB, "SKU"))
+        top_two_card("Top 2 SKUs (Current)", _top_two_with_compare(dfA, dfB, "SKU"))
         st.write("")
-        top_two_card(f"Top 2 SKUs ({b_lbl})", _top_two_with_compare(dfB, dfA, "SKU"))
+        top_two_card("Top 2 SKUs (Compare)", _top_two_with_compare(dfB, dfA, "SKU"))
 
     st.write("")
     i1, i2, i3 = st.columns(3)
