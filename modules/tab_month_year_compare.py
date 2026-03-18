@@ -296,14 +296,21 @@ def render_visual_executive_dashboard(
 
         return bars + labels
 
-    def collect_change_contributors(df_cur: pd.DataFrame, df_cmp: pd.DataFrame) -> pd.DataFrame:
-        if "Retailer" not in df_cur.columns or "Retailer" not in df_cmp.columns:
+    def collect_change_contributors_by_dim(
+        df_cur: pd.DataFrame,
+        df_cmp: pd.DataFrame,
+        dim: str,
+        *,
+        top_n_pos: int | None = None,
+        top_n_neg: int | None = None,
+    ) -> pd.DataFrame:
+        if dim not in df_cur.columns or dim not in df_cmp.columns:
             return pd.DataFrame(columns=["Label", "Delta", "ColorHex", "Side", "Direction"])
 
-        cur = df_cur.groupby("Retailer", as_index=False).agg(Current=("Sales", "sum"))
-        cmp = df_cmp.groupby("Retailer", as_index=False).agg(Compare=("Sales", "sum"))
-        out = cur.merge(cmp, on="Retailer", how="outer").fillna(0.0)
-        out["Label"] = out["Retailer"].astype(str)
+        cur = df_cur.groupby(dim, as_index=False).agg(Current=("Sales", "sum"))
+        cmp = df_cmp.groupby(dim, as_index=False).agg(Compare=("Sales", "sum"))
+        out = cur.merge(cmp, on=dim, how="outer").fillna(0.0)
+        out["Label"] = out[dim].astype(str)
         out["Delta"] = out["Current"] - out["Compare"]
         out = out[["Label", "Delta"]].copy()
         out = out[np.isfinite(out["Delta"])].copy()
@@ -314,7 +321,12 @@ def render_visual_executive_dashboard(
         out["Direction"] = np.where(out["Delta"] > 0, "right", "left")
 
         pos = out[out["Delta"] > 0].sort_values(["Delta", "Label"], ascending=[False, True]).copy()
-        neg = out[out["Delta"] < 0].sort_values(["Delta", "Label"], ascending=[True, True]).copy()
+        neg = out[out["Delta"] < 0].sort_values(["Delta", "Label"], ascending=[False, True]).copy()
+
+        if top_n_pos is not None:
+            pos = pos.head(top_n_pos)
+        if top_n_neg is not None:
+            neg = neg.head(top_n_neg)
 
         return pd.concat([pos, neg], ignore_index=True)
 
@@ -936,11 +948,6 @@ def render_visual_executive_dashboard(
 
     st.write("")
 
-    change_rows = collect_change_contributors(dfA, dfB)
-
-    st.markdown("#### Sales Change Compare")
-    st.caption("Separated view: Compare total (top), Sales Change contributors (middle), Current total (bottom)")
-
     current_sales = float(kA["Sales"])
     compare_sales = float(kB["Sales"])
 
@@ -957,8 +964,13 @@ def render_visual_executive_dashboard(
     total_max = max(current_sales, compare_sales, TOTAL_BLOCK_VALUE)
     total_xmax = float(np.ceil((total_max * 1.08) / TOTAL_BLOCK_VALUE) * TOTAL_BLOCK_VALUE)
 
+    retailer_change_rows = collect_change_contributors_by_dim(dfA, dfB, "Retailer")
+
+    st.markdown("#### Sales Change Compare")
+    st.caption("Retailers: positives first (highest to lowest), then negatives (closest to zero down to most negative)")
+
     compare_chart = single_total_bar_chart(compare_sales, "Compare", compare_color, total_xmax)
-    change_chart = change_only_center_chart(change_rows)
+    change_chart = change_only_center_chart(retailer_change_rows)
     current_chart = single_total_bar_chart(current_sales, "Current", current_color, total_xmax)
 
     stacked_compare_view = alt.vconcat(compare_chart, change_chart, current_chart, spacing=2).resolve_scale(x="independent")
@@ -966,28 +978,22 @@ def render_visual_executive_dashboard(
 
     st.write("")
 
-    retailer = prep_compare_metric(dfA, dfB, "Retailer", metric="Sales", top_n=10)
-    vendor = prep_compare_metric(dfA, dfB, "Vendor", metric="Sales", top_n=10)
+    vendor_change_rows = collect_change_contributors_by_dim(dfA, dfB, "Vendor")
 
-    left, right = st.columns(2)
+    st.markdown("#### Sales Change Compare by Vendor")
+    st.caption("Vendors: positives first (highest to lowest), then negatives (closest to zero down to most negative)")
 
-    with left:
-        st.markdown("#### Top Retailers")
-        retailer_long = prep_grouped_share(retailer, "Retailer")
-        if retailer_long.empty:
-            st.caption("No retailer data available.")
-        else:
-            retailer_chart = grouped_lollipop_chart(retailer_long, "Retailer", height=760)
-            st.altair_chart(retailer_chart, use_container_width=True)
+    vendor_compare_chart = single_total_bar_chart(compare_sales, "Compare", compare_color, total_xmax)
+    vendor_change_chart = change_only_center_chart(vendor_change_rows)
+    vendor_current_chart = single_total_bar_chart(current_sales, "Current", current_color, total_xmax)
 
-    with right:
-        st.markdown("#### Top Vendors")
-        vendor_long = prep_grouped_share(vendor, "Vendor")
-        if vendor_long.empty:
-            st.caption("No vendor data available.")
-        else:
-            vendor_chart = grouped_lollipop_chart(vendor_long, "Vendor", height=760)
-            st.altair_chart(vendor_chart, use_container_width=True)
+    stacked_vendor_view = alt.vconcat(
+        vendor_compare_chart,
+        vendor_change_chart,
+        vendor_current_chart,
+        spacing=2,
+    ).resolve_scale(x="independent")
+    st.altair_chart(stacked_vendor_view, use_container_width=True)
 
     st.write("")
 
@@ -1010,6 +1016,31 @@ def render_visual_executive_dashboard(
         else:
             dec_chart = mover_lollipop_chart(dec, "Sales Change", positive=False, height=430)
             st.altair_chart(dec_chart, use_container_width=True)
+
+    st.write("")
+
+    sku_change_rows = collect_change_contributors_by_dim(
+        dfA,
+        dfB,
+        "SKU",
+        top_n_pos=10,
+        top_n_neg=10,
+    )
+
+    st.markdown("#### Sales Change Compare by SKU")
+    st.caption("Top 10 positive SKUs first, then top 10 negative SKUs")
+
+    sku_compare_chart = single_total_bar_chart(compare_sales, "Compare", compare_color, total_xmax)
+    sku_change_chart = change_only_center_chart(sku_change_rows)
+    sku_current_chart = single_total_bar_chart(current_sales, "Current", current_color, total_xmax)
+
+    stacked_sku_view = alt.vconcat(
+        sku_compare_chart,
+        sku_change_chart,
+        sku_current_chart,
+        spacing=2,
+    ).resolve_scale(x="independent")
+    st.altair_chart(stacked_sku_view, use_container_width=True)
 
 
 def render_standard_view(
