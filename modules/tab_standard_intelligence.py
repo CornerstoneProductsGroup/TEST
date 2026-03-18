@@ -977,49 +977,178 @@ def render_visual_only(ctx: dict):
 
         st.altair_chart(bars + labels, use_container_width=True)
 
-    def _collect_retailer_change_rows(df_cur: pd.DataFrame, df_cmp: pd.DataFrame) -> pd.DataFrame:
-        cur = df_cur.groupby("Retailer", as_index=False).agg(Current=("Sales", "sum"))
-        cmpv = df_cmp.groupby("Retailer", as_index=False).agg(Compare=("Sales", "sum"))
-        out = cur.merge(cmpv, on="Retailer", how="outer").fillna(0.0)
-        out["Label"] = out["Retailer"].astype(str)
+    def collect_change_contributors_by_dim(
+        df_cur: pd.DataFrame,
+        df_cmp: pd.DataFrame,
+        dim: str,
+        *,
+        top_n_pos: int | None = None,
+        top_n_neg: int | None = None,
+        pick_most_negative: bool = False,
+    ) -> pd.DataFrame:
+        if dim not in df_cur.columns or dim not in df_cmp.columns:
+            return pd.DataFrame(columns=["Label", "Delta", "ColorHex", "Side", "Direction"])
+
+        cur = df_cur.groupby(dim, as_index=False).agg(Current=("Sales", "sum"))
+        cmp = df_cmp.groupby(dim, as_index=False).agg(Compare=("Sales", "sum"))
+        out = cur.merge(cmp, on=dim, how="outer").fillna(0.0)
+        out["Label"] = out[dim].astype(str)
         out["Delta"] = out["Current"] - out["Compare"]
+        out = out[["Label", "Delta"]].copy()
         out = out[np.isfinite(out["Delta"])].copy()
         out = out[out["Delta"] != 0].copy()
 
-        pos = out[out["Delta"] > 0].sort_values(["Delta", "Label"], ascending=[False, True]).copy()
-        neg = out[out["Delta"] < 0].sort_values(["Delta", "Label"], ascending=[True, True]).copy()
-
-        pos["ColorHex"] = POSITIVE_BAR
-        pos["Direction"] = "right"
-        pos["Side"] = "right"
-
-        neg["ColorHex"] = NEGATIVE_BAR
-        neg["Direction"] = "left"
-        neg["Side"] = "left"
-
-        return pd.concat([pos, neg], ignore_index=True)[["Label", "Delta", "ColorHex", "Direction", "Side"]]
-
-    def _collect_vendor_change_rows(df_cur: pd.DataFrame, df_cmp: pd.DataFrame) -> pd.DataFrame:
-        cur = df_cur.groupby("Vendor", as_index=False).agg(Current=("Sales", "sum"))
-        cmpv = df_cmp.groupby("Vendor", as_index=False).agg(Compare=("Sales", "sum"))
-        out = cur.merge(cmpv, on="Vendor", how="outer").fillna(0.0)
-        out["Label"] = out["Vendor"].astype(str)
-        out["Delta"] = out["Current"] - out["Compare"]
-        out = out[np.isfinite(out["Delta"])].copy()
-        out = out[out["Delta"] != 0].copy()
+        out["ColorHex"] = np.where(out["Delta"] > 0, POSITIVE_BAR, NEGATIVE_BAR)
+        out["Side"] = np.where(out["Delta"] > 0, "right", "left")
+        out["Direction"] = np.where(out["Delta"] > 0, "right", "left")
 
         pos = out[out["Delta"] > 0].sort_values(["Delta", "Label"], ascending=[False, True]).copy()
-        neg = out[out["Delta"] < 0].sort_values(["Delta", "Label"], ascending=[True, True]).copy()
+        neg = out[out["Delta"] < 0].copy()
 
-        pos["ColorHex"] = POSITIVE_BAR
-        pos["Direction"] = "right"
-        pos["Side"] = "right"
+        if pick_most_negative:
+            neg = neg.sort_values(["Delta", "Label"], ascending=[True, True])
+            if top_n_neg is not None:
+                neg = neg.head(top_n_neg)
+            neg = neg.sort_values(["Delta", "Label"], ascending=[False, True])
+        else:
+            neg = neg.sort_values(["Delta", "Label"], ascending=[False, True])
 
-        neg["ColorHex"] = NEGATIVE_BAR
-        neg["Direction"] = "left"
-        neg["Side"] = "left"
+        if top_n_pos is not None:
+            pos = pos.head(top_n_pos)
+        if top_n_neg is not None and not pick_most_negative:
+            neg = neg.head(top_n_neg)
 
-        return pd.concat([pos, neg], ignore_index=True)[["Label", "Delta", "ColorHex", "Direction", "Side"]]
+        return pd.concat([pos, neg], ignore_index=True)
+
+    def single_total_bar_chart(value: float, period_label: str, color_hex: str, xmax: float):
+        value = float(max(value, 0.0))
+        row_df = pd.DataFrame(
+            [
+                {
+                    "Period": period_label,
+                    "X0": 0.0,
+                    "X1": value,
+                    "Value": value,
+                    "Label": money(value),
+                    "ColorHex": color_hex,
+                }
+            ]
+        )
+
+        bars = (
+            alt.Chart(row_df)
+            .mark_bar(stroke="white", strokeWidth=1, size=10)
+            .encode(
+                y=alt.Y("Period:N", title="", axis=alt.Axis(labelFontSize=13)),
+                x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, xmax])),
+                x2="X1:Q",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+                tooltip=[
+                    alt.Tooltip("Period:N", title="Period"),
+                    alt.Tooltip("Value:Q", title="Sales", format=",.2f"),
+                ],
+            )
+        )
+
+        labels = (
+            alt.Chart(row_df)
+            .mark_text(align="left", dx=8, fontSize=14, fontWeight="bold")
+            .encode(
+                y=alt.Y("Period:N"),
+                x=alt.X("X1:Q", scale=alt.Scale(domain=[0, xmax])),
+                text="Label:N",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+            )
+        )
+
+        return (bars + labels).properties(height=32)
+
+    def change_only_center_chart(changes_df: pd.DataFrame):
+        if changes_df.empty or changes_df[changes_df["Delta"] != 0].empty:
+            empty_df = pd.DataFrame([{"Msg": "No change contributors available."}])
+            return (
+                alt.Chart(empty_df)
+                .mark_text(fontSize=13, color="#7a7a7a")
+                .encode(text="Msg:N")
+                .properties(height=60)
+            )
+
+        delta_df = changes_df[changes_df["Delta"] != 0].copy()
+        delta_df = pd.concat(
+            [
+                delta_df[delta_df["Delta"] > 0].sort_values(["Delta", "Label"], ascending=[False, True]),
+                delta_df[delta_df["Delta"] < 0].sort_values(["Delta", "Label"], ascending=[False, True]),
+            ],
+            ignore_index=True,
+        )
+
+        y_order = delta_df["Label"].astype(str).tolist()
+
+        delta_df["Label"] = delta_df["Label"].astype(str)
+        delta_df["X0"] = np.where(delta_df["Delta"] > 0, 0.0, delta_df["Delta"])
+        delta_df["X1"] = np.where(delta_df["Delta"] > 0, delta_df["Delta"], 0.0)
+        delta_df["DeltaLabel"] = delta_df["Delta"].map(money)
+
+        max_abs = float(delta_df["Delta"].abs().max())
+        pad = max(max_abs * 0.08, CHANGE_BLOCK_VALUE * 1.2)
+        xmax = max_abs + pad
+
+        bars = (
+            alt.Chart(delta_df)
+            .mark_bar(stroke="white", strokeWidth=1, size=8)
+            .encode(
+                y=alt.Y("Label:N", sort=y_order, title="", axis=alt.Axis(labelFontSize=12)),
+                x=alt.X("X0:Q", title="Sales Change", scale=alt.Scale(domain=[-xmax, xmax])),
+                x2="X1:Q",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+                tooltip=[
+                    alt.Tooltip("Label:N", title="Contributor"),
+                    alt.Tooltip("Delta:Q", title="Sales Change", format=",.2f"),
+                ],
+            )
+        )
+
+        zero_rule = (
+            alt.Chart(pd.DataFrame([{"Zero": 0.0}]))
+            .mark_rule(color="#7a7a7a", strokeDash=[4, 4], strokeWidth=1.5)
+            .encode(x=alt.X("Zero:Q", scale=alt.Scale(domain=[-xmax, xmax])))
+        )
+
+        pos_labels = (
+            alt.Chart(delta_df[delta_df["Delta"] > 0])
+            .mark_text(align="left", dx=8, fontSize=13, fontWeight="bold", clip=False)
+            .encode(
+                y=alt.Y("Label:N", sort=y_order),
+                x=alt.X("X1:Q", scale=alt.Scale(domain=[-xmax, xmax])),
+                text="DeltaLabel:N",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+            )
+        )
+
+        neg_labels = (
+            alt.Chart(delta_df[delta_df["Delta"] < 0])
+            .mark_text(align="right", dx=-8, fontSize=13, fontWeight="bold", clip=False)
+            .encode(
+                y=alt.Y("Label:N", sort=y_order),
+                x=alt.X("X0:Q", scale=alt.Scale(domain=[-xmax, xmax])),
+                text="DeltaLabel:N",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+            )
+        )
+
+        mid_height = max(90, 28 * len(delta_df))
+        return (bars + zero_rule + pos_labels + neg_labels).properties(height=mid_height)
+
+    def render_with_side_margins(chart):
+        chart_col, right_gap = st.columns([0.94, 0.06])
+        with chart_col:
+            st.altair_chart(chart, use_container_width=True)
+
+    def render_change_section(title: str, subtitle: str, chart):
+        with st.container(border=True):
+            st.markdown(f"#### {title}")
+            st.caption(subtitle)
+            render_with_side_margins(chart)
 
     def _sales_contribution_block_chart(current_value: float, compare_value: float, changes_df: pd.DataFrame, title: str = "Sales Contribution Change"):
         def _total_label(v: float) -> str:
@@ -1401,6 +1530,18 @@ def render_visual_only(ctx: dict):
             use_container_width=True,
         )
 
+    st.markdown(
+        """
+        <style>
+        [data-testid="stVerticalBlockBorderWrapper"] > div:first-child {
+            border-width: 2px !important;
+            border-radius: 8px !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     sales_col, units_col = st.columns(2)
 
     with sales_col:
@@ -1409,32 +1550,63 @@ def render_visual_only(ctx: dict):
     with units_col:
         _render_total_bars(_totals_df("Units"), "Total Units", "Units")
 
-    st.caption("Total bars: 1 block = $30,000 • Retailer change bars: 1 block = $1,000 • Vendor change bars: 1 block = $1,000")
+    st.markdown("<div style='height:2px'></div>", unsafe_allow_html=True)
 
-    retailer_changes = _collect_retailer_change_rows(dfA, dfB)
-    contrib_chart = _sales_contribution_block_chart(
-        current_value=float(kA.get("Sales", 0.0)),
-        compare_value=float(kB.get("Sales", 0.0)),
-        changes_df=retailer_changes,
-        title="Sales Contribution Change by Retailer",
+    current_sales = float(kA.get("Sales", 0.0))
+    compare_sales = float(kB.get("Sales", 0.0))
+
+    if current_sales > compare_sales:
+        current_color = POSITIVE_BAR
+        compare_color = NEGATIVE_BAR
+    elif current_sales < compare_sales:
+        current_color = NEGATIVE_BAR
+        compare_color = POSITIVE_BAR
+    else:
+        current_color = NEUTRAL_BAR
+        compare_color = NEUTRAL_BAR
+
+    total_max = max(current_sales, compare_sales)
+    total_xmax = total_max * 1.04 if total_max > 0 else 1.0
+
+    retailer_change_rows = collect_change_contributors_by_dim(dfA, dfB, "Retailer")
+    compare_chart = single_total_bar_chart(compare_sales, "Compare", compare_color, total_xmax)
+    change_chart = change_only_center_chart(retailer_change_rows)
+    current_chart = single_total_bar_chart(current_sales, "Current", current_color, total_xmax)
+    stacked_compare_view = alt.vconcat(compare_chart, change_chart, current_chart, spacing=0).resolve_scale(x="independent")
+    render_change_section(
+        "Sales Change Compare",
+        "Retailers: positives first (highest to lowest), then negatives (closest to zero down to most negative)",
+        stacked_compare_view,
     )
-    st.altair_chart(contrib_chart, use_container_width=True)
 
-    vendor_changes = _collect_vendor_change_rows(dfA, dfB)
-    vendor_contrib_chart = _sales_contribution_block_chart(
-        current_value=float(kA.get("Sales", 0.0)),
-        compare_value=float(kB.get("Sales", 0.0)),
-        changes_df=vendor_changes,
-        title="Sales Contribution Change by Vendor",
+    st.markdown("<div style='height:2px'></div>", unsafe_allow_html=True)
+
+    vendor_change_rows = collect_change_contributors_by_dim(dfA, dfB, "Vendor")
+    vendor_compare_chart = single_total_bar_chart(compare_sales, "Compare", compare_color, total_xmax)
+    vendor_change_chart = change_only_center_chart(vendor_change_rows)
+    vendor_current_chart = single_total_bar_chart(current_sales, "Current", current_color, total_xmax)
+    stacked_vendor_view = alt.vconcat(
+        vendor_compare_chart, vendor_change_chart, vendor_current_chart, spacing=0
+    ).resolve_scale(x="independent")
+    render_change_section(
+        "Sales Change Compare by Vendor",
+        "Vendors: positives first (highest to lowest), then negatives (closest to zero down to most negative)",
+        stacked_vendor_view,
     )
-    st.altair_chart(vendor_contrib_chart, use_container_width=True)
 
-    sku_df = _sku_delta_df()
-    sku_pos = sku_df[sku_df["Sales_Δ"] > 0].sort_values("Sales_Δ", ascending=False).head(15).copy()
-    sku_neg = sku_df[sku_df["Sales_Δ"] < 0].sort_values("Sales_Δ", ascending=True).head(15).copy()
+    st.markdown("<div style='height:2px'></div>", unsafe_allow_html=True)
 
-    s1, s2 = st.columns(2)
-    with s1:
-        _render_positive_lollipop(sku_pos, "SKU", "Top 15 Increasing SKUs")
-    with s2:
-        _render_negative_lollipop(sku_neg, "SKU", "Top 15 Declining SKUs", show_right_labels=True)
+    sku_change_rows = collect_change_contributors_by_dim(
+        dfA, dfB, "SKU", top_n_pos=10, top_n_neg=10, pick_most_negative=True,
+    )
+    sku_compare_chart = single_total_bar_chart(compare_sales, "Compare", compare_color, total_xmax)
+    sku_change_chart = change_only_center_chart(sku_change_rows)
+    sku_current_chart = single_total_bar_chart(current_sales, "Current", current_color, total_xmax)
+    stacked_sku_view = alt.vconcat(
+        sku_compare_chart, sku_change_chart, sku_current_chart, spacing=0
+    ).resolve_scale(x="independent")
+    render_change_section(
+        "Sales Change Compare by SKU",
+        "Top 10 positive SKUs first, then top 10 negative SKUs",
+        stacked_sku_view,
+    )
