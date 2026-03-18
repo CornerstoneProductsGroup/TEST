@@ -670,7 +670,7 @@ def render_visual_executive_dashboard(
         delta_df["DeltaLabel"] = delta_df["Delta"].map(money)
 
         max_abs = float(delta_df["Delta"].abs().max())
-        pad = max(max_abs * 0.20, CHANGE_BLOCK_VALUE * 3)
+        pad = max(max_abs * 0.08, CHANGE_BLOCK_VALUE * 1.2)
         xmax = max_abs + pad
 
         bars = (
@@ -977,8 +977,8 @@ def render_visual_executive_dashboard(
         current_color = NEUTRAL_BAR
         compare_color = NEUTRAL_BAR
 
-    total_max = max(current_sales, compare_sales, TOTAL_BLOCK_VALUE)
-    total_xmax = float(np.ceil((total_max * 1.16) / TOTAL_BLOCK_VALUE) * TOTAL_BLOCK_VALUE)
+    total_max = max(current_sales, compare_sales)
+    total_xmax = total_max * 1.04 if total_max > 0 else 1.0
 
     retailer_change_rows = collect_change_contributors_by_dim(dfA, dfB, "Retailer")
 
