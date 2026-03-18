@@ -907,35 +907,34 @@ def render_visual_only(ctx: dict):
 
         out = pd.DataFrame(
             [
-                {"Period": a_lbl, "Value": cur, "Label": _format_metric(cur, metric), "Color": cur_color},
-                {"Period": b_lbl, "Value": cmpv, "Label": _format_metric(cmpv, metric), "Color": cmp_color},
+                {"Period": "Current", "Value": cur, "Label": _format_metric(cur, metric), "Color": cur_color},
+                {"Period": "Compare", "Value": cmpv, "Label": _format_metric(cmpv, metric), "Color": cmp_color},
             ]
         )
-        out["MidX"] = out["Value"] / 2.0
+        out["LabelX"] = out["Value"]
         return out
 
-    def _render_total_bars(df: pd.DataFrame, title: str, axis_title: str):
+    def _render_total_bars(df: pd.DataFrame, axis_title: str):
         if df.empty:
-            st.info(f"No data available for {title.lower()}.")
+            st.info("No data available for totals.")
             return
 
         xmax = float(df["Value"].max()) if not df.empty else 0.0
-        xmax = xmax * 1.05 if xmax > 0 else 1.0
+        xmax = xmax * 1.20 if xmax > 0 else 1.0
 
         bars = (
             alt.Chart(df)
-            .mark_bar(cornerRadiusTopRight=7, cornerRadiusBottomRight=7, size=34)
+            .mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5, size=7)
             .encode(
                 y=alt.Y(
                     "Period:N",
                     title="",
-                    sort=[a_lbl, b_lbl],
+                    sort=["Compare", "Current"],
                     axis=alt.Axis(
-                        labelFontSize=16,
+                        labelFontSize=13,
                         labelColor=AXIS_TEXT_COLOR,
                         labelLimit=220,
                     ),
-                    scale=alt.Scale(paddingInner=0.60, paddingOuter=0.32),
                 ),
                 x=alt.X(
                     "Value:Q",
@@ -954,28 +953,22 @@ def render_visual_only(ctx: dict):
                     alt.Tooltip("Value:Q", title=axis_title, format=",.2f" if axis_title == "Sales" else ",.0f"),
                 ],
             )
-            .properties(
-                height=250,
-                title=alt.TitleParams(
-                    title,
-                    fontSize=CHART_TITLE_FONTSIZE,
-                    color=TITLE_TEXT_COLOR,
-                ),
-            )
+            .properties(height=150)
         )
 
         labels = (
             alt.Chart(df)
             .mark_text(
-                align="center",
+                align="left",
+                dx=8,
                 baseline="middle",
-                fontSize=15,
+                fontSize=16,
                 fontWeight="bold",
-                color=LABEL_INSIDE_BAR_COLOR,
+                color="#000000",
             )
             .encode(
-                y=alt.Y("Period:N", sort=[a_lbl, b_lbl]),
-                x=alt.X("MidX:Q", scale=alt.Scale(domain=[0, xmax])),
+                y=alt.Y("Period:N", sort=["Compare", "Current"]),
+                x=alt.X("LabelX:Q", scale=alt.Scale(domain=[0, xmax])),
                 text="Label:N",
             )
         )
@@ -1550,10 +1543,14 @@ def render_visual_only(ctx: dict):
     sales_col, units_col = st.columns(2)
 
     with sales_col:
-        _render_total_bars(_totals_df("Sales"), "Total Sales", "Sales")
+        with st.container(border=True):
+            st.markdown(f"#### Sales Total ({a_lbl} vs {b_lbl})")
+            _render_total_bars(_totals_df("Sales"), "Sales")
 
     with units_col:
-        _render_total_bars(_totals_df("Units"), "Total Units", "Units")
+        with st.container(border=True):
+            st.markdown(f"#### Units Total ({a_lbl} vs {b_lbl})")
+            _render_total_bars(_totals_df("Units"), "Units")
 
     st.markdown("<div style='height:2px'></div>", unsafe_allow_html=True)
 
