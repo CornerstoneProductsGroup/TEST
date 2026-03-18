@@ -14,27 +14,25 @@ def _fmt_value(value: float, mode: str) -> str:
     return f"{value:,.2f}"
 
 
-def _delta_html(value: float, reference: float, mode: str, baseline_name: str) -> str:
+def _delta_stacked_html(value: float, reference: float, mode: str) -> str:
+    """Return two-line HTML: diff value on first line, pct change on second."""
     delta = float(value) - float(reference)
     if delta > 0:
         arrow = "▲"
         color = "#2e7d32"
-        direction = "up"
     elif delta < 0:
         arrow = "▼"
         color = "#c62828"
-        direction = "down"
     else:
         arrow = "•"
         color = "#808080"
-        direction = "flat"
 
     pct = (abs(delta) / abs(float(reference)) * 100.0) if float(reference) != 0 else 0.0
     delta_val = _fmt_value(abs(delta), mode)
 
     return (
-        f"<span style='color:{color};font-weight:800;'>{arrow} {direction} {delta_val} ({pct:,.1f}%)</span>"
-        f" <span style='opacity:0.75;'>vs {baseline_name}</span>"
+        f"<div style='color:{color};font-weight:800;font-size:11px;line-height:1.3;'>{arrow} {delta_val}</div>"
+        f"<div style='color:{color};font-weight:700;font-size:11px;line-height:1.3;'>{pct:,.1f}%</div>"
     )
 
 
@@ -47,26 +45,24 @@ def _render_entity_kpi_card(
     units_ref: float,
     baseline_name: str,
 ):
-    sales_delta_html = _delta_html(sales, sales_ref, "money", baseline_name)
-    units_delta_html = _delta_html(units, units_ref, "int", baseline_name)
+    sales_delta_html = _delta_stacked_html(sales, sales_ref, "money")
+    units_delta_html = _delta_stacked_html(units, units_ref, "int")
 
     st.markdown(
         f"""
         <div class="kpi-card kpi-compact-card">
             <div class="kpi-title">{title}</div>
-            <div style="display:inline-flex; gap:18px; align-items:flex-end; margin-top:6px;">
+            <div style="display:inline-flex; gap:32px; align-items:flex-start; margin-top:6px;">
                 <div>
                     <div class="kpi-mini-label">Sales</div>
                     <div class="kpi-mini-value">{money(sales)}</div>
+                    <div style="margin-top:4px;">{sales_delta_html}</div>
                 </div>
                 <div>
                     <div class="kpi-mini-label">Units</div>
                     <div class="kpi-mini-value">{units:,.0f}</div>
+                    <div style="margin-top:4px;">{units_delta_html}</div>
                 </div>
-            </div>
-            <div style="margin-top:6px;">
-                <div class="kpi-delta">{sales_delta_html}</div>
-                <div class="kpi-delta" style="margin-top:2px;">{units_delta_html}</div>
             </div>
         </div>
         """,
@@ -227,11 +223,10 @@ def render(ctx: dict):
     st.markdown(
         """
         <style>
-        .kpi-compact-card{padding:8px 10px !important; border-radius:10px !important; margin-bottom:6px; display:inline-block; width:100%;}
-        .kpi-compact-card .kpi-title{font-size:11px !important;}
-        .kpi-mini-label{font-size:10px; font-weight:700; opacity:0.70; text-transform:uppercase;}
+        .kpi-compact-card{padding:8px 12px !important; border-radius:10px !important; margin-bottom:6px; display:table !important; width:auto !important; min-width:0 !important;}
+        .kpi-compact-card .kpi-title{font-size:11px !important; white-space:nowrap;}
+        .kpi-mini-label{font-size:10px; font-weight:700; opacity:0.70; text-transform:uppercase; white-space:nowrap;}
         .kpi-mini-value{font-size:20px; font-weight:800; line-height:1.1; white-space:nowrap;}
-        .kpi-compact-card .kpi-delta{font-size:11px !important;}
         </style>
         """,
         unsafe_allow_html=True,
