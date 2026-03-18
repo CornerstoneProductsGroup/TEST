@@ -38,6 +38,7 @@ _RETAILER_ALIASES = {
     "walmart": "Walmart",
     "zoro": "Zoro",
     "orgill": "Orgill",
+    "orgil": "Orgill",
 }
 
 def norm_retailer(x: str) -> str:
