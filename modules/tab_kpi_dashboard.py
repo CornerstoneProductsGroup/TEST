@@ -54,19 +54,19 @@ def _render_entity_kpi_card(
         f"""
         <div class="kpi-card kpi-compact-card">
             <div class="kpi-title">{title}</div>
-            <div class="kpi-line-row" style="margin-top:6px;">
+            <div style="display:inline-flex; gap:18px; align-items:flex-end; margin-top:6px;">
+                <div>
+                    <div class="kpi-mini-label">Sales</div>
+                    <div class="kpi-mini-value">{money(sales)}</div>
+                </div>
                 <div>
                     <div class="kpi-mini-label">Units</div>
                     <div class="kpi-mini-value">{units:,.0f}</div>
                 </div>
-                <div style="text-align:right;">
-                    <div class="kpi-mini-label">Sales</div>
-                    <div class="kpi-mini-value">{money(sales)}</div>
-                </div>
             </div>
-            <div class="kpi-line-row" style="margin-top:8px;">
-                <div class="kpi-delta">{units_delta_html}</div>
-                <div class="kpi-delta" style="text-align:right;">{sales_delta_html}</div>
+            <div style="margin-top:6px;">
+                <div class="kpi-delta">{sales_delta_html}</div>
+                <div class="kpi-delta" style="margin-top:2px;">{units_delta_html}</div>
             </div>
         </div>
         """,
@@ -227,12 +227,11 @@ def render(ctx: dict):
     st.markdown(
         """
         <style>
-        .kpi-compact-card{padding:10px 12px !important; border-radius:12px !important; margin-bottom:8px;}
+        .kpi-compact-card{padding:8px 10px !important; border-radius:10px !important; margin-bottom:6px; display:inline-block; width:100%;}
         .kpi-compact-card .kpi-title{font-size:11px !important;}
         .kpi-mini-label{font-size:10px; font-weight:700; opacity:0.70; text-transform:uppercase;}
-        .kpi-mini-value{font-size:20px; font-weight:800; line-height:1.1;}
-        .kpi-line-row{display:flex; justify-content:space-between; gap:10px; align-items:flex-end;}
-        .kpi-compact-card .kpi-delta{font-size:12px !important;}
+        .kpi-mini-value{font-size:20px; font-weight:800; line-height:1.1; white-space:nowrap;}
+        .kpi-compact-card .kpi-delta{font-size:11px !important;}
         </style>
         """,
         unsafe_allow_html=True,
