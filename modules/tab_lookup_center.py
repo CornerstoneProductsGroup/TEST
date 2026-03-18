@@ -685,8 +685,6 @@ def render(ctx: dict):
             key="lookup_center_metric",
         )
 
-    advanced_compare = st.toggle("Advanced Compare", value=False, key="lookup_center_advanced_compare")
-
     if not options:
         st.info("No lookup values available with the current filters.")
         return
@@ -728,9 +726,6 @@ def render(ctx: dict):
     st.markdown("### Quick Intelligence Summary")
     _render_summary_cards(df_sel)
 
-    if advanced_compare:
-        _render_compare_section(df_lookup_all, metric, period)
-
     if lookup_type == "SKU":
         _render_retailer_breakdown(df_sel, metric)
     elif lookup_type == "Vendor":
@@ -742,3 +737,29 @@ def render(ctx: dict):
 
     _render_seasonality_section(df_sel, metric, title="Seasonality")
     _render_weekly_velocity(df_sel, lookup_type, metric)
+
+    # Advanced Compare section (independent from above)
+    st.write("")
+    st.markdown("---")
+    advanced_compare = st.toggle("Advanced Compare (Independent Timeframe)", value=False, key="lookup_center_advanced_compare")
+
+    if advanced_compare:
+        st.markdown("#### Advanced Compare Settings")
+        ac_col1, ac_col2 = st.columns(2)
+        with ac_col1:
+            ac_timeframe = st.selectbox(
+                "Compare Timeframe",
+                TIMEFRAME_OPTIONS,
+                index=1,
+                key="advanced_compare_timeframe",
+            )
+        with ac_col2:
+            ac_metric = st.selectbox(
+                "Compare Metric",
+                ["Sales", "Units"],
+                index=0 if metric == "Sales" else 1,
+                key="advanced_compare_metric",
+            )
+
+        ac_period, ac_df_sel = _pick_lookup_period(df_lookup_all, ac_timeframe)
+        _render_compare_section(df_lookup_all, ac_metric, ac_period)
