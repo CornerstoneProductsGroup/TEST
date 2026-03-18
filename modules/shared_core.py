@@ -1858,17 +1858,11 @@ def run_app():
                 if df_in.empty: return df_in
                 out = df_in[["SKU","Sales (Current)","Sales (Compare)","Sales Δ","Δ %"]].copy(); out["Sales (Current)"] = out["Sales (Current)"].map(money); out["Sales (Compare)"] = out["Sales (Compare)"].map(money); out["Sales Δ"] = out["Sales Δ"].map(_fmt_diff); out["Δ %"] = out["Δ %"].map(_fmt_pct); return out
             inc_disp = _disp(inc); dec_disp = _disp(dec)
-            mom = build_momentum(df_scope[df_scope["WeekEnd"] <= pA.end], "SKU", lookback_weeks=8)
-            if not mom.empty:
-                mom = mom[(mom["Sales (lookback)"] >= min_sales) | (mom["Units (lookback)"] >= min_units)].copy(); trend_leaders = mom.sort_values("Slope", ascending=False).head(10).copy(); trend_leaders_disp = trend_leaders[["SKU","Trend","Slope","Weeks Up","Weeks Down","Sales (lookback)"]].copy(); trend_leaders_disp["Sales (lookback)"] = trend_leaders_disp["Sales (lookback)"].map(money); trend_leaders_disp["Slope"] = trend_leaders_disp["Slope"].map(lambda v: f"{v:,.2f}")
-            else: trend_leaders_disp = pd.DataFrame(columns=["SKU","Trend","Slope","Weeks Up","Weeks Down","Sales (lookback)"])
-            a,b,c = st.columns(3)
+            a,b = st.columns(2)
             with a:
                 st.markdown("**Top Increasing**"); st.markdown(inc_disp.to_html(escape=False, index=False, classes='report-table'), unsafe_allow_html=True) if not inc_disp.empty else st.caption("None.")
             with b:
                 st.markdown("**Top Declining**"); st.markdown(dec_disp.to_html(escape=False, index=False, classes='report-table'), unsafe_allow_html=True) if not dec_disp.empty else st.caption("None.")
-            with c:
-                st.markdown("**Trend Leaders (slope over last 8 weeks)**"); render_df(trend_leaders_disp, height=320)
     
         st.divider()
         st.header("Strategic Intelligence")

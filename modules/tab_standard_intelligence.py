@@ -572,28 +572,13 @@ def render(ctx: dict):
         inc_disp = _disp(inc)
         dec_disp = _disp(dec)
 
-        mom = build_momentum(df_scope[df_scope["WeekEnd"] <= pA.end], "SKU", lookback_weeks=8)
-        trend_leaders_disp = (
-            mom.sort_values("Slope", ascending=False)
-            .head(10)[["SKU", "Trend", "Slope", "Weeks Up", "Weeks Down", "Sales (lookback)"]]
-            .copy()
-            if not mom.empty
-            else pd.DataFrame(columns=["SKU", "Trend", "Slope", "Weeks Up", "Weeks Down", "Sales (lookback)"])
-        )
-        if not trend_leaders_disp.empty:
-            trend_leaders_disp["Sales (lookback)"] = trend_leaders_disp["Sales (lookback)"].map(money)
-            trend_leaders_disp["Slope"] = trend_leaders_disp["Slope"].map(lambda v: f"{v:,.2f}")
-
-        a, b, c = st.columns(3)
+        a, b = st.columns(2)
         with a:
             st.markdown("**Top Increasing**")
             render_df(inc_disp, height=320) if not inc_disp.empty else st.caption("None.")
         with b:
             st.markdown("**Top Declining**")
             render_df(dec_disp, height=320) if not dec_disp.empty else st.caption("None.")
-        with c:
-            st.markdown("**Trend Leaders (slope over last 8 weeks)**")
-            render_df(trend_leaders_disp, height=320)
 
     st.divider()
     st.subheader("New Activity")
