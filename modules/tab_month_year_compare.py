@@ -651,6 +651,57 @@ def render_visual_executive_dashboard(
         chart = alt.layer(*layers).properties(height=chart_height)
         return chart
 
+    def change_bars_chart(changes_df: pd.DataFrame) -> alt.Chart:
+        """Create a chart for just the retailer/vendor change bars with their own scaling"""
+        if changes_df.empty or changes_df[changes_df["Delta"] != 0].empty:
+            return None
+        
+        # Filter only non-zero changes
+        change_rows = changes_df[changes_df["Delta"] != 0].copy()
+        change_rows = pd.concat([
+            change_rows[change_rows["Delta"] > 0].sort_values("Delta", ascending=False),
+            change_rows[change_rows["Delta"] < 0].sort_values("Delta", ascending=True)
+        ], ignore_index=True)
+        
+        if change_rows.empty:
+            return None
+        
+        change_rows["AbsDelta"] = change_rows["Delta"].abs()
+        change_rows["Direction"] = np.where(change_rows["Delta"] > 0, "right", "left")
+        change_rows["X0"] = 0.0
+        change_rows["X1"] = change_rows["AbsDelta"]
+        change_rows["Label"] = change_rows["Label"].astype(str)
+        
+        # Calculate x-axis max based on change blocks
+        xmax = float(change_rows["AbsDelta"].max())
+        xmax = xmax * 1.2  # Add 20% padding
+        xmax = float(np.ceil(xmax / CHANGE_BLOCK_VALUE) * CHANGE_BLOCK_VALUE)
+        
+        # Create bars chart with its own scale
+        bars = (
+            alt.Chart(change_rows)
+            .mark_bar(stroke="white", strokeWidth=1)
+            .encode(
+                y=alt.Y("Label:N", title="", axis=alt.Axis(labelFontSize=12)),
+                x=alt.X("X0:Q", title="Change", scale=alt.Scale(domain=[0, xmax])),
+                x2="X1:Q",
+                color=alt.Color("ColorHex:N", scale=alt.Scale(domain=[POSITIVE_BAR, NEGATIVE_BAR], range=[POSITIVE_BAR, NEGATIVE_BAR]), legend=None),
+            )
+        )
+        
+        # Add labels
+        labels = (
+            alt.Chart(change_rows)
+            .mark_text(align="left", dx=5, fontSize=12, fontWeight="bold")
+            .encode(
+                y=alt.Y("Label:N"),
+                x=alt.X("X1:Q", scale=alt.Scale(domain=[0, xmax])),
+                text=alt.Text("Label:N"),
+            )
+        )
+        
+        return (bars + labels).properties(height=max(200, 30 * len(change_rows)))
+
     def prep_grouped_share(df: pd.DataFrame, dim_name: str) -> pd.DataFrame:
         if df.empty:
             return pd.DataFrame(
