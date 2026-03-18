@@ -146,6 +146,22 @@ def _compare_delta_text(cur, prev, money_mode=False):
     return f"{delta:,.0f} vs compare"
 
 
+def _format_delta_with_arrow(cur, prev, money_mode=False):
+    """Format delta value with arrow indicator and color"""
+    delta = float(cur) - float(prev)
+    is_positive = delta > 0
+    
+    arrow = "▲" if is_positive else ("▼" if delta < 0 else "—")
+    color = "#2e7d32" if is_positive else ("#c62828" if delta < 0 else "#808080")
+    
+    if money_mode:
+        delta_str = money(delta)
+    else:
+        delta_str = f"{delta:,.0f}"
+    
+    return f"<span style='color:{color}; font-weight:bold;'>{arrow} {delta_str}</span>"
+
+
 def _weekly_pivot(df: pd.DataFrame, row_dim: str, metric: str) -> pd.DataFrame:
     d = df.groupby([row_dim, "WeekEnd"], as_index=False).agg(Value=(metric, "sum"))
     d["Week"] = pd.to_datetime(d["WeekEnd"]).dt.date.astype(str)
@@ -507,24 +523,41 @@ def _render_compare_section(df_base: pd.DataFrame, metric: str, default_period):
     k_cur = calc_kpis(df_cur)
     k_cmp = calc_kpis(df_cmp)
 
+    st.markdown("#### Current vs Compare")
+    
     c1, c2, c3 = st.columns(3)
     with c1:
-        _render_kpi_card(
-            "Sales Δ",
-            money(k_cur["Sales"] - k_cmp["Sales"]),
-            _compare_delta_text(k_cur["Sales"], k_cmp["Sales"], money_mode=True),
+        st.markdown(
+            f"""
+            <div class="kpi-card">
+                <div class="kpi-title">Total Sales</div>
+                <div class="kpi-value">{money(k_cur["Sales"])}</div>
+                <div class="kpi-delta">{_format_delta_with_arrow(k_cur["Sales"], k_cmp["Sales"], money_mode=True)}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
     with c2:
-        _render_kpi_card(
-            "Units Δ",
-            f"{k_cur['Units'] - k_cmp['Units']:,.0f}",
-            _compare_delta_text(k_cur["Units"], k_cmp["Units"], money_mode=False),
+        st.markdown(
+            f"""
+            <div class="kpi-card">
+                <div class="kpi-title">Total Units</div>
+                <div class="kpi-value">{k_cur['Units']:,.0f}</div>
+                <div class="kpi-delta">{_format_delta_with_arrow(k_cur["Units"], k_cmp["Units"], money_mode=False)}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
     with c3:
-        _render_kpi_card(
-            "ASP Δ",
-            money(k_cur["ASP"] - k_cmp["ASP"]),
-            _compare_delta_text(k_cur["ASP"], k_cmp["ASP"], money_mode=True),
+        st.markdown(
+            f"""
+            <div class="kpi-card">
+                <div class="kpi-title">Total ASP</div>
+                <div class="kpi-value">{money(k_cur["ASP"])}</div>
+                <div class="kpi-delta">{_format_delta_with_arrow(k_cur["ASP"], k_cmp["ASP"], money_mode=True)}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
     st.caption(f"Current: {cur_label}")
