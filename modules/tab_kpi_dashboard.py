@@ -44,30 +44,26 @@ def _render_entity_kpi_card(
     sales_ref: float,
     units_ref: float,
     baseline_name: str,
+    align: str = "left",
 ):
     sales_delta_html = _delta_stacked_html(sales, sales_ref, "money")
     units_delta_html = _delta_stacked_html(units, units_ref, "int")
 
-    st.markdown(
-        f"""
-        <div class="kpi-card kpi-compact-card">
-            <div class="kpi-title">{title}</div>
-            <div style="display:inline-flex; gap:32px; align-items:flex-start; margin-top:6px;">
-                <div>
-                    <div class="kpi-mini-label">Sales</div>
-                    <div class="kpi-mini-value">{money(sales)}</div>
-                    <div style="margin-top:4px;">{sales_delta_html}</div>
-                </div>
-                <div>
-                    <div class="kpi-mini-label">Units</div>
-                    <div class="kpi-mini-value">{units:,.0f}</div>
-                    <div style="margin-top:4px;">{units_delta_html}</div>
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    card_html = (
+        f"<div class='kpi-card kpi-compact-card'>"
+        f"<div class='kpi-title'>{title}</div>"
+        f"<div style='display:inline-flex;gap:32px;align-items:flex-start;margin-top:6px;'>"
+        f"<div><div class='kpi-mini-label'>Sales</div>"
+        f"<div class='kpi-mini-value'>{money(sales)}</div>"
+        f"<div style='margin-top:4px;'>{sales_delta_html}</div></div>"
+        f"<div><div class='kpi-mini-label'>Units</div>"
+        f"<div class='kpi-mini-value'>{units:,.0f}</div>"
+        f"<div style='margin-top:4px;'>{units_delta_html}</div></div>"
+        f"</div></div>"
     )
+    if align == "right":
+        card_html = f"<div style='display:flex;justify-content:flex-end;'>{card_html}</div>"
+    st.markdown(card_html, unsafe_allow_html=True)
 
 
 def _rollup_by_dim(df: pd.DataFrame, dim: str) -> pd.DataFrame:
@@ -131,6 +127,7 @@ def _render_split_cards(
             sales_ref=left_ref_sales,
             units_ref=left_ref_units,
             baseline_name=left_baseline,
+            align="right",
         )
     with mid:
         st.markdown(
@@ -157,6 +154,7 @@ def _render_grouped_dim_card(
     top_roll: pd.DataFrame,
     ref_roll: pd.DataFrame,
     top_n: int,
+    align: str = "left",
 ):
     ref_lookup = _build_lookup(ref_roll, dim)
     top_rows = top_roll.head(top_n)
@@ -192,16 +190,16 @@ def _render_grouped_dim_card(
             f"</div>"
         )
 
-    st.markdown(
-        f"""
-        <div class="kpi-card kpi-group-card">
-            <div class="kpi-group-title">{section_label}</div>
-            {rows_html}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
 
+    card_html = (
+        f"<div class='kpi-card kpi-group-card'>"
+        f"<div class='kpi-group-title'>{section_label}</div>"
+        f"{rows_html}"
+        f"</div>"
+    )
+    if align == "right":
+        card_html = f"<div style='display:flex;justify-content:flex-end;'>{card_html}</div>"
+    st.markdown(card_html, unsafe_allow_html=True)
 
 def _render_retailer_vendor_row(
     *,
@@ -215,19 +213,20 @@ def _render_retailer_vendor_row(
     c_ret_a, c_vend_a, c_div, c_ret_b, c_vend_b = st.columns([1, 1, 0.04, 1, 1], gap="small")
     with c_ret_a:
         _render_grouped_dim_card(
-            section_label=f"Top 3 Retailers — {a_lbl}",
-            dim="Retailer",
-            top_roll=retailers_a,
-            ref_roll=retailers_b,
-            top_n=3,
-        )
-    with c_vend_a:
-        _render_grouped_dim_card(
             section_label=f"Top 3 Vendors — {a_lbl}",
             dim="Vendor",
             top_roll=vendors_a,
             ref_roll=vendors_b,
             top_n=3,
+        )
+    with c_vend_a:
+        _render_grouped_dim_card(
+            section_label=f"Top 3 Retailers — {a_lbl}",
+            dim="Retailer",
+            top_roll=retailers_a,
+            ref_roll=retailers_b,
+            top_n=3,
+            align="right",
         )
     with c_div:
         st.markdown(
