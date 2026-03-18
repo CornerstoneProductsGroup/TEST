@@ -105,7 +105,7 @@ def render_visual_executive_dashboard(
     # Set block values based on whether we're comparing by month or year
     if year_compare_mode():
         TOTAL_BLOCK_VALUE = 500000.0
-        CHANGE_BLOCK_VALUE = 50000.0
+        CHANGE_BLOCK_VALUE = 5000.0
     else:
         TOTAL_BLOCK_VALUE = 25000.0
         CHANGE_BLOCK_VALUE = 1000.0
@@ -215,7 +215,14 @@ def render_visual_executive_dashboard(
                 .encode(
                     y=alt.Y("Period:N", title="", sort=["Compare", "Current"], axis=alt.Axis(labelFontSize=13)),
                     x=alt.X("Value:Q", title=metric_name, scale=alt.Scale(domain=[0, xmax])),
-                    color=alt.Color("ColorHex:N", scale=alt.Scale(domain=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR], range=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR]), legend=None),
+                    color=alt.Color(
+                        "ColorHex:N",
+                        scale=alt.Scale(
+                            domain=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR],
+                            range=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR],
+                        ),
+                        legend=None,
+                    ),
                     tooltip=[
                         alt.Tooltip("Period:N", title="Period"),
                         alt.Tooltip("Value:Q", title=metric_name, format=",.0f" if metric == "Units" else ",.2f"),
@@ -256,8 +263,7 @@ def render_visual_executive_dashboard(
                 })
             )
         )
-        
-        # Replace period labels with "Current" and "Compare"
+
         totals["DisplayPeriod"] = totals["Period"].map({a_lbl: "Current", b_lbl: "Compare"})
         totals["SortKey"] = totals["DisplayPeriod"].map({"Compare": 0, "Current": 1})
         totals = totals.sort_values("SortKey")
@@ -271,7 +277,14 @@ def render_visual_executive_dashboard(
             .encode(
                 y=alt.Y("DisplayPeriod:N", title="", sort=["Compare", "Current"], axis=alt.Axis(labelFontSize=13)),
                 x=alt.X("Value:Q", title=metric_name, scale=alt.Scale(domain=[0, xmax])),
-                color=alt.Color("ColorHex:N", scale=alt.Scale(domain=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR], range=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR]), legend=None),
+                color=alt.Color(
+                    "ColorHex:N",
+                    scale=alt.Scale(
+                        domain=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR],
+                        range=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR],
+                    ),
+                    legend=None,
+                ),
                 tooltip=[
                     alt.Tooltip("DisplayPeriod:N", title="Period"),
                     alt.Tooltip("Value:Q", title=metric_name, format=",.0f" if metric == "Units" else ",.2f"),
@@ -571,14 +584,20 @@ def render_visual_executive_dashboard(
                     y=alt.Y("Period:N", sort=order, title="", axis=alt.Axis(labelFontSize=13)),
                     x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, xmax])),
                     x2="X1:Q",
-                    color=alt.Color("ColorHex:N", scale=alt.Scale(domain=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR], range=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR]), legend=None),
+                    color=alt.Color(
+                        "ColorHex:N",
+                        scale=alt.Scale(
+                            domain=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR],
+                            range=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR],
+                        ),
+                        legend=None,
+                    ),
                     tooltip=[alt.Tooltip("Period:N", title="Period")],
                 )
             )
 
         layers = []
 
-        # Use all block_df with ColorHex encoding
         main_layer = _layer(block_df)
 
         if main_layer is not None:
@@ -598,7 +617,14 @@ def render_visual_executive_dashboard(
                 y=alt.Y("Period:N", sort=order),
                 x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
                 text="Text:N",
-                color=alt.Color("ColorHex:N", scale=alt.Scale(domain=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR], range=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR]), legend=None),
+                color=alt.Color(
+                    "ColorHex:N",
+                    scale=alt.Scale(
+                        domain=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR],
+                        range=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR],
+                    ),
+                    legend=None,
+                ),
             )
         )
         layers.append(right_labels)
@@ -610,7 +636,14 @@ def render_visual_executive_dashboard(
                 y=alt.Y("Period:N", sort=order),
                 x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
                 text="Text:N",
-                color=alt.Color("ColorHex:N", scale=alt.Scale(domain=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR], range=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR]), legend=None),
+                color=alt.Color(
+                    "ColorHex:N",
+                    scale=alt.Scale(
+                        domain=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR],
+                        range=[POSITIVE_BAR, NEGATIVE_BAR, NEUTRAL_BAR],
+                    ),
+                    legend=None,
+                ),
             )
         )
         layers.append(left_labels)
@@ -655,7 +688,6 @@ def render_visual_executive_dashboard(
             long_df["CurrentColor"],
             long_df["CompareColor"],
         )
-        # Ensure RowColor is always a valid value
         long_df["RowColor"] = long_df["RowColor"].fillna("neutral")
 
         long_df["SharePct"] = np.where(long_df["Total"] > 0, long_df["Value"] / long_df["Total"], 0.0)
@@ -1192,27 +1224,16 @@ def render_standard_view(
     show.rename(columns={f"Sales ({a_lbl})": sales_a_col, f"Sales ({b_lbl})": sales_b_col}, inplace=True)
     show[sales_a_col] = show[sales_a_col].map(money)
     show[sales_b_col] = show[sales_b_col].map(money)
-    
-    # Color the Difference column based on positive/negative
+
     def format_difference(val):
         color = "#2e7d32" if val > 0 else ("#c62828" if val < 0 else "var(--text-color)")
         arrow = "▲ " if val > 0 else ("▼ " if val < 0 else "")
         return f"<span style='color:{color}'>{arrow}{money(val)}</span>"
-    
+
     show["Difference_numeric"] = show["Difference_numeric"].fillna(0.0)
     show["Difference"] = show["Difference_numeric"].map(format_difference)
-    
     show["% Change"] = show["% Change"].map(pct_fmt)
-    
-    # Calculate dynamic height based on number of rows
-    num_rows = len(show)
-    row_height = 35
-    header_height = 50
-    dynamic_height = header_height + (num_rows * row_height)
-    max_height = 600
-    final_height = min(dynamic_height, max_height)
-    
-    # Display table with HTML rendering for colored Difference column
+
     display_cols = [pivot_dim, sales_a_col, sales_b_col, "Difference", "% Change"]
     st.markdown(show[display_cols].to_html(escape=False, index=False, classes='report-table'), unsafe_allow_html=True)
 
@@ -1235,7 +1256,9 @@ def render_standard_view(
         ddf["Sales (Current)"] = ddf["Sales (Current)"].map(money)
         ddf["Sales (Compare)"] = ddf["Sales (Compare)"].map(money)
         ddf["Diff_numeric"] = ddf["Diff_numeric"].fillna(0.0)
-        ddf["Difference"] = ddf["Diff_numeric"].map(lambda val: f"<span style='color:{('#2e7d32' if val > 0 else '#c62828' if val < 0 else 'var(--text-color)')}'>{('▲ ' if val > 0 else '▼ ' if val < 0 else '')}{money(val)}</span>")
+        ddf["Difference"] = ddf["Diff_numeric"].map(
+            lambda val: f"<span style='color:{('#2e7d32' if val > 0 else '#c62828' if val < 0 else 'var(--text-color)')}'>{('▲ ' if val > 0 else '▼ ' if val < 0 else '')}{money(val)}</span>"
+        )
         ddf["% Change"] = ddf["% Change"].map(pct_fmt)
 
     x, y = st.columns(2)
