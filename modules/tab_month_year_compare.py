@@ -202,7 +202,7 @@ def render_visual_executive_dashboard(
             )
 
             xmax = float(chart_df["Value"].max()) if not chart_df.empty else 0.0
-            xmax = xmax * 1.03 if xmax > 0 else 1.0
+            xmax = xmax * 1.20 if xmax > 0 else 1.0
 
             bars = (
                 alt.Chart(chart_df)
@@ -221,12 +221,13 @@ def render_visual_executive_dashboard(
 
             label_df = chart_df.copy()
             label_df["Label"] = label_df["Value"].map(lambda v: f"{v:,.0f}" if metric == "Units" else money(v))
-            label_df["LabelX"] = label_df["Value"] / 2.0
+            label_df["LabelX"] = label_df["Value"]
 
             labels = (
                 alt.Chart(label_df)
                 .mark_text(
-                    align="center",
+                    align="left",
+                    dx=8,
                     baseline="middle",
                     fontSize=16,
                     fontWeight="bold",
@@ -258,7 +259,7 @@ def render_visual_executive_dashboard(
         totals = totals.sort_values("SortKey")
 
         xmax = float(totals["Value"].max()) if not totals.empty else 0.0
-        xmax = xmax * 1.03 if xmax > 0 else 1.0
+        xmax = xmax * 1.20 if xmax > 0 else 1.0
 
         bars = (
             alt.Chart(totals)
@@ -276,12 +277,13 @@ def render_visual_executive_dashboard(
         )
 
         totals["Label"] = totals["Value"].map(lambda v: f"{v:,.0f}" if metric == "Units" else money(v))
-        totals["LabelX"] = totals["Value"] / 2.0
+        totals["LabelX"] = totals["Value"]
 
         labels = (
             alt.Chart(totals)
             .mark_text(
-                align="center",
+                align="left",
+                dx=8,
                 baseline="middle",
                 fontSize=16,
                 fontWeight="bold",
@@ -668,7 +670,7 @@ def render_visual_executive_dashboard(
         delta_df["DeltaLabel"] = delta_df["Delta"].map(money)
 
         max_abs = float(delta_df["Delta"].abs().max())
-        pad = max(max_abs * 0.10, CHANGE_BLOCK_VALUE * 2)
+        pad = max(max_abs * 0.20, CHANGE_BLOCK_VALUE * 3)
         xmax = max_abs + pad
 
         bars = (
@@ -976,7 +978,7 @@ def render_visual_executive_dashboard(
         compare_color = NEUTRAL_BAR
 
     total_max = max(current_sales, compare_sales, TOTAL_BLOCK_VALUE)
-    total_xmax = float(np.ceil((total_max * 1.08) / TOTAL_BLOCK_VALUE) * TOTAL_BLOCK_VALUE)
+    total_xmax = float(np.ceil((total_max * 1.16) / TOTAL_BLOCK_VALUE) * TOTAL_BLOCK_VALUE)
 
     retailer_change_rows = collect_change_contributors_by_dim(dfA, dfB, "Retailer")
 
