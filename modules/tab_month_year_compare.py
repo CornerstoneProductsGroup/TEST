@@ -303,6 +303,7 @@ def render_visual_executive_dashboard(
         *,
         top_n_pos: int | None = None,
         top_n_neg: int | None = None,
+        pick_most_negative: bool = False,
     ) -> pd.DataFrame:
         if dim not in df_cur.columns or dim not in df_cmp.columns:
             return pd.DataFrame(columns=["Label", "Delta", "ColorHex", "Side", "Direction"])
@@ -321,11 +322,22 @@ def render_visual_executive_dashboard(
         out["Direction"] = np.where(out["Delta"] > 0, "right", "left")
 
         pos = out[out["Delta"] > 0].sort_values(["Delta", "Label"], ascending=[False, True]).copy()
-        neg = out[out["Delta"] < 0].sort_values(["Delta", "Label"], ascending=[False, True]).copy()
+        neg = out[out["Delta"] < 0].copy()
+
+        if pick_most_negative:
+            # Select the most negative contributors (largest decreases), then
+            # display them closest-to-zero down to most-negative so the bottom
+            # bar is the largest decrease.
+            neg = neg.sort_values(["Delta", "Label"], ascending=[True, True])
+            if top_n_neg is not None:
+                neg = neg.head(top_n_neg)
+            neg = neg.sort_values(["Delta", "Label"], ascending=[False, True])
+        else:
+            neg = neg.sort_values(["Delta", "Label"], ascending=[False, True])
 
         if top_n_pos is not None:
             pos = pos.head(top_n_pos)
-        if top_n_neg is not None:
+        if top_n_neg is not None and not pick_most_negative:
             neg = neg.head(top_n_neg)
 
         return pd.concat([pos, neg], ignore_index=True)
@@ -1027,6 +1039,7 @@ def render_visual_executive_dashboard(
         "SKU",
         top_n_pos=10,
         top_n_neg=10,
+        pick_most_negative=True,
     )
 
     st.markdown("#### Sales Change Compare by SKU")
