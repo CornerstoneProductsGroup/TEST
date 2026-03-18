@@ -556,33 +556,28 @@ def render_visual_executive_dashboard(
 
         chart_height = max(230, 44 * len(order))
 
-        def _layer(df_sub: pd.DataFrame, color_hex: str):
+        def _layer(df_sub: pd.DataFrame):
             if df_sub.empty:
                 return None
             return (
                 alt.Chart(df_sub)
-                .mark_bar(color=color_hex, stroke="white", strokeWidth=1)
+                .mark_bar(stroke="white", strokeWidth=1)
                 .encode(
                     y=alt.Y("Period:N", sort=order, title="", axis=alt.Axis(labelFontSize=13)),
                     x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, xmax])),
                     x2="X1:Q",
+                    color=alt.Color("ColorHex:N", scale=None, legend=None),
                     tooltip=[alt.Tooltip("Period:N", title="Period")],
                 )
             )
 
         layers = []
 
-        green_df = block_df[block_df["ColorHex"] == POSITIVE_BAR].copy()
-        red_df = block_df[block_df["ColorHex"] == NEGATIVE_BAR].copy()
-        gray_df = block_df[block_df["ColorHex"] == NEUTRAL_BAR].copy()
+        # Use all block_df with ColorHex encoding
+        main_layer = _layer(block_df)
 
-        green_layer = _layer(green_df, POSITIVE_BAR)
-        red_layer = _layer(red_df, NEGATIVE_BAR)
-        gray_layer = _layer(gray_df, NEUTRAL_BAR)
-
-        for lyr in (green_layer, red_layer, gray_layer):
-            if lyr is not None:
-                layers.append(lyr)
+        if main_layer is not None:
+            layers.append(main_layer)
 
         center_rule = (
             alt.Chart(pd.DataFrame([{"Center": center_x}]))
@@ -913,31 +908,6 @@ def render_visual_executive_dashboard(
         changes_df=change_rows,
     )
     st.altair_chart(block_chart, use_container_width=True)
-
-    st.write("")
-
-    retailer = prep_compare_metric(dfA, dfB, "Retailer", metric="Sales", top_n=10)
-    vendor = prep_compare_metric(dfA, dfB, "Vendor", metric="Sales", top_n=10)
-
-    left, right = st.columns(2)
-
-    with left:
-        st.markdown("#### Top Retailers")
-        retailer_long = prep_grouped_share(retailer, "Retailer")
-        if retailer_long.empty:
-            st.caption("No retailer data available.")
-        else:
-            retailer_chart = grouped_lollipop_chart(retailer_long, "Retailer", height=760)
-            st.altair_chart(retailer_chart, use_container_width=True)
-
-    with right:
-        st.markdown("#### Top Vendors")
-        vendor_long = prep_grouped_share(vendor, "Vendor")
-        if vendor_long.empty:
-            st.caption("No vendor data available.")
-        else:
-            vendor_chart = grouped_lollipop_chart(vendor_long, "Vendor", height=760)
-            st.altair_chart(vendor_chart, use_container_width=True)
 
     st.write("")
 
