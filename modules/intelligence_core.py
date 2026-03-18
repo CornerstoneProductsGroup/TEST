@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 import html as _html
+import inspect
 import re as _re
 
 import pandas as pd
@@ -68,13 +69,40 @@ def render_current_analysis_view(ctx: dict):
     analysis_view = ctx.get("analysis_view")
 
     if analysis_view == "Standard Intelligence":
-        tab_standard_intelligence.render(ctx)
+        if hasattr(tab_standard_intelligence, "render"):
+            tab_standard_intelligence.render(ctx)
+            return
+        st.warning("Standard Intelligence tab render function was not found.")
     elif analysis_view == "Month / Year Compare":
-        tab_month_year_compare.render(ctx)
+        if hasattr(tab_month_year_compare, "render"):
+            tab_month_year_compare.render(ctx)
+            return
+
+        # Fallback for older builds that expose only the underlying renderer.
+        if hasattr(tab_month_year_compare, "render_standard_view"):
+            tab_month_year_compare.render_standard_view(
+                dfA=ctx["dfA"],
+                dfB=ctx["dfB"],
+                kA=ctx["kA"],
+                kB=ctx["kB"],
+                a_lbl=ctx["a_lbl"],
+                b_lbl=ctx["b_lbl"],
+                compare_mode=ctx["compare_mode"],
+                min_sales=ctx["min_sales"],
+            )
+            return
+
+        st.warning("Month / Year Compare tab render function was not found.")
     elif analysis_view == "Multi Month / Year Compare":
-        tab_multi_compare.render(ctx)
+        if hasattr(tab_multi_compare, "render"):
+            tab_multi_compare.render(ctx)
+            return
+        st.warning("Multi Month / Year Compare tab render function was not found.")
     elif analysis_view == "Lookup Center":
-        tab_lookup_center.render(ctx)
+        if hasattr(tab_lookup_center, "render"):
+            tab_lookup_center.render(ctx)
+            return
+        st.warning("Lookup Center tab render function was not found.")
 
 
 def render_visual_analysis_view(ctx: dict):
@@ -93,15 +121,37 @@ def render_visual_analysis_view(ctx: dict):
             return
 
         if hasattr(tab_month_year_compare, "render_visual_executive_dashboard"):
-            tab_month_year_compare.render_visual_executive_dashboard(
-                dfA=ctx["dfA"],
-                dfB=ctx["dfB"],
-                kA=ctx["kA"],
-                kB=ctx["kB"],
-                a_lbl=ctx["a_lbl"],
-                b_lbl=ctx["b_lbl"],
-                min_sales=ctx["min_sales"],
-            )
+            fn = tab_month_year_compare.render_visual_executive_dashboard
+            kwargs = {
+                "dfA": ctx["dfA"],
+                "dfB": ctx["dfB"],
+                "kA": ctx["kA"],
+                "kB": ctx["kB"],
+                "a_lbl": ctx["a_lbl"],
+                "b_lbl": ctx["b_lbl"],
+                "min_sales": ctx["min_sales"],
+            }
+
+            # Support mixed deployments where the tab function signature differs.
+            try:
+                sig = inspect.signature(fn)
+                accepted = {
+                    k: v
+                    for k, v in kwargs.items()
+                    if k in sig.parameters
+                }
+                fn(**accepted)
+            except Exception:
+                # Last-resort fallback for older positional signatures.
+                fn(
+                    ctx["dfA"],
+                    ctx["dfB"],
+                    ctx["kA"],
+                    ctx["kB"],
+                    ctx["a_lbl"],
+                    ctx["b_lbl"],
+                    ctx["min_sales"],
+                )
             return
 
         st.warning("Month / Year visual dashboard function was not found.")
