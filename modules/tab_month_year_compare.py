@@ -716,7 +716,7 @@ def render_visual_executive_dashboard(
             )
         )
 
-        mid_height = max(90, 18 * len(delta_df))
+        mid_height = max(90, 28 * len(delta_df))
         return (bars + zero_rule + pos_labels + neg_labels).properties(height=mid_height)
 
     def prep_grouped_share(df: pd.DataFrame, dim_name: str) -> pd.DataFrame:
