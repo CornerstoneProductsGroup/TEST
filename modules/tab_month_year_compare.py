@@ -865,8 +865,10 @@ def render_visual_executive_dashboard(
         return inc, dec
 
     def render_with_side_margins(chart):
-        # Match the same content width used by the top total charts.
-        st.altair_chart(chart, use_container_width=True)
+        # Keep a consistent right-side gutter while preserving left alignment.
+        chart_col, right_gap = st.columns([0.94, 0.06])
+        with chart_col:
+            st.altair_chart(chart, use_container_width=True)
 
     def mover_lollipop_chart(df: pd.DataFrame, metric_title: str, positive: bool, height: int = 430):
         if df.empty:
