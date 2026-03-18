@@ -987,7 +987,7 @@ def render_visual_executive_dashboard(
     change_chart = change_only_center_chart(retailer_change_rows)
     current_chart = single_total_bar_chart(current_sales, "Current", current_color, total_xmax)
 
-    stacked_compare_view = alt.vconcat(compare_chart, change_chart, current_chart, spacing=2).resolve_scale(x="independent")
+    stacked_compare_view = alt.vconcat(compare_chart, change_chart, current_chart, spacing=0).resolve_scale(x="independent")
     st.altair_chart(stacked_compare_view, use_container_width=True)
 
     st.write("")
@@ -1005,31 +1005,9 @@ def render_visual_executive_dashboard(
         vendor_compare_chart,
         vendor_change_chart,
         vendor_current_chart,
-        spacing=2,
+        spacing=0,
     ).resolve_scale(x="independent")
     st.altair_chart(stacked_vendor_view, use_container_width=True)
-
-    st.write("")
-
-    inc, dec = prep_sku_movers()
-
-    left2, right2 = st.columns(2)
-
-    with left2:
-        st.markdown("#### Top SKU Increases")
-        if inc.empty:
-            st.caption("No increasing SKUs found.")
-        else:
-            inc_chart = mover_lollipop_chart(inc, "Sales Change", positive=True, height=430)
-            st.altair_chart(inc_chart, use_container_width=True)
-
-    with right2:
-        st.markdown("#### Top SKU Decreases")
-        if dec.empty:
-            st.caption("No declining SKUs found.")
-        else:
-            dec_chart = mover_lollipop_chart(dec, "Sales Change", positive=False, height=430)
-            st.altair_chart(dec_chart, use_container_width=True)
 
     st.write("")
 
@@ -1053,7 +1031,7 @@ def render_visual_executive_dashboard(
         sku_compare_chart,
         sku_change_chart,
         sku_current_chart,
-        spacing=2,
+        spacing=0,
     ).resolve_scale(x="independent")
     st.altair_chart(stacked_sku_view, use_container_width=True)
 
