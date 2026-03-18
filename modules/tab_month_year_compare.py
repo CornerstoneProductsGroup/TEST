@@ -617,7 +617,7 @@ def render_visual_executive_dashboard(
 
         bars = (
             alt.Chart(row_df)
-            .mark_bar(stroke="white", strokeWidth=1, size=7)
+            .mark_bar(stroke="white", strokeWidth=1, size=10)
             .encode(
                 y=alt.Y("Period:N", title="", axis=alt.Axis(labelFontSize=13)),
                 x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, xmax])),
@@ -675,7 +675,7 @@ def render_visual_executive_dashboard(
 
         bars = (
             alt.Chart(delta_df)
-            .mark_bar(stroke="white", strokeWidth=1, size=5)
+            .mark_bar(stroke="white", strokeWidth=1, size=8)
             .encode(
                 y=alt.Y("Label:N", sort=y_order, title="", axis=alt.Axis(labelFontSize=12)),
                 x=alt.X("X0:Q", title="Sales Change", scale=alt.Scale(domain=[-xmax, xmax])),
@@ -696,7 +696,7 @@ def render_visual_executive_dashboard(
 
         pos_labels = (
             alt.Chart(delta_df[delta_df["Delta"] > 0])
-            .mark_text(align="left", dx=8, fontSize=13, fontWeight="bold")
+            .mark_text(align="left", dx=8, fontSize=13, fontWeight="bold", clip=False)
             .encode(
                 y=alt.Y("Label:N", sort=y_order),
                 x=alt.X("X1:Q", scale=alt.Scale(domain=[-xmax, xmax])),
@@ -707,7 +707,7 @@ def render_visual_executive_dashboard(
 
         neg_labels = (
             alt.Chart(delta_df[delta_df["Delta"] < 0])
-            .mark_text(align="right", dx=-8, fontSize=13, fontWeight="bold")
+            .mark_text(align="right", dx=-8, fontSize=13, fontWeight="bold", clip=False)
             .encode(
                 y=alt.Y("Label:N", sort=y_order),
                 x=alt.X("X0:Q", scale=alt.Scale(domain=[-xmax, xmax])),
@@ -1005,7 +1005,7 @@ def render_visual_executive_dashboard(
         stacked_compare_view,
     )
 
-    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:2px'></div>", unsafe_allow_html=True)
 
     vendor_change_rows = collect_change_contributors_by_dim(dfA, dfB, "Vendor")
 
@@ -1025,7 +1025,7 @@ def render_visual_executive_dashboard(
         stacked_vendor_view,
     )
 
-    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:2px'></div>", unsafe_allow_html=True)
 
     sku_change_rows = collect_change_contributors_by_dim(
         dfA,
