@@ -210,7 +210,7 @@ def render_visual_executive_dashboard(
                 .encode(
                     y=alt.Y("Period:N", title="", sort=["Compare", "Current"], axis=alt.Axis(labelFontSize=13)),
                     x=alt.X("Value:Q", title=metric_name, scale=alt.Scale(domain=[0, xmax])),
-                    color=alt.Color("ColorHex:N", scale=None, legend=None),
+                    color=alt.Color("ColorHex:N", scale=alt.Scale(scheme="identity"), legend=None),
                     tooltip=[
                         alt.Tooltip("Period:N", title="Period"),
                         alt.Tooltip("Value:Q", title=metric_name, format=",.0f" if metric == "Units" else ",.2f"),
@@ -266,7 +266,7 @@ def render_visual_executive_dashboard(
             .encode(
                 y=alt.Y("DisplayPeriod:N", title="", sort=["Compare", "Current"], axis=alt.Axis(labelFontSize=13)),
                 x=alt.X("Value:Q", title=metric_name, scale=alt.Scale(domain=[0, xmax])),
-                color=alt.Color("ColorHex:N", scale=None, legend=None),
+                color=alt.Color("ColorHex:N", scale=alt.Scale(scheme="identity"), legend=None),
                 tooltip=[
                     alt.Tooltip("DisplayPeriod:N", title="Period"),
                     alt.Tooltip("Value:Q", title=metric_name, format=",.0f" if metric == "Units" else ",.2f"),
@@ -566,7 +566,7 @@ def render_visual_executive_dashboard(
                     y=alt.Y("Period:N", sort=order, title="", axis=alt.Axis(labelFontSize=13)),
                     x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, xmax])),
                     x2="X1:Q",
-                    color=alt.Color("ColorHex:N", scale=None, legend=None),
+                    color=alt.Color("ColorHex:N", scale=alt.Scale(scheme="identity"), legend=None),
                     tooltip=[alt.Tooltip("Period:N", title="Period")],
                 )
             )
@@ -593,7 +593,7 @@ def render_visual_executive_dashboard(
                 y=alt.Y("Period:N", sort=order),
                 x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
                 text="Text:N",
-                color=alt.Color("ColorHex:N", scale=None, legend=None),
+                color=alt.Color("ColorHex:N", scale=alt.Scale(scheme="identity"), legend=None),
             )
         )
         layers.append(right_labels)
@@ -605,7 +605,7 @@ def render_visual_executive_dashboard(
                 y=alt.Y("Period:N", sort=order),
                 x=alt.X("X:Q", scale=alt.Scale(domain=[0, xmax])),
                 text="Text:N",
-                color=alt.Color("ColorHex:N", scale=None, legend=None),
+                color=alt.Color("ColorHex:N", scale=alt.Scale(scheme="identity"), legend=None),
             )
         )
         layers.append(left_labels)
