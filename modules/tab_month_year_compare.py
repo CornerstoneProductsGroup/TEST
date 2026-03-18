@@ -603,7 +603,7 @@ def render_visual_executive_dashboard(
 
         bars = (
             alt.Chart(row_df)
-            .mark_bar(stroke="white", strokeWidth=1)
+            .mark_bar(stroke="white", strokeWidth=1, size=10)
             .encode(
                 y=alt.Y("Period:N", title="", axis=alt.Axis(labelFontSize=13)),
                 x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, xmax])),
@@ -627,7 +627,7 @@ def render_visual_executive_dashboard(
             )
         )
 
-        return (bars + labels).properties(height=62)
+        return (bars + labels).properties(height=32)
 
     def change_only_center_chart(changes_df: pd.DataFrame):
         if changes_df.empty or changes_df[changes_df["Delta"] != 0].empty:
@@ -636,17 +636,19 @@ def render_visual_executive_dashboard(
                 alt.Chart(empty_df)
                 .mark_text(fontSize=13, color="#7a7a7a")
                 .encode(text="Msg:N")
-                .properties(height=90)
+                .properties(height=60)
             )
 
         delta_df = changes_df[changes_df["Delta"] != 0].copy()
         delta_df = pd.concat(
             [
                 delta_df[delta_df["Delta"] > 0].sort_values(["Delta", "Label"], ascending=[False, True]),
-                delta_df[delta_df["Delta"] < 0].sort_values(["Delta", "Label"], ascending=[True, True]),
+                delta_df[delta_df["Delta"] < 0].sort_values(["Delta", "Label"], ascending=[False, True]),
             ],
             ignore_index=True,
         )
+
+        y_order = delta_df["Label"].astype(str).tolist()
 
         delta_df["Label"] = delta_df["Label"].astype(str)
         delta_df["X0"] = np.where(delta_df["Delta"] > 0, 0.0, delta_df["Delta"])
@@ -659,9 +661,9 @@ def render_visual_executive_dashboard(
 
         bars = (
             alt.Chart(delta_df)
-            .mark_bar(stroke="white", strokeWidth=1)
+            .mark_bar(stroke="white", strokeWidth=1, size=8)
             .encode(
-                y=alt.Y("Label:N", title="", axis=alt.Axis(labelFontSize=12)),
+                y=alt.Y("Label:N", sort=y_order, title="", axis=alt.Axis(labelFontSize=12)),
                 x=alt.X("X0:Q", title="Sales Change", scale=alt.Scale(domain=[-xmax, xmax])),
                 x2="X1:Q",
                 color=alt.Color("ColorHex:N", scale=None, legend=None),
@@ -682,7 +684,7 @@ def render_visual_executive_dashboard(
             alt.Chart(delta_df[delta_df["Delta"] > 0])
             .mark_text(align="left", dx=8, fontSize=13, fontWeight="bold")
             .encode(
-                y=alt.Y("Label:N"),
+                y=alt.Y("Label:N", sort=y_order),
                 x=alt.X("X1:Q", scale=alt.Scale(domain=[-xmax, xmax])),
                 text="DeltaLabel:N",
                 color=alt.Color("ColorHex:N", scale=None, legend=None),
@@ -693,14 +695,14 @@ def render_visual_executive_dashboard(
             alt.Chart(delta_df[delta_df["Delta"] < 0])
             .mark_text(align="right", dx=-8, fontSize=13, fontWeight="bold")
             .encode(
-                y=alt.Y("Label:N"),
+                y=alt.Y("Label:N", sort=y_order),
                 x=alt.X("X0:Q", scale=alt.Scale(domain=[-xmax, xmax])),
                 text="DeltaLabel:N",
                 color=alt.Color("ColorHex:N", scale=None, legend=None),
             )
         )
 
-        mid_height = max(170, 34 * len(delta_df))
+        mid_height = max(90, 18 * len(delta_df))
         return (bars + zero_rule + pos_labels + neg_labels).properties(height=mid_height)
 
     def prep_grouped_share(df: pd.DataFrame, dim_name: str) -> pd.DataFrame:
