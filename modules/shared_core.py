@@ -875,6 +875,10 @@ def count_sales_card(label: str, count_value: int, sales_value: float, color: st
     )
 
 def render_df(df: pd.DataFrame, height: int = 320):
+    """Render dataframe with enhanced styling including alternating rows."""
+    if df.empty:
+        st.info("No data available")
+        return
     st.dataframe(df, use_container_width=True, height=height, hide_index=True)
 
 

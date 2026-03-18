@@ -3,14 +3,15 @@ import streamlit as st
 def apply_global_styles():
     st.markdown("""
     <style>
-    .kpi-card{border:1px solid rgba(128,128,128,0.22);border-radius:14px;padding:14px 14px;background: var(--secondary-background-color);}
-    .kpi-title{font-size:12px;font-weight:600;letter-spacing:0.02em;color: var(--text-color);opacity: 0.70;}
-    .kpi-value{font-size:28px;font-weight:800;line-height:1.15;color: var(--text-color);}
+    /* KPI Card Styling - Enhanced */
+    .kpi-card{border:2px solid rgba(128,128,128,0.35);border-radius:16px;padding:16px 18px;background: linear-gradient(135deg, var(--secondary-background-color) 0%, rgba(79, 172, 254, 0.03) 100%);box-shadow:0 2px 8px rgba(0,0,0,0.08);}
+    .kpi-title{font-size:12px;font-weight:600;letter-spacing:0.02em;color: var(--text-color);opacity: 0.70;text-transform:uppercase;}
+    .kpi-value{font-size:28px;font-weight:800;line-height:1.15;color: var(--text-color);background: linear-gradient(135deg, #4FAAFE 0%, #00D4FF 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
     .kpi-delta{font-size:13px;margin-top:6px;color: var(--text-color);opacity: 0.80;}
     .kpi-delta .delta-abs{ font-weight:800; }
     .kpi-delta .delta-pct{ font-weight:700; opacity:0.88; margin-left:6px; }
     .kpi-delta .delta-note{ opacity:0.75; margin-left:6px; }
-    .kpi-big-main{font-size:30px;font-weight:800;line-height:1.05;margin-top:4px;}
+    .kpi-big-main{font-size:30px;font-weight:800;line-height:1.05;margin-top:4px;background: linear-gradient(135deg, #4FAAFE 0%, #00D4FF 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
     .kpi-big-name{font-size:22px;font-weight:700;line-height:1.15;margin-top:6px;color: var(--text-color);}
     .kpi-big-total{font-size:13px;opacity:0.78;margin-top:6px;color: var(--text-color);}
     .kpi-big-pct{font-size:13px;font-weight:700;margin-top:4px;}
@@ -19,10 +20,37 @@ def apply_global_styles():
     .intel-body{margin-top:8px;color: var(--text-color);font-size:15px;line-height:1.45;}
     .intel-body ul{margin: 0;padding-left: 18px;}
     .intel-body li{margin: 6px 0;}
+    
+    /* Enhanced Table Styling with Alternating Rows */
     .report-table{width:100% !important;table-layout:auto;border-collapse: collapse;font-size:14px !important;line-height:1.3;}
-    .report-table th, .report-table td{padding:6px 8px;border-bottom:1px solid rgba(128,128,128,0.18);text-align:left;white-space:nowrap;}
-    .report-table th{font-size:13px !important;font-weight:700;color:var(--text-color);opacity:0.82;}
+    .report-table th, .report-table td{padding:8px 10px;border-bottom:1px solid rgba(128,128,128,0.18);text-align:left;white-space:nowrap;}
+    .report-table th{font-size:13px !important;font-weight:700;color:var(--text-color);opacity:0.82;background: rgba(79, 172, 254, 0.08);border-bottom:2px solid rgba(79, 172, 254, 0.3);}
     .report-table td{color:var(--text-color);}
+    .report-table tbody tr:nth-child(even){background-color:rgba(128,128,128,0.04);}
+    .report-table tbody tr:hover{background-color:rgba(79, 172, 254, 0.08);transition:background-color 0.2s ease;}
+    
+    /* Streamlit Dataframe Enhancement */
     div[data-testid="stDataFrame"] * {font-size:14px !important;}
+    div[data-testid="stDataFrame"] {border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);}
+    
+    /* Dataframe Header Styling */
+    div[data-testid="stDataFrame"] [data-testid="stTableHeaderCell"] {
+        background: linear-gradient(135deg, rgba(79, 172, 254, 0.12) 0%, rgba(79, 172, 254, 0.06) 100%) !important;
+        font-weight:700 !important;
+        border-bottom:2px solid rgba(79, 172, 254, 0.3) !important;
+    }
+    
+    /* Dataframe Row Alternating Colors */
+    div[data-testid="stDataFrame"] [data-testid="stTableBodyRow"] {
+        transition:background-color 0.2s ease !important;
+    }
+    
+    div[data-testid="stDataFrame"] [data-testid="stTableBodyRow"]:nth-child(even) {
+        background-color:rgba(128,128,128,0.04) !important;
+    }
+    
+    div[data-testid="stDataFrame"] [data-testid="stTableBodyRow"]:hover {
+        background-color:rgba(79, 172, 254, 0.08) !important;
+    }
     </style>
     """, unsafe_allow_html=True)
