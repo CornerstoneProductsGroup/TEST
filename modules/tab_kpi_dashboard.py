@@ -38,24 +38,176 @@ def _delta_html(value: float, reference: float, mode: str, baseline_name: str) -
     )
 
 
-def _render_kpi_card(title: str, value: str, delta_html: str):
-    delta_block = f"<div class='kpi-delta'>{delta_html}</div>" if delta_html else ""
+def _render_entity_kpi_card(
+    *,
+    title: str,
+    sales: float,
+    units: float,
+    sales_ref: float,
+    units_ref: float,
+    baseline_name: str,
+):
+    sales_delta_html = _delta_html(sales, sales_ref, "money", baseline_name)
+    units_delta_html = _delta_html(units, units_ref, "int", baseline_name)
+
     st.markdown(
         f"""
         <div class="kpi-card">
             <div class="kpi-title">{title}</div>
-            <div class="kpi-value">{value}</div>
-            {delta_block}
+            <div style="margin-top:6px;">
+                <div style="font-size:12px;font-weight:700;opacity:0.72;text-transform:uppercase;">Sales</div>
+                <div class="kpi-value">{money(sales)}</div>
+                <div class="kpi-delta">{sales_delta_html}</div>
+            </div>
+            <div style="margin-top:10px;">
+                <div style="font-size:12px;font-weight:700;opacity:0.72;text-transform:uppercase;">Units</div>
+                <div class="kpi-value">{units:,.0f}</div>
+                <div class="kpi-delta">{units_delta_html}</div>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
 
-def _safe_nunique(df: pd.DataFrame, col: str) -> int:
-    if col not in df.columns or df.empty:
-        return 0
-    return int(df[col].dropna().nunique())
+def _rollup_by_dim(df: pd.DataFrame, dim: str) -> pd.DataFrame:
+    if dim not in df.columns or df.empty:
+        return pd.DataFrame(columns=[dim, "Sales", "Units"])
+
+    out = (
+        df.groupby(dim, as_index=False)
+        .agg(Sales=("Sales", "sum"), Units=("Units", "sum"))
+        .sort_values("Sales", ascending=False)
+        .reset_index(drop=True)
+    )
+    return out
+
+
+def _build_lookup(df_roll: pd.DataFrame, dim: str) -> dict[str, tuple[float, float]]:
+    if df_roll.empty:
+        return {}
+    out: dict[str, tuple[float, float]] = {}
+    for _, r in df_roll.iterrows():
+        out[str(r[dim])] = (float(r["Sales"]), float(r["Units"]))
+    return out
+
+
+def _render_split_header(current_label: str, compare_label: str):
+    left, mid, right = st.columns([1, 0.03, 1], gap="small")
+    with left:
+        st.markdown(f"### {current_label}")
+    with mid:
+        st.markdown(
+            """
+            <div style="width:100%;min-height:38px;background:rgba(20,20,20,0.7);border-radius:6px;"></div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with right:
+        st.markdown(f"### {compare_label}")
+
+
+def _render_split_cards(
+    *,
+    left_title: str,
+    right_title: str,
+    left_sales: float,
+    left_units: float,
+    right_sales: float,
+    right_units: float,
+    left_ref_sales: float,
+    left_ref_units: float,
+    right_ref_sales: float,
+    right_ref_units: float,
+    left_baseline: str,
+    right_baseline: str,
+):
+    left, mid, right = st.columns([1, 0.03, 1], gap="small")
+    with left:
+        _render_entity_kpi_card(
+            title=left_title,
+            sales=left_sales,
+            units=left_units,
+            sales_ref=left_ref_sales,
+            units_ref=left_ref_units,
+            baseline_name=left_baseline,
+        )
+    with mid:
+        st.markdown(
+            """
+            <div style="width:100%;min-height:270px;background:rgba(20,20,20,0.7);border-radius:6px;"></div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with right:
+        _render_entity_kpi_card(
+            title=right_title,
+            sales=right_sales,
+            units=right_units,
+            sales_ref=right_ref_sales,
+            units_ref=right_ref_units,
+            baseline_name=right_baseline,
+        )
+
+
+def _render_dimension_section(
+    *,
+    section_title: str,
+    dim: str,
+    top_n: int,
+    left_roll: pd.DataFrame,
+    right_roll: pd.DataFrame,
+    left_label: str,
+    right_label: str,
+):
+    st.markdown(f"## {section_title}")
+
+    left_top = left_roll.head(top_n).copy()
+    right_top = right_roll.head(top_n).copy()
+
+    left_lookup = _build_lookup(right_roll, dim)
+    right_lookup = _build_lookup(left_roll, dim)
+
+    max_rows = max(len(left_top), len(right_top), top_n)
+    for idx in range(max_rows):
+        if idx < len(left_top):
+            left_row = left_top.iloc[idx]
+            left_name = str(left_row[dim])
+            left_sales = float(left_row["Sales"])
+            left_units = float(left_row["Units"])
+        else:
+            left_name = "-"
+            left_sales = 0.0
+            left_units = 0.0
+
+        if idx < len(right_top):
+            right_row = right_top.iloc[idx]
+            right_name = str(right_row[dim])
+            right_sales = float(right_row["Sales"])
+            right_units = float(right_row["Units"])
+        else:
+            right_name = "-"
+            right_sales = 0.0
+            right_units = 0.0
+
+        left_ref_sales, left_ref_units = left_lookup.get(left_name, (0.0, 0.0))
+        right_ref_sales, right_ref_units = right_lookup.get(right_name, (0.0, 0.0))
+
+        # Use matching-entity totals as comparison baseline.
+        _render_split_cards(
+            left_title=f"{dim} #{idx + 1}: {left_name}",
+            right_title=f"{dim} #{idx + 1}: {right_name}",
+            left_sales=left_sales,
+            left_units=left_units,
+            right_sales=right_sales,
+            right_units=right_units,
+            left_ref_sales=left_ref_sales,
+            left_ref_units=left_ref_units,
+            right_ref_sales=right_ref_sales,
+            right_ref_units=right_ref_units,
+            left_baseline=f"{right_label} match",
+            right_baseline=f"{left_label} match",
+        )
 
 
 def render(ctx: dict):
@@ -68,45 +220,39 @@ def render(ctx: dict):
         st.info("No data available for the selected filters.")
         return
 
-    sales_a = float(dfA["Sales"].sum()) if "Sales" in dfA.columns else 0.0
-    sales_b = float(dfB["Sales"].sum()) if "Sales" in dfB.columns else 0.0
-    units_a = float(dfA["Units"].sum()) if "Units" in dfA.columns else 0.0
-    units_b = float(dfB["Units"].sum()) if "Units" in dfB.columns else 0.0
+    _render_split_header(a_lbl, b_lbl)
 
-    asp_a = (sales_a / units_a) if units_a != 0 else 0.0
-    asp_b = (sales_b / units_b) if units_b != 0 else 0.0
+    retailers_a = _rollup_by_dim(dfA, "Retailer")
+    retailers_b = _rollup_by_dim(dfB, "Retailer")
+    vendors_a = _rollup_by_dim(dfA, "Vendor")
+    vendors_b = _rollup_by_dim(dfB, "Vendor")
+    skus_a = _rollup_by_dim(dfA, "SKU")
+    skus_b = _rollup_by_dim(dfB, "SKU")
 
-    active_retailers_a = _safe_nunique(dfA, "Retailer")
-    active_retailers_b = _safe_nunique(dfB, "Retailer")
-    active_vendors_a = _safe_nunique(dfA, "Vendor")
-    active_vendors_b = _safe_nunique(dfB, "Vendor")
-    active_skus_a = _safe_nunique(dfA, "SKU")
-    active_skus_b = _safe_nunique(dfB, "SKU")
-    st.markdown(
-        f"<div style='margin-bottom:8px;opacity:0.8;'>Current: <strong>{a_lbl}</strong> &nbsp; | &nbsp; Compare: <strong>{b_lbl}</strong></div>",
-        unsafe_allow_html=True,
+    _render_dimension_section(
+        section_title="Top 3 Retailers",
+        dim="Retailer",
+        top_n=3,
+        left_roll=retailers_a,
+        right_roll=retailers_b,
+        left_label=a_lbl,
+        right_label=b_lbl,
     )
-
-    metric_pairs = [
-        ("Total Sales", sales_a, sales_b, "money"),
-        ("Total Units", units_a, units_b, "int"),
-        ("Average Sale Price", asp_a, asp_b, "money"),
-        ("Active SKUs", float(active_skus_a), float(active_skus_b), "int"),
-        ("Active Retailers", float(active_retailers_a), float(active_retailers_b), "int"),
-        ("Active Vendors", float(active_vendors_a), float(active_vendors_b), "int"),
-    ]
-
-    for title, current_val, compare_val, mode in metric_pairs:
-        c1, c2 = st.columns(2)
-        with c1:
-            _render_kpi_card(
-                f"{title} Current",
-                _fmt_value(current_val, mode),
-                _delta_html(current_val, compare_val, mode, "compare"),
-            )
-        with c2:
-            _render_kpi_card(
-                f"{title} Compare",
-                _fmt_value(compare_val, mode),
-                _delta_html(compare_val, current_val, mode, "current"),
-            )
+    _render_dimension_section(
+        section_title="Top 3 Vendors",
+        dim="Vendor",
+        top_n=3,
+        left_roll=vendors_a,
+        right_roll=vendors_b,
+        left_label=a_lbl,
+        right_label=b_lbl,
+    )
+    _render_dimension_section(
+        section_title="Top 5 SKUs",
+        dim="SKU",
+        top_n=5,
+        left_roll=skus_a,
+        right_roll=skus_b,
+        left_label=a_lbl,
+        right_label=b_lbl,
+    )
