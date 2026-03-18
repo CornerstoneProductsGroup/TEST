@@ -52,17 +52,21 @@ def _render_entity_kpi_card(
 
     st.markdown(
         f"""
-        <div class="kpi-card">
+        <div class="kpi-card kpi-compact-card">
             <div class="kpi-title">{title}</div>
-            <div style="margin-top:6px;">
-                <div style="font-size:12px;font-weight:700;opacity:0.72;text-transform:uppercase;">Sales</div>
-                <div class="kpi-value">{money(sales)}</div>
-                <div class="kpi-delta">{sales_delta_html}</div>
+            <div class="kpi-line-row" style="margin-top:6px;">
+                <div>
+                    <div class="kpi-mini-label">Units</div>
+                    <div class="kpi-mini-value">{units:,.0f}</div>
+                </div>
+                <div style="text-align:right;">
+                    <div class="kpi-mini-label">Sales</div>
+                    <div class="kpi-mini-value">{money(sales)}</div>
+                </div>
             </div>
-            <div style="margin-top:10px;">
-                <div style="font-size:12px;font-weight:700;opacity:0.72;text-transform:uppercase;">Units</div>
-                <div class="kpi-value">{units:,.0f}</div>
+            <div class="kpi-line-row" style="margin-top:8px;">
                 <div class="kpi-delta">{units_delta_html}</div>
+                <div class="kpi-delta" style="text-align:right;">{sales_delta_html}</div>
             </div>
         </div>
         """,
@@ -93,13 +97,13 @@ def _build_lookup(df_roll: pd.DataFrame, dim: str) -> dict[str, tuple[float, flo
 
 
 def _render_split_header(current_label: str, compare_label: str):
-    left, mid, right = st.columns([1, 0.03, 1], gap="small")
+    left, mid, right = st.columns([1, 0.04, 1], gap="small")
     with left:
         st.markdown(f"### {current_label}")
     with mid:
         st.markdown(
             """
-            <div style="width:100%;min-height:38px;background:rgba(20,20,20,0.7);border-radius:6px;"></div>
+            <div style="width:100%;min-height:34px;background:rgba(20,20,20,0.82);border-radius:4px;"></div>
             """,
             unsafe_allow_html=True,
         )
@@ -122,7 +126,7 @@ def _render_split_cards(
     left_baseline: str,
     right_baseline: str,
 ):
-    left, mid, right = st.columns([1, 0.03, 1], gap="small")
+    left, mid, right = st.columns([1, 0.04, 1], gap="small")
     with left:
         _render_entity_kpi_card(
             title=left_title,
@@ -135,7 +139,7 @@ def _render_split_cards(
     with mid:
         st.markdown(
             """
-            <div style="width:100%;min-height:270px;background:rgba(20,20,20,0.7);border-radius:6px;"></div>
+            <div style="width:100%;min-height:148px;background:rgba(20,20,20,0.82);border-radius:4px;"></div>
             """,
             unsafe_allow_html=True,
         )
@@ -160,7 +164,7 @@ def _render_dimension_section(
     left_label: str,
     right_label: str,
 ):
-    st.markdown(f"## {section_title}")
+    st.markdown(f"### {section_title}")
 
     left_top = left_roll.head(top_n).copy()
     right_top = right_roll.head(top_n).copy()
@@ -220,7 +224,41 @@ def render(ctx: dict):
         st.info("No data available for the selected filters.")
         return
 
+    st.markdown(
+        """
+        <style>
+        .kpi-compact-card{padding:10px 12px !important; border-radius:12px !important; margin-bottom:8px;}
+        .kpi-compact-card .kpi-title{font-size:11px !important;}
+        .kpi-mini-label{font-size:10px; font-weight:700; opacity:0.70; text-transform:uppercase;}
+        .kpi-mini-value{font-size:20px; font-weight:800; line-height:1.1;}
+        .kpi-line-row{display:flex; justify-content:space-between; gap:10px; align-items:flex-end;}
+        .kpi-compact-card .kpi-delta{font-size:12px !important;}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     _render_split_header(a_lbl, b_lbl)
+
+    total_sales_a = float(dfA["Sales"].sum()) if "Sales" in dfA.columns else 0.0
+    total_units_a = float(dfA["Units"].sum()) if "Units" in dfA.columns else 0.0
+    total_sales_b = float(dfB["Sales"].sum()) if "Sales" in dfB.columns else 0.0
+    total_units_b = float(dfB["Units"].sum()) if "Units" in dfB.columns else 0.0
+
+    _render_split_cards(
+        left_title="Period Total",
+        right_title="Period Total",
+        left_sales=total_sales_a,
+        left_units=total_units_a,
+        right_sales=total_sales_b,
+        right_units=total_units_b,
+        left_ref_sales=total_sales_b,
+        left_ref_units=total_units_b,
+        right_ref_sales=total_sales_a,
+        right_ref_units=total_units_a,
+        left_baseline=b_lbl,
+        right_baseline=a_lbl,
+    )
 
     retailers_a = _rollup_by_dim(dfA, "Retailer")
     retailers_b = _rollup_by_dim(dfB, "Retailer")
