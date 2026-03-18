@@ -150,6 +150,108 @@ def _render_split_cards(
         )
 
 
+def _render_grouped_dim_card(
+    *,
+    section_label: str,
+    dim: str,
+    top_roll: pd.DataFrame,
+    ref_roll: pd.DataFrame,
+    top_n: int,
+):
+    ref_lookup = _build_lookup(ref_roll, dim)
+    top_rows = top_roll.head(top_n)
+
+    rows_html = ""
+    for idx, (_, row) in enumerate(top_rows.iterrows(), start=1):
+        name = str(row[dim])
+        sales = float(row["Sales"])
+        units = float(row["Units"])
+        ref_sales, ref_units = ref_lookup.get(name, (0.0, 0.0))
+
+        sales_delta = _delta_stacked_html(sales, ref_sales, "money")
+        units_delta = _delta_stacked_html(units, ref_units, "int")
+        divider = "<div style='border-top:1px solid rgba(128,128,128,0.25);margin:10px 0 8px 0;'></div>" if idx > 1 else ""
+
+        rows_html += (
+            f"{divider}"
+            f"<div style='margin-bottom:2px;'>"
+            f"  <span style='opacity:0.60;font-size:11px;font-weight:700;'>#{idx}</span>"
+            f"  <strong style='font-size:14px;margin-left:5px;'>{name}</strong>"
+            f"</div>"
+            f"<div style='display:inline-flex;gap:32px;align-items:flex-start;'>"
+            f"  <div>"
+            f"    <div class='kpi-mini-label'>Sales</div>"
+            f"    <div class='kpi-mini-value'>{money(sales)}</div>"
+            f"    <div style='margin-top:3px;'>{sales_delta}</div>"
+            f"  </div>"
+            f"  <div>"
+            f"    <div class='kpi-mini-label'>Units</div>"
+            f"    <div class='kpi-mini-value'>{units:,.0f}</div>"
+            f"    <div style='margin-top:3px;'>{units_delta}</div>"
+            f"  </div>"
+            f"</div>"
+        )
+
+    st.markdown(
+        f"""
+        <div class="kpi-card kpi-group-card">
+            <div class="kpi-group-title">{section_label}</div>
+            {rows_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_retailer_vendor_row(
+    *,
+    retailers_a: pd.DataFrame,
+    retailers_b: pd.DataFrame,
+    vendors_a: pd.DataFrame,
+    vendors_b: pd.DataFrame,
+    a_lbl: str,
+    b_lbl: str,
+):
+    c_ret_a, c_vend_a, c_div, c_ret_b, c_vend_b = st.columns([1, 1, 0.04, 1, 1], gap="small")
+    with c_ret_a:
+        _render_grouped_dim_card(
+            section_label=f"Top 3 Retailers — {a_lbl}",
+            dim="Retailer",
+            top_roll=retailers_a,
+            ref_roll=retailers_b,
+            top_n=3,
+        )
+    with c_vend_a:
+        _render_grouped_dim_card(
+            section_label=f"Top 3 Vendors — {a_lbl}",
+            dim="Vendor",
+            top_roll=vendors_a,
+            ref_roll=vendors_b,
+            top_n=3,
+        )
+    with c_div:
+        st.markdown(
+            "<div style='width:100%;min-height:300px;background:rgba(20,20,20,0.82);border-radius:4px;'></div>",
+            unsafe_allow_html=True,
+        )
+    with c_ret_b:
+        _render_grouped_dim_card(
+            section_label=f"Top 3 Retailers — {b_lbl}",
+            dim="Retailer",
+            top_roll=retailers_b,
+            ref_roll=retailers_a,
+            top_n=3,
+        )
+    with c_vend_b:
+        _render_grouped_dim_card(
+            section_label=f"Top 3 Vendors — {b_lbl}",
+            dim="Vendor",
+            top_roll=vendors_b,
+            ref_roll=vendors_a,
+            top_n=3,
+        )
+
+
 def _render_dimension_section(
     *,
     section_title: str,
@@ -193,7 +295,6 @@ def _render_dimension_section(
         left_ref_sales, left_ref_units = left_lookup.get(left_name, (0.0, 0.0))
         right_ref_sales, right_ref_units = right_lookup.get(right_name, (0.0, 0.0))
 
-        # Use matching-entity totals as comparison baseline.
         _render_split_cards(
             left_title=f"{dim} #{idx + 1}: {left_name}",
             right_title=f"{dim} #{idx + 1}: {right_name}",
@@ -223,10 +324,12 @@ def render(ctx: dict):
     st.markdown(
         """
         <style>
-        .kpi-compact-card{padding:8px 12px !important; border-radius:10px !important; margin-bottom:6px; display:table !important; width:auto !important; min-width:0 !important;}
-        .kpi-compact-card .kpi-title{font-size:11px !important; white-space:nowrap;}
-        .kpi-mini-label{font-size:10px; font-weight:700; opacity:0.70; text-transform:uppercase; white-space:nowrap;}
-        .kpi-mini-value{font-size:20px; font-weight:800; line-height:1.1; white-space:nowrap;}
+        .kpi-compact-card{padding:12px 16px !important; border-radius:10px !important; margin-bottom:6px; display:table !important; width:auto !important; min-width:0 !important;}
+        .kpi-compact-card .kpi-title{font-size:13px !important; white-space:nowrap;}
+        .kpi-mini-label{font-size:11px; font-weight:700; opacity:0.70; text-transform:uppercase; white-space:nowrap;}
+        .kpi-mini-value{font-size:24px; font-weight:800; line-height:1.1; white-space:nowrap;}
+        .kpi-group-card{padding:12px 16px !important; border-radius:10px !important; margin-bottom:6px; width:100%; box-sizing:border-box;}
+        .kpi-group-title{font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; opacity:0.75; margin-bottom:8px;}
         </style>
         """,
         unsafe_allow_html=True,
@@ -261,24 +364,15 @@ def render(ctx: dict):
     skus_a = _rollup_by_dim(dfA, "SKU")
     skus_b = _rollup_by_dim(dfB, "SKU")
 
-    _render_dimension_section(
-        section_title="Top 3 Retailers",
-        dim="Retailer",
-        top_n=3,
-        left_roll=retailers_a,
-        right_roll=retailers_b,
-        left_label=a_lbl,
-        right_label=b_lbl,
+    _render_retailer_vendor_row(
+        retailers_a=retailers_a,
+        retailers_b=retailers_b,
+        vendors_a=vendors_a,
+        vendors_b=vendors_b,
+        a_lbl=a_lbl,
+        b_lbl=b_lbl,
     )
-    _render_dimension_section(
-        section_title="Top 3 Vendors",
-        dim="Vendor",
-        top_n=3,
-        left_roll=vendors_a,
-        right_roll=vendors_b,
-        left_label=a_lbl,
-        right_label=b_lbl,
-    )
+
     _render_dimension_section(
         section_title="Top 5 SKUs",
         dim="SKU",
