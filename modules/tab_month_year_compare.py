@@ -96,8 +96,8 @@ def render_visual_executive_dashboard(
     NEGATIVE_BAR = "#c62828"
     NEUTRAL_BAR = "#808080"
 
-    TOTAL_BLOCK_VALUE = 25000.0
-    CHANGE_BLOCK_VALUE = 1000.0
+    TOTAL_BLOCK_VALUE = 100000.0
+    CHANGE_BLOCK_VALUE = 10000.0
 
     def is_year_label(lbl: str) -> bool:
         return bool(re.fullmatch(r"\d{4}", str(lbl or "").strip()))
@@ -864,7 +864,7 @@ def render_visual_executive_dashboard(
     vendor_changes = collect_vendor_changes(dfA, dfB)
 
     st.markdown("#### Sales Change by Retailer")
-    st.caption("Changes per retailer: 1 block = $1,000")
+    st.caption("Changes per retailer: 1 block = $10,000")
 
     if not retailer_changes.empty:
         retailer_block_chart = simple_period_block_chart(
@@ -879,7 +879,7 @@ def render_visual_executive_dashboard(
         st.caption("No retailer change data available.")
 
     st.markdown("#### Sales Change by Vendor")
-    st.caption("Changes per vendor: 1 block = $1,000")
+    st.caption("Changes per vendor: 1 block = $10,000")
 
     if not vendor_changes.empty:
         vendor_block_chart = simple_period_block_chart(
@@ -898,7 +898,7 @@ def render_visual_executive_dashboard(
     change_rows = collect_change_contributors(dfA, dfB)
 
     st.markdown("#### Sales Change Compare")
-    st.caption("Totals: 1 block = $25,000 • Retailer changes: 1 block = $1,000")
+    st.caption("Totals: 1 block = $100,000 • Retailer changes: 1 block = $10,000")
 
     block_chart = simple_period_block_chart(
         current_value=float(kA["Sales"]),
