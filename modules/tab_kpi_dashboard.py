@@ -31,8 +31,8 @@ def _delta_stacked_html(value: float, reference: float, mode: str) -> str:
     delta_val = _fmt_value(abs(delta), mode)
 
     return (
-        f"<div style='color:{color};font-weight:800;font-size:11px;line-height:1.3;'>{arrow} {delta_val}</div>"
-        f"<div style='color:{color};font-weight:700;font-size:11px;line-height:1.3;'>{pct:,.1f}%</div>"
+        f"<div style='color:{color};font-weight:800;font-size:13px;line-height:1.3;'>{arrow} {delta_val}</div>"
+        f"<div style='color:{color};font-weight:700;font-size:13px;line-height:1.3;'>{pct:,.1f}%</div>"
     )
 
 
@@ -175,8 +175,8 @@ def _render_grouped_dim_card(
         rows_html += (
             f"{divider}"
             f"<div style='margin-bottom:2px;'>"
-            f"  <span style='opacity:0.60;font-size:11px;font-weight:700;'>#{idx}</span>"
-            f"  <strong style='font-size:14px;margin-left:5px;'>{name}</strong>"
+            f"  <span style='opacity:0.60;font-size:13px;font-weight:700;'>#{idx}</span>"
+            f"  <strong style='font-size:16px;margin-left:5px;'>{name}</strong>"
             f"</div>"
             f"<div style='display:inline-flex;gap:32px;align-items:flex-start;'>"
             f"  <div>"
@@ -325,11 +325,11 @@ def render(ctx: dict):
         """
         <style>
         .kpi-compact-card{padding:12px 16px !important; border-radius:10px !important; margin-bottom:6px; display:table !important; width:auto !important; min-width:0 !important;}
-        .kpi-compact-card .kpi-title{font-size:13px !important; white-space:nowrap;}
-        .kpi-mini-label{font-size:11px; font-weight:700; opacity:0.70; text-transform:uppercase; white-space:nowrap;}
-        .kpi-mini-value{font-size:24px; font-weight:800; line-height:1.1; white-space:nowrap;}
-        .kpi-group-card{padding:12px 16px !important; border-radius:10px !important; margin-bottom:6px; width:100%; box-sizing:border-box;}
-        .kpi-group-title{font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; opacity:0.75; margin-bottom:8px;}
+        .kpi-compact-card .kpi-title{font-size:15px !important; white-space:nowrap;}
+        .kpi-mini-label{font-size:13px; font-weight:700; opacity:0.70; text-transform:uppercase; white-space:nowrap;}
+        .kpi-mini-value{font-size:28px; font-weight:800; line-height:1.1; white-space:nowrap;}
+        .kpi-group-card{padding:12px 16px !important; border-radius:10px !important; margin-bottom:6px; display:inline-block !important; width:auto !important; min-width:0 !important;}
+        .kpi-group-title{font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; opacity:0.75; margin-bottom:8px; white-space:nowrap;}
         </style>
         """,
         unsafe_allow_html=True,
@@ -361,8 +361,6 @@ def render(ctx: dict):
     retailers_b = _rollup_by_dim(dfB, "Retailer")
     vendors_a = _rollup_by_dim(dfA, "Vendor")
     vendors_b = _rollup_by_dim(dfB, "Vendor")
-    skus_a = _rollup_by_dim(dfA, "SKU")
-    skus_b = _rollup_by_dim(dfB, "SKU")
 
     _render_retailer_vendor_row(
         retailers_a=retailers_a,
@@ -371,14 +369,4 @@ def render(ctx: dict):
         vendors_b=vendors_b,
         a_lbl=a_lbl,
         b_lbl=b_lbl,
-    )
-
-    _render_dimension_section(
-        section_title="Top 5 SKUs",
-        dim="SKU",
-        top_n=5,
-        left_roll=skus_a,
-        right_roll=skus_b,
-        left_label=a_lbl,
-        right_label=b_lbl,
     )
