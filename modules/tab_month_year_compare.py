@@ -864,6 +864,12 @@ def render_visual_executive_dashboard(
         dec["Start"] = 0.0
         return inc, dec
 
+    def render_with_side_margins(chart):
+        # Keep chart gutters symmetric so visuals do not run to the page edge.
+        left_pad, middle, right_pad = st.columns([0.04, 0.92, 0.04])
+        with middle:
+            st.altair_chart(chart, use_container_width=True)
+
     def mover_lollipop_chart(df: pd.DataFrame, metric_title: str, positive: bool, height: int = 430):
         if df.empty:
             return None
@@ -990,7 +996,7 @@ def render_visual_executive_dashboard(
     current_chart = single_total_bar_chart(current_sales, "Current", current_color, total_xmax)
 
     stacked_compare_view = alt.vconcat(compare_chart, change_chart, current_chart, spacing=0).resolve_scale(x="independent")
-    st.altair_chart(stacked_compare_view, use_container_width=True)
+    render_with_side_margins(stacked_compare_view)
 
     st.write("")
 
@@ -1009,7 +1015,7 @@ def render_visual_executive_dashboard(
         vendor_current_chart,
         spacing=0,
     ).resolve_scale(x="independent")
-    st.altair_chart(stacked_vendor_view, use_container_width=True)
+    render_with_side_margins(stacked_vendor_view)
 
     st.write("")
 
@@ -1035,7 +1041,7 @@ def render_visual_executive_dashboard(
         sku_current_chart,
         spacing=0,
     ).resolve_scale(x="independent")
-    st.altair_chart(stacked_sku_view, use_container_width=True)
+    render_with_side_margins(stacked_sku_view)
 
 
 def render_standard_view(
