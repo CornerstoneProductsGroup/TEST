@@ -541,20 +541,21 @@ def run_app():
         render_visual_analysis_view(ctx)
         return
 
-    render_model_header_and_summary(
-        analysis_view=analysis_view,
-        scope=scope,
-        content_view=content_view,
-        compare_mode=compare_mode,
-        pA=pA,
-        pB=pB,
-        a_lbl=a_lbl,
-        b_lbl=b_lbl,
-        kA=kA,
-        kB=kB,
-        dfA=dfA,
-        dfB=dfB,
-        driver_level=driver_level,
-    )
+    if analysis_view != "KPI Dashboard":
+        render_model_header_and_summary(
+            analysis_view=analysis_view,
+            scope=scope,
+            content_view=content_view,
+            compare_mode=compare_mode,
+            pA=pA,
+            pB=pB,
+            a_lbl=a_lbl,
+            b_lbl=b_lbl,
+            kA=kA,
+            kB=kB,
+            dfA=dfA,
+            dfB=dfB,
+            driver_level=driver_level,
+        )
 
     render_current_analysis_view(ctx)
