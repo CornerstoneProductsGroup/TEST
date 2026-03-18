@@ -1014,7 +1014,29 @@ def render_visual_only(ctx: dict):
 
         return pd.concat([pos, neg], ignore_index=True)[["Label", "Delta", "ColorHex", "Direction", "Side"]]
 
-    def _sales_contribution_block_chart(current_value: float, compare_value: float, changes_df: pd.DataFrame):
+    def _collect_vendor_change_rows(df_cur: pd.DataFrame, df_cmp: pd.DataFrame) -> pd.DataFrame:
+        cur = df_cur.groupby("Vendor", as_index=False).agg(Current=("Sales", "sum"))
+        cmpv = df_cmp.groupby("Vendor", as_index=False).agg(Compare=("Sales", "sum"))
+        out = cur.merge(cmpv, on="Vendor", how="outer").fillna(0.0)
+        out["Label"] = out["Vendor"].astype(str)
+        out["Delta"] = out["Current"] - out["Compare"]
+        out = out[np.isfinite(out["Delta"])].copy()
+        out = out[out["Delta"] != 0].copy()
+
+        pos = out[out["Delta"] > 0].sort_values(["Delta", "Label"], ascending=[False, True]).copy()
+        neg = out[out["Delta"] < 0].sort_values(["Delta", "Label"], ascending=[True, True]).copy()
+
+        pos["ColorHex"] = POSITIVE_BAR
+        pos["Direction"] = "right"
+        pos["Side"] = "right"
+
+        neg["ColorHex"] = NEGATIVE_BAR
+        neg["Direction"] = "left"
+        neg["Side"] = "left"
+
+        return pd.concat([pos, neg], ignore_index=True)[["Label", "Delta", "ColorHex", "Direction", "Side"]]
+
+    def _sales_contribution_block_chart(current_value: float, compare_value: float, changes_df: pd.DataFrame, title: str = "Sales Contribution Change"):
         def _total_label(v: float) -> str:
             return money(float(v))
 
@@ -1211,7 +1233,7 @@ def render_visual_only(ctx: dict):
 
         return alt.layer(*layers).properties(
             height=max(300, len(order) * 42),
-            title=alt.TitleParams("Sales Contribution Change by Retailer", fontSize=CHART_TITLE_FONTSIZE, color=TITLE_TEXT_COLOR),
+            title=alt.TitleParams(title, fontSize=CHART_TITLE_FONTSIZE, color=TITLE_TEXT_COLOR),
         )
 
     def _vendor_delta_df() -> pd.DataFrame:
@@ -1402,15 +1424,25 @@ def render_visual_only(ctx: dict):
     with units_col:
         _render_total_bars(_totals_df("Units"), "Total Units", "Units")
 
-    st.caption("Total bars: 1 block = $30,000 • Retailer change bars: 1 block = $1,000")
+    st.caption("Total bars: 1 block = $30,000 • Retailer change bars: 1 block = $1,000 • Vendor change bars: 1 block = $1,000")
 
     retailer_changes = _collect_retailer_change_rows(dfA, dfB)
     contrib_chart = _sales_contribution_block_chart(
         current_value=float(kA.get("Sales", 0.0)),
         compare_value=float(kB.get("Sales", 0.0)),
         changes_df=retailer_changes,
+        title="Sales Contribution Change by Retailer",
     )
     st.altair_chart(contrib_chart, use_container_width=True)
+
+    vendor_changes = _collect_vendor_change_rows(dfA, dfB)
+    vendor_contrib_chart = _sales_contribution_block_chart(
+        current_value=float(kA.get("Sales", 0.0)),
+        compare_value=float(kB.get("Sales", 0.0)),
+        changes_df=vendor_changes,
+        title="Sales Contribution Change by Vendor",
+    )
+    st.altair_chart(vendor_contrib_chart, use_container_width=True)
 
     vendor_df = _vendor_delta_df()
     vendor_pos = vendor_df[vendor_df["Sales_Δ"] > 0].sort_values("Sales_Δ", ascending=False).head(5).copy()
