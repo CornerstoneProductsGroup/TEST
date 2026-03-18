@@ -88,19 +88,24 @@ def _build_lookup(df_roll: pd.DataFrame, dim: str) -> dict[str, tuple[float, flo
     return out
 
 
+def _render_center_divider(min_height: int):
+    st.markdown(
+        f"<div class='kpi-center-line' style='min-height:{min_height}px;'></div>",
+        unsafe_allow_html=True,
+    )
+
+
 def _render_split_header(current_label: str, compare_label: str):
     left, mid, right = st.columns([1, 0.04, 1], gap="small")
     with left:
-        st.markdown(f"### {current_label}")
-    with mid:
         st.markdown(
-            """
-            <div style="width:100%;min-height:34px;background:rgba(20,20,20,0.82);border-radius:4px;"></div>
-            """,
+            f"<div style='display:flex;justify-content:flex-end;'><h3 style='margin:0;'>{current_label}</h3></div>",
             unsafe_allow_html=True,
         )
+    with mid:
+        _render_center_divider(34)
     with right:
-        st.markdown(f"### {compare_label}")
+        st.markdown(f"<h3 style='margin:0;'>{compare_label}</h3>", unsafe_allow_html=True)
 
 
 def _render_split_cards(
@@ -130,12 +135,7 @@ def _render_split_cards(
             align="right",
         )
     with mid:
-        st.markdown(
-            """
-            <div style="width:100%;min-height:148px;background:rgba(20,20,20,0.82);border-radius:4px;"></div>
-            """,
-            unsafe_allow_html=True,
-        )
+        _render_center_divider(148)
     with right:
         _render_entity_kpi_card(
             title=right_title,
@@ -218,6 +218,7 @@ def _render_retailer_vendor_row(
             top_roll=vendors_a,
             ref_roll=vendors_b,
             top_n=3,
+            align="right",
         )
     with c_vend_a:
         _render_grouped_dim_card(
@@ -229,10 +230,7 @@ def _render_retailer_vendor_row(
             align="right",
         )
     with c_div:
-        st.markdown(
-            "<div style='width:100%;min-height:300px;background:rgba(20,20,20,0.82);border-radius:4px;'></div>",
-            unsafe_allow_html=True,
-        )
+        _render_center_divider(300)
     with c_ret_b:
         _render_grouped_dim_card(
             section_label=f"Top 3 Retailers — {b_lbl}",
@@ -329,6 +327,7 @@ def render(ctx: dict):
         .kpi-mini-value{font-size:28px; font-weight:800; line-height:1.1; white-space:nowrap;}
         .kpi-group-card{padding:12px 16px !important; border-radius:10px !important; margin-bottom:6px; display:inline-block !important; width:auto !important; min-width:0 !important;}
         .kpi-group-title{font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; opacity:0.75; margin-bottom:8px; white-space:nowrap;}
+        .kpi-center-line{width:100%;background:rgba(20,20,20,0.82);border-radius:0;}
         </style>
         """,
         unsafe_allow_html=True,
