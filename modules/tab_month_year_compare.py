@@ -870,6 +870,12 @@ def render_visual_executive_dashboard(
         with chart_col:
             st.altair_chart(chart, use_container_width=True)
 
+    def render_change_section(title: str, subtitle: str, chart):
+        with st.container(border=True):
+            st.markdown(f"#### {title}")
+            st.caption(subtitle)
+            render_with_side_margins(chart)
+
     def mover_lollipop_chart(df: pd.DataFrame, metric_title: str, positive: bool, height: int = 430):
         if df.empty:
             return None
@@ -988,22 +994,20 @@ def render_visual_executive_dashboard(
 
     retailer_change_rows = collect_change_contributors_by_dim(dfA, dfB, "Retailer")
 
-    st.markdown("#### Sales Change Compare")
-    st.caption("Retailers: positives first (highest to lowest), then negatives (closest to zero down to most negative)")
-
     compare_chart = single_total_bar_chart(compare_sales, "Compare", compare_color, total_xmax)
     change_chart = change_only_center_chart(retailer_change_rows)
     current_chart = single_total_bar_chart(current_sales, "Current", current_color, total_xmax)
 
     stacked_compare_view = alt.vconcat(compare_chart, change_chart, current_chart, spacing=0).resolve_scale(x="independent")
-    render_with_side_margins(stacked_compare_view)
+    render_change_section(
+        "Sales Change Compare",
+        "Retailers: positives first (highest to lowest), then negatives (closest to zero down to most negative)",
+        stacked_compare_view,
+    )
 
-    st.write("")
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
     vendor_change_rows = collect_change_contributors_by_dim(dfA, dfB, "Vendor")
-
-    st.markdown("#### Sales Change Compare by Vendor")
-    st.caption("Vendors: positives first (highest to lowest), then negatives (closest to zero down to most negative)")
 
     vendor_compare_chart = single_total_bar_chart(compare_sales, "Compare", compare_color, total_xmax)
     vendor_change_chart = change_only_center_chart(vendor_change_rows)
@@ -1015,9 +1019,13 @@ def render_visual_executive_dashboard(
         vendor_current_chart,
         spacing=0,
     ).resolve_scale(x="independent")
-    render_with_side_margins(stacked_vendor_view)
+    render_change_section(
+        "Sales Change Compare by Vendor",
+        "Vendors: positives first (highest to lowest), then negatives (closest to zero down to most negative)",
+        stacked_vendor_view,
+    )
 
-    st.write("")
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
     sku_change_rows = collect_change_contributors_by_dim(
         dfA,
@@ -1027,9 +1035,6 @@ def render_visual_executive_dashboard(
         top_n_neg=10,
         pick_most_negative=True,
     )
-
-    st.markdown("#### Sales Change Compare by SKU")
-    st.caption("Top 10 positive SKUs first, then top 10 negative SKUs")
 
     sku_compare_chart = single_total_bar_chart(compare_sales, "Compare", compare_color, total_xmax)
     sku_change_chart = change_only_center_chart(sku_change_rows)
@@ -1041,7 +1046,11 @@ def render_visual_executive_dashboard(
         sku_current_chart,
         spacing=0,
     ).resolve_scale(x="independent")
-    render_with_side_margins(stacked_sku_view)
+    render_change_section(
+        "Sales Change Compare by SKU",
+        "Top 10 positive SKUs first, then top 10 negative SKUs",
+        stacked_sku_view,
+    )
 
 
 def render_standard_view(
