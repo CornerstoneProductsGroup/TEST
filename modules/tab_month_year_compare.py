@@ -1113,6 +1113,7 @@ def render_standard_view(
     comp_b = dfB.groupby(pivot_dim, as_index=False).agg(Sales_B=("Sales", "sum"))
     comp = comp_a.merge(comp_b, on=pivot_dim, how="outer").fillna(0.0)
     comp["Difference"] = comp["Sales_A"] - comp["Sales_B"]
+    comp["Difference_numeric"] = comp["Difference"].copy()
     comp["% Change"] = np.where(comp["Sales_B"] != 0, comp["Difference"] / comp["Sales_B"], np.nan)
     comp = comp.sort_values("Sales_A", ascending=False)
 
@@ -1123,19 +1124,41 @@ def render_standard_view(
                 "Sales_A": comp["Sales_A"].sum(),
                 "Sales_B": comp["Sales_B"].sum(),
                 "Difference": comp["Difference"].sum(),
+                "Difference_numeric": comp["Difference"].sum(),
                 "% Change": np.nan if comp["Sales_B"].sum() == 0 else comp["Difference"].sum() / comp["Sales_B"].sum(),
             }
         ]
     )
     comp_show = pd.concat([comp, total], ignore_index=True)
     show = rename_ab_columns(comp_show.copy(), a_lbl, b_lbl)
-    sales_a_col = f"Sales ({a_lbl})"
-    sales_b_col = f"Sales ({b_lbl})" if b_lbl else "Sales (Comparison)"
+    sales_a_col = "Sales (Current)"
+    sales_b_col = "Sales (Compare)"
+    show.rename(columns={f"Sales ({a_lbl})": sales_a_col, f"Sales ({b_lbl})": sales_b_col}, inplace=True)
     show[sales_a_col] = show[sales_a_col].map(money)
     show[sales_b_col] = show[sales_b_col].map(money)
-    show["Difference"] = show["Difference"].map(money)
+    
+    # Color the Difference column based on positive/negative
+    def format_difference(val):
+        color = "#2e7d32" if val > 0 else ("#c62828" if val < 0 else "var(--text-color)")
+        arrow = "▲ " if val > 0 else ("▼ " if val < 0 else "")
+        return f"<span style='color:{color}'>{arrow}{money(val)}</span>"
+    
+    show["Difference_numeric"] = show["Difference_numeric"].fillna(0.0)
+    show["Difference"] = show["Difference_numeric"].map(format_difference)
+    
     show["% Change"] = show["% Change"].map(pct_fmt)
-    render_shaded_total_table(show[[pivot_dim, sales_a_col, sales_b_col, "Difference", "% Change"]], height=900)
+    
+    # Calculate dynamic height based on number of rows
+    num_rows = len(show)
+    row_height = 35
+    header_height = 50
+    dynamic_height = header_height + (num_rows * row_height)
+    max_height = 600
+    final_height = min(dynamic_height, max_height)
+    
+    # Display table with HTML rendering for colored Difference column
+    display_cols = [pivot_dim, sales_a_col, sales_b_col, "Difference", "% Change"]
+    st.markdown(show[display_cols].to_html(escape=False, index=False, classes='report-table'), unsafe_allow_html=True)
 
     st.divider()
     st.subheader("Movers")
@@ -1144,6 +1167,7 @@ def render_standard_view(
     b = dfB.groupby("SKU", as_index=False).agg(Sales_B=("Sales", "sum"))
     m = a.merge(b, on="SKU", how="outer").fillna(0.0)
     m["Difference"] = m["Sales_A"] - m["Sales_B"]
+    m["Difference_numeric"] = m["Difference"].copy()
     m["% Change"] = np.where(m["Sales_B"] != 0, m["Difference"] / m["Sales_B"], np.nan)
     m = m[(m["Sales_A"] >= min_sales) | (m["Sales_B"] >= min_sales)].copy()
 
@@ -1151,22 +1175,25 @@ def render_standard_view(
     dec = m[m["Difference"] < 0].sort_values("Difference", ascending=True).head(15).copy()
 
     for ddf in (inc, dec):
-        ddf.rename(columns={"Sales_A": f"Sales ({a_lbl})", "Sales_B": f"Sales ({b_lbl})"}, inplace=True)
-        ddf[f"Sales ({a_lbl})"] = ddf[f"Sales ({a_lbl})"].map(money)
-        ddf[f"Sales ({b_lbl})"] = ddf[f"Sales ({b_lbl})"].map(money)
-        ddf["Difference"] = ddf["Difference"].map(money)
+        ddf.rename(columns={"Sales_A": "Sales (Current)", "Sales_B": "Sales (Compare)", "Difference_numeric": "Diff_numeric"}, inplace=True)
+        ddf["Sales (Current)"] = ddf["Sales (Current)"].map(money)
+        ddf["Sales (Compare)"] = ddf["Sales (Compare)"].map(money)
+        ddf["Diff_numeric"] = ddf["Diff_numeric"].fillna(0.0)
+        ddf["Difference"] = ddf["Diff_numeric"].map(lambda val: f"<span style='color:{('#2e7d32' if val > 0 else '#c62828' if val < 0 else 'var(--text-color)')}'>{('▲ ' if val > 0 else '▼ ' if val < 0 else '')}{money(val)}</span>")
         ddf["% Change"] = ddf["% Change"].map(pct_fmt)
 
     x, y = st.columns(2)
     with x:
         st.markdown("**Top Increasing**")
         if not inc.empty:
-            render_df(inc[["SKU", f"Sales ({a_lbl})", f"Sales ({b_lbl})", "Difference", "% Change"]], height=360)
+            inc_display = inc[["SKU", "Sales (Current)", "Sales (Compare)", "Difference", "% Change"]].copy()
+            st.markdown(inc_display.to_html(escape=False, index=False, classes='report-table'), unsafe_allow_html=True)
         else:
             st.caption("None.")
     with y:
         st.markdown("**Top Declining**")
         if not dec.empty:
-            render_df(dec[["SKU", f"Sales ({a_lbl})", f"Sales ({b_lbl})", "Difference", "% Change"]], height=360)
+            dec_display = dec[["SKU", "Sales (Current)", "Sales (Compare)", "Difference", "% Change"]].copy()
+            st.markdown(dec_display.to_html(escape=False, index=False, classes='report-table'), unsafe_allow_html=True)
         else:
             st.caption("None.")
