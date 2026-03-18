@@ -582,6 +582,18 @@ def _render_compare_section(df_base: pd.DataFrame, metric: str, default_period):
         else:
             comp = comp.sort_values("Units Δ", ascending=False)
 
+        # Add total row (before formatting)
+        total_row = pd.DataFrame({
+            "Retailer": ["TOTAL"],
+            "Current_Sales": [comp["Current_Sales"].sum()],
+            "Compare_Sales": [comp["Compare_Sales"].sum()],
+            "Sales Δ": [comp["Sales Δ"].sum()],
+            "Current_Units": [comp["Current_Units"].sum()],
+            "Compare_Units": [comp["Compare_Units"].sum()],
+            "Units Δ": [comp["Units Δ"].sum()],
+        })
+        comp = pd.concat([comp, total_row], ignore_index=True)
+
         show = comp.copy()
         show["Current_Sales"] = show["Current_Sales"].map(money)
         show["Compare_Sales"] = show["Compare_Sales"].map(money)
@@ -592,40 +604,6 @@ def _render_compare_section(df_base: pd.DataFrame, metric: str, default_period):
 
         st.markdown("#### Compare Breakdown")
         render_df(show, height=360)
-
-    wk_cur = (
-        df_cur.groupby("WeekEnd", as_index=False)
-        .agg(Current_Value=(metric, "sum"))
-        .sort_values("WeekEnd")
-    )
-    wk_cmp = (
-        df_cmp.groupby("WeekEnd", as_index=False)
-        .agg(Compare_Value=(metric, "sum"))
-        .sort_values("WeekEnd")
-    )
-
-    wk_cur["Week"] = pd.to_datetime(wk_cur["WeekEnd"]).dt.date.astype(str)
-    wk_cmp["Week"] = pd.to_datetime(wk_cmp["WeekEnd"]).dt.date.astype(str)
-
-    wk_show = wk_cur[["Week", "Current_Value"]].merge(
-        wk_cmp[["Week", "Compare_Value"]],
-        on="Week",
-        how="outer",
-    ).fillna(0.0)
-
-    wk_show["Δ"] = wk_show["Current_Value"] - wk_show["Compare_Value"]
-
-    if metric == "Sales":
-        wk_show["Current_Value"] = wk_show["Current_Value"].map(money)
-        wk_show["Compare_Value"] = wk_show["Compare_Value"].map(money)
-        wk_show["Δ"] = wk_show["Δ"].map(money)
-    else:
-        wk_show["Current_Value"] = wk_show["Current_Value"].map(lambda v: f"{v:,.0f}")
-        wk_show["Compare_Value"] = wk_show["Compare_Value"].map(lambda v: f"{v:,.0f}")
-        wk_show["Δ"] = wk_show["Δ"].map(lambda v: f"{v:,.0f}")
-
-    st.markdown("#### Weekly Compare")
-    render_df(wk_show, height=320)
 
 
 def render(ctx: dict):
@@ -745,14 +723,48 @@ def render(ctx: dict):
 
     if advanced_compare:
         st.markdown("#### Advanced Compare Settings")
-        ac_col1, ac_col2 = st.columns(2)
-        with ac_col1:
-            ac_timeframe = st.selectbox(
-                "Compare Timeframe",
-                TIMEFRAME_OPTIONS,
-                index=1,
-                key="advanced_compare_timeframe",
+        ac_col0, ac_col1, ac_col2 = st.columns(3)
+        
+        with ac_col0:
+            ac_timeframe_type = st.selectbox(
+                "Timeframe Type",
+                ["Multi-week compare", "Months", "Years"],
+                index=0,
+                key="advanced_compare_timeframe_type",
             )
+        
+        with ac_col1:
+            if ac_timeframe_type == "Multi-week compare":
+                ac_weeks = st.selectbox(
+                    "Weeks to compare",
+                    [4, 8, 12, 16, 20, 24],
+                    index=2,
+                    key="advanced_compare_weeks",
+                )
+                # Create a period based on weeks
+                end_date = pd.Timestamp.now()
+                start_date = end_date - pd.Timedelta(weeks=ac_weeks)
+                ac_period = (start_date, end_date)
+                ac_df_sel = _filter_period(df_lookup_all, ac_period)
+            elif ac_timeframe_type == "Months":
+                month_options = available_month_labels(df_lookup_all)
+                ac_month = st.selectbox(
+                    "Select month",
+                    month_options,
+                    index=len(month_options) - 1 if month_options else 0,
+                    key="advanced_compare_month",
+                )
+                ac_df_sel = filter_by_period_labels(df_lookup_all, [ac_month], "Month") if month_options else df_lookup_all.iloc[0:0].copy()
+            else:  # Years
+                year_options = available_year_labels(df_lookup_all)
+                ac_year = st.selectbox(
+                    "Select year",
+                    year_options,
+                    index=len(year_options) - 1 if year_options else 0,
+                    key="advanced_compare_year",
+                )
+                ac_df_sel = filter_by_period_labels(df_lookup_all, [ac_year], "Year") if year_options else df_lookup_all.iloc[0:0].copy()
+        
         with ac_col2:
             ac_metric = st.selectbox(
                 "Compare Metric",
@@ -761,5 +773,11 @@ def render(ctx: dict):
                 key="advanced_compare_metric",
             )
 
-        ac_period, ac_df_sel = _pick_lookup_period(df_lookup_all, ac_timeframe)
-        _render_compare_section(df_lookup_all, ac_metric, ac_period)
+        if ac_timeframe_type == "Multi-week compare":
+            _render_compare_section(df_lookup_all, ac_metric, ac_period)
+        else:
+            # For months/years, create a dummy period for the compare section
+            max_date = df_lookup_all["Date"].max()
+            min_date = df_lookup_all["Date"].min()
+            dummy_period = (min_date, max_date)
+            _render_compare_section(df_lookup_all, ac_metric, dummy_period)
