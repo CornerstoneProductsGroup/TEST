@@ -870,6 +870,18 @@ def render_visual_executive_dashboard(
         with chart_col:
             st.altair_chart(chart, use_container_width=True)
 
+    st.markdown(
+        """
+        <style>
+        [data-testid="stVerticalBlockBorderWrapper"] > div:first-child {
+            border-width: 2px !important;
+            border-radius: 8px !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     def render_change_section(title: str, subtitle: str, chart):
         with st.container(border=True):
             st.markdown(f"#### {title}")
@@ -953,28 +965,30 @@ def render_visual_executive_dashboard(
     sales_col, units_col = st.columns(2)
 
     with sales_col:
-        st.markdown(f"#### Sales Total ({a_lbl} vs {b_lbl})")
-        sales_chart = stacked_total_chart(
-            metric_name="Sales",
-            df_cur=dfA,
-            df_cmp=dfB,
-            fallback_cur=float(kA["Sales"]),
-            fallback_cmp=float(kB["Sales"]),
-        )
-        st.altair_chart(sales_chart, use_container_width=True)
+        with st.container(border=True):
+            st.markdown(f"#### Sales Total ({a_lbl} vs {b_lbl})")
+            sales_chart = stacked_total_chart(
+                metric_name="Sales",
+                df_cur=dfA,
+                df_cmp=dfB,
+                fallback_cur=float(kA["Sales"]),
+                fallback_cmp=float(kB["Sales"]),
+            )
+            st.altair_chart(sales_chart, use_container_width=True)
 
     with units_col:
-        st.markdown(f"#### Units Total ({a_lbl} vs {b_lbl})")
-        units_chart = stacked_total_chart(
-            metric_name="Units",
-            df_cur=dfA,
-            df_cmp=dfB,
-            fallback_cur=float(kA["Units"]),
-            fallback_cmp=float(kB["Units"]),
-        )
-        st.altair_chart(units_chart, use_container_width=True)
+        with st.container(border=True):
+            st.markdown(f"#### Units Total ({a_lbl} vs {b_lbl})")
+            units_chart = stacked_total_chart(
+                metric_name="Units",
+                df_cur=dfA,
+                df_cmp=dfB,
+                fallback_cur=float(kA["Units"]),
+                fallback_cmp=float(kB["Units"]),
+            )
+            st.altair_chart(units_chart, use_container_width=True)
 
-    st.write("")
+    st.markdown("<div style='height:2px'></div>", unsafe_allow_html=True)
 
     current_sales = float(kA["Sales"])
     compare_sales = float(kB["Sales"])
