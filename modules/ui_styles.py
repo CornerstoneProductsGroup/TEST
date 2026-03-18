@@ -3,17 +3,17 @@ import streamlit as st
 def apply_global_styles():
     st.markdown("""
     <style>
-    /* KPI Card Styling - Enhanced */
-    .kpi-card{border:2px solid rgba(128,128,128,0.35);border-radius:16px;padding:16px 18px;background: linear-gradient(135deg, var(--secondary-background-color) 0%, rgba(79, 172, 254, 0.03) 100%);box-shadow:0 2px 8px rgba(0,0,0,0.08);}
-    .kpi-title{font-size:12px;font-weight:600;letter-spacing:0.02em;color: var(--text-color);opacity: 0.70;text-transform:uppercase;}
-    .kpi-value{font-size:28px;font-weight:800;line-height:1.15;color: var(--text-color);background: linear-gradient(135deg, #4FAAFE 0%, #00D4FF 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+    /* KPI Card Styling - Simple with color-coded changes */
+    .kpi-card{border:2px solid rgba(128,128,128,0.35);border-radius:16px;padding:16px 18px;background: var(--secondary-background-color);box-shadow:0 2px 8px rgba(0,0,0,0.08);}
+    .kpi-title{font-size:12px;font-weight:600;letter-spacing:0.02em;color: #000000;opacity: 0.70;text-transform:uppercase;}
+    .kpi-value{font-size:28px;font-weight:800;line-height:1.15;color: #000000;}
     .kpi-delta{font-size:13px;margin-top:6px;color: var(--text-color);opacity: 0.80;}
     .kpi-delta .delta-abs{ font-weight:800; }
     .kpi-delta .delta-pct{ font-weight:700; opacity:0.88; margin-left:6px; }
     .kpi-delta .delta-note{ opacity:0.75; margin-left:6px; }
-    .kpi-big-main{font-size:30px;font-weight:800;line-height:1.05;margin-top:4px;background: linear-gradient(135deg, #4FAAFE 0%, #00D4FF 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-    .kpi-big-name{font-size:22px;font-weight:700;line-height:1.15;margin-top:6px;color: var(--text-color);}
-    .kpi-big-total{font-size:13px;opacity:0.78;margin-top:6px;color: var(--text-color);}
+    .kpi-big-main{font-size:30px;font-weight:800;line-height:1.05;margin-top:4px;color: #000000;}
+    .kpi-big-name{font-size:22px;font-weight:700;line-height:1.15;margin-top:6px;color: #000000;}
+    .kpi-big-total{font-size:13px;opacity:0.78;margin-top:6px;color: #000000;}
     .kpi-big-pct{font-size:13px;font-weight:700;margin-top:4px;}
     .intel-card{border:1px solid rgba(128,128,128,0.22);border-radius:16px;padding:14px 16px;background: var(--secondary-background-color);margin-bottom:14px;}
     .intel-header{font-size:12px;font-weight:800;letter-spacing:0.06em;color: var(--text-color);opacity:0.70;}
