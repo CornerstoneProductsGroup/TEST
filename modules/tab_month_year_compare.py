@@ -318,6 +318,50 @@ def render_visual_executive_dashboard(
 
         return pd.concat([pos, neg], ignore_index=True)
 
+    def collect_retailer_changes(df_cur: pd.DataFrame, df_cmp: pd.DataFrame) -> pd.DataFrame:
+        if "Retailer" not in df_cur.columns or "Retailer" not in df_cmp.columns:
+            return pd.DataFrame(columns=["Label", "Delta", "ColorHex", "Side", "Direction"])
+
+        cur = df_cur.groupby("Retailer", as_index=False).agg(Current=("Sales", "sum"))
+        cmp = df_cmp.groupby("Retailer", as_index=False).agg(Compare=("Sales", "sum"))
+        out = cur.merge(cmp, on="Retailer", how="outer").fillna(0.0)
+        out["Label"] = out["Retailer"].astype(str)
+        out["Delta"] = out["Current"] - out["Compare"]
+        out = out[["Label", "Delta"]].copy()
+        out = out[np.isfinite(out["Delta"])].copy()
+        out = out[out["Delta"] != 0].copy()
+
+        out["ColorHex"] = np.where(out["Delta"] > 0, POSITIVE_BAR, NEGATIVE_BAR)
+        out["Side"] = np.where(out["Delta"] > 0, "right", "left")
+        out["Direction"] = np.where(out["Delta"] > 0, "right", "left")
+
+        pos = out[out["Delta"] > 0].sort_values(["Delta", "Label"], ascending=[False, True]).copy()
+        neg = out[out["Delta"] < 0].sort_values(["Delta", "Label"], ascending=[True, True]).copy()
+
+        return pd.concat([pos, neg], ignore_index=True)
+
+    def collect_vendor_changes(df_cur: pd.DataFrame, df_cmp: pd.DataFrame) -> pd.DataFrame:
+        if "Vendor" not in df_cur.columns or "Vendor" not in df_cmp.columns:
+            return pd.DataFrame(columns=["Label", "Delta", "ColorHex", "Side", "Direction"])
+
+        cur = df_cur.groupby("Vendor", as_index=False).agg(Current=("Sales", "sum"))
+        cmp = df_cmp.groupby("Vendor", as_index=False).agg(Compare=("Sales", "sum"))
+        out = cur.merge(cmp, on="Vendor", how="outer").fillna(0.0)
+        out["Label"] = out["Vendor"].astype(str)
+        out["Delta"] = out["Current"] - out["Compare"]
+        out = out[["Label", "Delta"]].copy()
+        out = out[np.isfinite(out["Delta"])].copy()
+        out = out[out["Delta"] != 0].copy()
+
+        out["ColorHex"] = np.where(out["Delta"] > 0, POSITIVE_BAR, NEGATIVE_BAR)
+        out["Side"] = np.where(out["Delta"] > 0, "right", "left")
+        out["Direction"] = np.where(out["Delta"] > 0, "right", "left")
+
+        pos = out[out["Delta"] > 0].sort_values(["Delta", "Label"], ascending=[False, True]).copy()
+        neg = out[out["Delta"] < 0].sort_values(["Delta", "Label"], ascending=[True, True]).copy()
+
+        return pd.concat([pos, neg], ignore_index=True)
+
     def simple_period_block_chart(
         current_value: float,
         compare_value: float,
@@ -605,12 +649,14 @@ def render_visual_executive_dashboard(
             how="left",
         )
 
-        long_df["Series"] = long_df["Series"].replace({"Current": a_lbl, "Compare": b_lbl})
+        long_df["Series"] = long_df["Series"].replace({"Current": str(a_lbl), "Compare": str(b_lbl)})
         long_df["RowColor"] = np.where(
-            long_df["Series"] == a_lbl,
+            long_df["Series"] == str(a_lbl),
             long_df["CurrentColor"],
             long_df["CompareColor"],
         )
+        # Ensure RowColor is always a valid value
+        long_df["RowColor"] = long_df["RowColor"].fillna("neutral")
 
         long_df["SharePct"] = np.where(long_df["Total"] > 0, long_df["Value"] / long_df["Total"], 0.0)
         long_df["Label"] = long_df.apply(
@@ -816,6 +862,41 @@ def render_visual_executive_dashboard(
             fallback_cmp=float(kB["Units"]),
         )
         st.altair_chart(units_chart, use_container_width=True)
+
+    st.write("")
+
+    retailer_changes = collect_retailer_changes(dfA, dfB)
+    vendor_changes = collect_vendor_changes(dfA, dfB)
+
+    st.markdown("#### Sales Change by Retailer")
+    st.caption("Changes per retailer: 1 block = $1,000")
+
+    if not retailer_changes.empty:
+        retailer_block_chart = simple_period_block_chart(
+            current_value=float(kA["Sales"]),
+            compare_value=float(kB["Sales"]),
+            current_label="Current",
+            compare_label="Compare",
+            changes_df=retailer_changes,
+        )
+        st.altair_chart(retailer_block_chart, use_container_width=True)
+    else:
+        st.caption("No retailer change data available.")
+
+    st.markdown("#### Sales Change by Vendor")
+    st.caption("Changes per vendor: 1 block = $1,000")
+
+    if not vendor_changes.empty:
+        vendor_block_chart = simple_period_block_chart(
+            current_value=float(kA["Sales"]),
+            compare_value=float(kB["Sales"]),
+            current_label="Current",
+            compare_label="Compare",
+            changes_df=vendor_changes,
+        )
+        st.altair_chart(vendor_block_chart, use_container_width=True)
+    else:
+        st.caption("No vendor change data available.")
 
     st.write("")
 
