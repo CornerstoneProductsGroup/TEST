@@ -446,12 +446,12 @@ def render_visual_executive_dashboard(
         change_max = max(change_max, CHANGE_BLOCK_VALUE)
 
         center_from_compare = compare_value / 2.0
-        min_center_needed = change_max + max(CHANGE_BLOCK_VALUE * 2, change_max * 0.04)
+        min_center_needed = change_max + max(CHANGE_BLOCK_VALUE * 3, change_max * 0.15)
         center_x = max(center_from_compare, min_center_needed)
         center_x = float(np.ceil(center_x / CHANGE_BLOCK_VALUE) * CHANGE_BLOCK_VALUE)
 
-        right_needed_for_changes = center_x + change_max + max(CHANGE_BLOCK_VALUE * 2, change_max * 0.04)
-        right_needed_for_totals = total_max + max(TOTAL_BLOCK_VALUE, total_max * 0.02)
+        right_needed_for_changes = center_x + change_max + max(CHANGE_BLOCK_VALUE * 3, change_max * 0.15)
+        right_needed_for_totals = total_max + max(TOTAL_BLOCK_VALUE, total_max * 0.08)
 
         xmax = float(max(right_needed_for_changes, right_needed_for_totals))
         xmax = float(np.ceil(xmax / CHANGE_BLOCK_VALUE) * CHANGE_BLOCK_VALUE)
