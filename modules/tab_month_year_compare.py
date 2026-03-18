@@ -603,7 +603,7 @@ def render_visual_executive_dashboard(
 
         bars = (
             alt.Chart(row_df)
-            .mark_bar(stroke="white", strokeWidth=1, size=10)
+            .mark_bar(stroke="white", strokeWidth=1, size=6)
             .encode(
                 y=alt.Y("Period:N", title="", axis=alt.Axis(labelFontSize=13)),
                 x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, xmax])),
@@ -661,7 +661,7 @@ def render_visual_executive_dashboard(
 
         bars = (
             alt.Chart(delta_df)
-            .mark_bar(stroke="white", strokeWidth=1, size=8)
+            .mark_bar(stroke="white", strokeWidth=1, size=4)
             .encode(
                 y=alt.Y("Label:N", sort=y_order, title="", axis=alt.Axis(labelFontSize=12)),
                 x=alt.X("X0:Q", title="Sales Change", scale=alt.Scale(domain=[-xmax, xmax])),
