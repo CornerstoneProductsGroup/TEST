@@ -104,8 +104,8 @@ def render_visual_executive_dashboard(
 
     # Set block values based on whether we're comparing by month or year
     if year_compare_mode():
-        TOTAL_BLOCK_VALUE = 100000.0
-        CHANGE_BLOCK_VALUE = 10000.0
+        TOTAL_BLOCK_VALUE = 500000.0
+        CHANGE_BLOCK_VALUE = 50000.0
     else:
         TOTAL_BLOCK_VALUE = 25000.0
         CHANGE_BLOCK_VALUE = 1000.0
