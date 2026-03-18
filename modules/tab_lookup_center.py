@@ -671,20 +671,20 @@ def _render_compare_section(df_base: pd.DataFrame, metric: str, default_period):
         cmp_label = f"{cmp_period[0].date()} → {cmp_period[1].date()}"
 
     elif compare_mode == "Custom months":
-        month_options = available_month_labels(df_base)
+        month_options = list(reversed(available_month_labels(df_base)))
         c1, c2 = st.columns(2)
         with c1:
             cur_months = st.multiselect(
                 "Current month(s)",
                 options=month_options,
-                default=month_options[-1:] if month_options else [],
+                default=month_options[0:1] if month_options else [],
                 key="lookup_compare_cur_months",
             )
         with c2:
             cmp_months = st.multiselect(
                 "Compare month(s)",
                 options=month_options,
-                default=month_options[-2:-1] if len(month_options) > 1 else [],
+                default=month_options[1:2] if len(month_options) > 1 else [],
                 key="lookup_compare_cmp_months",
             )
 
@@ -694,20 +694,20 @@ def _render_compare_section(df_base: pd.DataFrame, metric: str, default_period):
         cmp_label = ", ".join(cmp_months) if cmp_months else "None"
 
     else:
-        year_options = available_year_labels(df_base)
+        year_options = list(reversed(available_year_labels(df_base)))
         c1, c2 = st.columns(2)
         with c1:
             cur_years = st.multiselect(
                 "Current year(s)",
                 options=year_options,
-                default=year_options[-1:] if year_options else [],
+                default=year_options[0:1] if year_options else [],
                 key="lookup_compare_cur_years",
             )
         with c2:
             cmp_years = st.multiselect(
                 "Compare year(s)",
                 options=year_options,
-                default=year_options[-2:-1] if len(year_options) > 1 else [],
+                default=year_options[1:2] if len(year_options) > 1 else [],
                 key="lookup_compare_cmp_years",
             )
 
@@ -923,77 +923,75 @@ def render(ctx: dict):
     # Advanced Compare section (independent from above)
     st.write("")
     st.markdown("---")
-    advanced_compare = st.toggle("Advanced Compare (Independent Timeframe)", value=False, key="lookup_center_advanced_compare")
+    st.markdown("### Advanced Compare")
+    st.markdown("#### Advanced Compare Settings")
+    ac_col0, ac_col1 = st.columns(2)
+    
+    with ac_col0:
+        ac_timeframe_type = st.selectbox(
+            "Timeframe Type",
+            ["Multi-week compare", "Months", "Years"],
+            index=0,
+            key="advanced_compare_timeframe_type",
+        )
+    
+    with ac_col1:
+        ac_metric = st.selectbox(
+            "Compare Metric",
+            ["Sales", "Units"],
+            index=0 if metric == "Sales" else 1,
+            key="advanced_compare_metric",
+        )
 
-    if advanced_compare:
-        st.markdown("#### Advanced Compare Settings")
-        ac_col0, ac_col1 = st.columns(2)
+    if ac_timeframe_type == "Multi-week compare":
+        ac_weeks = st.selectbox(
+            "Weeks to compare",
+            [4, 8, 12, 16, 20, 24],
+            index=2,
+            key="advanced_compare_weeks",
+        )
+        # Create a period based on weeks
+        end_date = pd.Timestamp.now()
+        start_date = end_date - pd.Timedelta(weeks=ac_weeks)
+        ac_period = (start_date, end_date)
+        _render_compare_section(df_lookup_all, ac_metric, ac_period)
         
-        with ac_col0:
-            ac_timeframe_type = st.selectbox(
-                "Timeframe Type",
-                ["Multi-week compare", "Months", "Years"],
-                index=0,
-                key="advanced_compare_timeframe_type",
+    elif ac_timeframe_type == "Months":
+        month_options = list(reversed(available_month_labels(df_lookup_all)))
+        ac_col_m1, ac_col_m2 = st.columns(2)
+        with ac_col_m1:
+            ac_cur_months = st.multiselect(
+                "Current month(s)",
+                options=month_options,
+                default=month_options[0:1] if month_options else [],
+                key="advanced_compare_cur_months",
+            )
+        with ac_col_m2:
+            ac_cmp_months = st.multiselect(
+                "Compare month(s)",
+                options=month_options,
+                default=month_options[1:2] if len(month_options) > 1 else [],
+                key="advanced_compare_cmp_months",
             )
         
-        with ac_col1:
-            ac_metric = st.selectbox(
-                "Compare Metric",
-                ["Sales", "Units"],
-                index=0 if metric == "Sales" else 1,
-                key="advanced_compare_metric",
+        _render_advanced_compare_months(df_lookup_all, ac_metric, ac_cur_months, ac_cmp_months)
+        
+    else:  # Years
+        year_options = list(reversed(available_year_labels(df_lookup_all)))
+        ac_col_y1, ac_col_y2 = st.columns(2)
+        with ac_col_y1:
+            ac_cur_years = st.multiselect(
+                "Current year(s)",
+                options=year_options,
+                default=year_options[0:1] if year_options else [],
+                key="advanced_compare_cur_years",
             )
-
-        if ac_timeframe_type == "Multi-week compare":
-            ac_weeks = st.selectbox(
-                "Weeks to compare",
-                [4, 8, 12, 16, 20, 24],
-                index=2,
-                key="advanced_compare_weeks",
+        with ac_col_y2:
+            ac_cmp_years = st.multiselect(
+                "Compare year(s)",
+                options=year_options,
+                default=year_options[1:2] if len(year_options) > 1 else [],
+                key="advanced_compare_cmp_years",
             )
-            # Create a period based on weeks
-            end_date = pd.Timestamp.now()
-            start_date = end_date - pd.Timedelta(weeks=ac_weeks)
-            ac_period = (start_date, end_date)
-            _render_compare_section(df_lookup_all, ac_metric, ac_period)
-            
-        elif ac_timeframe_type == "Months":
-            month_options = available_month_labels(df_lookup_all)
-            ac_col_m1, ac_col_m2 = st.columns(2)
-            with ac_col_m1:
-                ac_cur_months = st.multiselect(
-                    "Current month(s)",
-                    options=month_options,
-                    default=month_options[-1:] if month_options else [],
-                    key="advanced_compare_cur_months",
-                )
-            with ac_col_m2:
-                ac_cmp_months = st.multiselect(
-                    "Compare month(s)",
-                    options=month_options,
-                    default=month_options[-2:-1] if len(month_options) > 1 else [],
-                    key="advanced_compare_cmp_months",
-                )
-            
-            _render_advanced_compare_months(df_lookup_all, ac_metric, ac_cur_months, ac_cmp_months)
-            
-        else:  # Years
-            year_options = available_year_labels(df_lookup_all)
-            ac_col_y1, ac_col_y2 = st.columns(2)
-            with ac_col_y1:
-                ac_cur_years = st.multiselect(
-                    "Current year(s)",
-                    options=year_options,
-                    default=year_options[-1:] if year_options else [],
-                    key="advanced_compare_cur_years",
-                )
-            with ac_col_y2:
-                ac_cmp_years = st.multiselect(
-                    "Compare year(s)",
-                    options=year_options,
-                    default=year_options[-2:-1] if len(year_options) > 1 else [],
-                    key="advanced_compare_cmp_years",
-                )
-            
-            _render_advanced_compare_years(df_lookup_all, ac_metric, ac_cur_years, ac_cmp_years)
+        
+        _render_advanced_compare_years(df_lookup_all, ac_metric, ac_cur_years, ac_cmp_years)
