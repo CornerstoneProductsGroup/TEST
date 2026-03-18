@@ -835,6 +835,11 @@ def render(ctx: dict):
                     "No signals found with current filters/thresholds."
                 )
 
+    if compare_mode != "None":
+        st.divider()
+        st.subheader("4) Sales Change Compare")
+        render_visual_only(ctx)
+
 
 def render_visual_only(ctx: dict):
     dfA = ctx["dfA"]
