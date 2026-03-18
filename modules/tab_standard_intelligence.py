@@ -1444,22 +1444,12 @@ def render_visual_only(ctx: dict):
     )
     st.altair_chart(vendor_contrib_chart, use_container_width=True)
 
-    vendor_df = _vendor_delta_df()
-    vendor_pos = vendor_df[vendor_df["Sales_Δ"] > 0].sort_values("Sales_Δ", ascending=False).head(5).copy()
-    vendor_neg = vendor_df[vendor_df["Sales_Δ"] < 0].sort_values("Sales_Δ", ascending=True).head(5).copy()
-
-    v1, v2 = st.columns(2)
-    with v1:
-        _render_positive_lollipop(vendor_pos, "Vendor", "Top 5 Positive Vendor Contributors")
-    with v2:
-        _render_negative_lollipop(vendor_neg, "Vendor", "Top 5 Negative Vendor Contributors", show_right_labels=True)
-
     sku_df = _sku_delta_df()
-    sku_pos = sku_df[sku_df["Sales_Δ"] > 0].sort_values("Sales_Δ", ascending=False).head(10).copy()
-    sku_neg = sku_df[sku_df["Sales_Δ"] < 0].sort_values("Sales_Δ", ascending=True).head(10).copy()
+    sku_pos = sku_df[sku_df["Sales_Δ"] > 0].sort_values("Sales_Δ", ascending=False).head(15).copy()
+    sku_neg = sku_df[sku_df["Sales_Δ"] < 0].sort_values("Sales_Δ", ascending=True).head(15).copy()
 
     s1, s2 = st.columns(2)
     with s1:
-        _render_positive_lollipop(sku_pos, "SKU", "Top 10 Increasing SKUs")
+        _render_positive_lollipop(sku_pos, "SKU", "Top 15 Increasing SKUs")
     with s2:
-        _render_negative_lollipop(sku_neg, "SKU", "Top 10 Declining SKUs", show_right_labels=True)
+        _render_negative_lollipop(sku_neg, "SKU", "Top 15 Declining SKUs", show_right_labels=True)
