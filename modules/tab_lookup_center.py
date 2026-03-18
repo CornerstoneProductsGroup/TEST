@@ -432,6 +432,210 @@ def _render_weekly_velocity(df_sel: pd.DataFrame, lookup_type: str, metric: str)
     render_df(piv, height=420)
 
 
+def _render_advanced_compare_months(df_base: pd.DataFrame, metric: str, cur_months: list, cmp_months: list):
+    """Render compare section for selected months."""
+    if not cur_months or not cmp_months:
+        st.info("Select months for both current and compare to view comparison.")
+        return
+    
+    df_cur = filter_by_period_labels(df_base, cur_months, "Month")
+    df_cmp = filter_by_period_labels(df_base, cmp_months, "Month")
+    
+    if df_cur.empty or df_cmp.empty:
+        st.info("No data available for the selected months.")
+        return
+    
+    k_cur = calc_kpis(df_cur)
+    k_cmp = calc_kpis(df_cmp)
+    
+    cur_label = ", ".join(cur_months)
+    cmp_label = ", ".join(cmp_months)
+    
+    st.markdown("#### Current vs Compare")
+    
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown(
+            f"""
+            <div class="kpi-card">
+                <div class="kpi-title">Total Sales</div>
+                <div class="kpi-value">{money(k_cur["Sales"])}</div>
+                <div class="kpi-delta">{_format_delta_with_arrow(k_cur["Sales"], k_cmp["Sales"], money_mode=True)}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with c2:
+        st.markdown(
+            f"""
+            <div class="kpi-card">
+                <div class="kpi-title">Total Units</div>
+                <div class="kpi-value">{k_cur['Units']:,.0f}</div>
+                <div class="kpi-delta">{_format_delta_with_arrow(k_cur["Units"], k_cmp["Units"], money_mode=False)}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with c3:
+        st.markdown(
+            f"""
+            <div class="kpi-card">
+                <div class="kpi-title">Total ASP</div>
+                <div class="kpi-value">{money(k_cur["ASP"])}</div>
+                <div class="kpi-delta">{_format_delta_with_arrow(k_cur["ASP"], k_cmp["ASP"], money_mode=True)}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.caption(f"Current: {cur_label}")
+    st.caption(f"Compare: {cmp_label}")
+
+    if "Retailer" in df_cur.columns:
+        cur_grp = df_cur.groupby("Retailer", as_index=False).agg(
+            Current_Sales=("Sales", "sum"),
+            Current_Units=("Units", "sum"),
+        )
+        cmp_grp = df_cmp.groupby("Retailer", as_index=False).agg(
+            Compare_Sales=("Sales", "sum"),
+            Compare_Units=("Units", "sum"),
+        )
+
+        comp = cur_grp.merge(cmp_grp, on="Retailer", how="outer").fillna(0.0)
+        comp["Sales Δ"] = comp["Current_Sales"] - comp["Compare_Sales"]
+        comp["Units Δ"] = comp["Current_Units"] - comp["Compare_Units"]
+
+        if metric == "Sales":
+            comp = comp.sort_values("Sales Δ", ascending=False)
+        else:
+            comp = comp.sort_values("Units Δ", ascending=False)
+
+        # Add total row
+        total_row = pd.DataFrame({
+            "Retailer": ["TOTAL"],
+            "Current_Sales": [comp["Current_Sales"].sum()],
+            "Compare_Sales": [comp["Compare_Sales"].sum()],
+            "Sales Δ": [comp["Sales Δ"].sum()],
+            "Current_Units": [comp["Current_Units"].sum()],
+            "Compare_Units": [comp["Compare_Units"].sum()],
+            "Units Δ": [comp["Units Δ"].sum()],
+        })
+        comp = pd.concat([comp, total_row], ignore_index=True)
+
+        show = comp.copy()
+        show["Current_Sales"] = show["Current_Sales"].map(money)
+        show["Compare_Sales"] = show["Compare_Sales"].map(money)
+        show["Sales Δ"] = show["Sales Δ"].map(money)
+        show["Current_Units"] = show["Current_Units"].map(lambda v: f"{v:,.0f}")
+        show["Compare_Units"] = show["Compare_Units"].map(lambda v: f"{v:,.0f}")
+        show["Units Δ"] = show["Units Δ"].map(lambda v: f"{v:,.0f}")
+
+        st.markdown("#### Compare Breakdown")
+        render_df(show, height=360)
+
+
+def _render_advanced_compare_years(df_base: pd.DataFrame, metric: str, cur_years: list, cmp_years: list):
+    """Render compare section for selected years."""
+    if not cur_years or not cmp_years:
+        st.info("Select years for both current and compare to view comparison.")
+        return
+    
+    df_cur = filter_by_period_labels(df_base, cur_years, "Year")
+    df_cmp = filter_by_period_labels(df_base, cmp_years, "Year")
+    
+    if df_cur.empty or df_cmp.empty:
+        st.info("No data available for the selected years.")
+        return
+    
+    k_cur = calc_kpis(df_cur)
+    k_cmp = calc_kpis(df_cmp)
+    
+    cur_label = ", ".join(cur_years)
+    cmp_label = ", ".join(cmp_years)
+    
+    st.markdown("#### Current vs Compare")
+    
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown(
+            f"""
+            <div class="kpi-card">
+                <div class="kpi-title">Total Sales</div>
+                <div class="kpi-value">{money(k_cur["Sales"])}</div>
+                <div class="kpi-delta">{_format_delta_with_arrow(k_cur["Sales"], k_cmp["Sales"], money_mode=True)}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with c2:
+        st.markdown(
+            f"""
+            <div class="kpi-card">
+                <div class="kpi-title">Total Units</div>
+                <div class="kpi-value">{k_cur['Units']:,.0f}</div>
+                <div class="kpi-delta">{_format_delta_with_arrow(k_cur["Units"], k_cmp["Units"], money_mode=False)}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with c3:
+        st.markdown(
+            f"""
+            <div class="kpi-card">
+                <div class="kpi-title">Total ASP</div>
+                <div class="kpi-value">{money(k_cur["ASP"])}</div>
+                <div class="kpi-delta">{_format_delta_with_arrow(k_cur["ASP"], k_cmp["ASP"], money_mode=True)}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.caption(f"Current: {cur_label}")
+    st.caption(f"Compare: {cmp_label}")
+
+    if "Retailer" in df_cur.columns:
+        cur_grp = df_cur.groupby("Retailer", as_index=False).agg(
+            Current_Sales=("Sales", "sum"),
+            Current_Units=("Units", "sum"),
+        )
+        cmp_grp = df_cmp.groupby("Retailer", as_index=False).agg(
+            Compare_Sales=("Sales", "sum"),
+            Compare_Units=("Units", "sum"),
+        )
+
+        comp = cur_grp.merge(cmp_grp, on="Retailer", how="outer").fillna(0.0)
+        comp["Sales Δ"] = comp["Current_Sales"] - comp["Compare_Sales"]
+        comp["Units Δ"] = comp["Current_Units"] - comp["Compare_Units"]
+
+        if metric == "Sales":
+            comp = comp.sort_values("Sales Δ", ascending=False)
+        else:
+            comp = comp.sort_values("Units Δ", ascending=False)
+
+        # Add total row
+        total_row = pd.DataFrame({
+            "Retailer": ["TOTAL"],
+            "Current_Sales": [comp["Current_Sales"].sum()],
+            "Compare_Sales": [comp["Compare_Sales"].sum()],
+            "Sales Δ": [comp["Sales Δ"].sum()],
+            "Current_Units": [comp["Current_Units"].sum()],
+            "Compare_Units": [comp["Compare_Units"].sum()],
+            "Units Δ": [comp["Units Δ"].sum()],
+        })
+        comp = pd.concat([comp, total_row], ignore_index=True)
+
+        show = comp.copy()
+        show["Current_Sales"] = show["Current_Sales"].map(money)
+        show["Compare_Sales"] = show["Compare_Sales"].map(money)
+        show["Sales Δ"] = show["Sales Δ"].map(money)
+        show["Current_Units"] = show["Current_Units"].map(lambda v: f"{v:,.0f}")
+        show["Compare_Units"] = show["Compare_Units"].map(lambda v: f"{v:,.0f}")
+        show["Units Δ"] = show["Units Δ"].map(lambda v: f"{v:,.0f}")
+
+        st.markdown("#### Compare Breakdown")
+        render_df(show, height=360)
+
+
 def _render_compare_section(df_base: pd.DataFrame, metric: str, default_period):
     st.markdown("### Compare")
 
@@ -723,7 +927,7 @@ def render(ctx: dict):
 
     if advanced_compare:
         st.markdown("#### Advanced Compare Settings")
-        ac_col0, ac_col1, ac_col2 = st.columns(3)
+        ac_col0, ac_col1 = st.columns(2)
         
         with ac_col0:
             ac_timeframe_type = st.selectbox(
@@ -734,38 +938,6 @@ def render(ctx: dict):
             )
         
         with ac_col1:
-            if ac_timeframe_type == "Multi-week compare":
-                ac_weeks = st.selectbox(
-                    "Weeks to compare",
-                    [4, 8, 12, 16, 20, 24],
-                    index=2,
-                    key="advanced_compare_weeks",
-                )
-                # Create a period based on weeks
-                end_date = pd.Timestamp.now()
-                start_date = end_date - pd.Timedelta(weeks=ac_weeks)
-                ac_period = (start_date, end_date)
-                ac_df_sel = _filter_period(df_lookup_all, ac_period)
-            elif ac_timeframe_type == "Months":
-                month_options = available_month_labels(df_lookup_all)
-                ac_month = st.selectbox(
-                    "Select month",
-                    month_options,
-                    index=len(month_options) - 1 if month_options else 0,
-                    key="advanced_compare_month",
-                )
-                ac_df_sel = filter_by_period_labels(df_lookup_all, [ac_month], "Month") if month_options else df_lookup_all.iloc[0:0].copy()
-            else:  # Years
-                year_options = available_year_labels(df_lookup_all)
-                ac_year = st.selectbox(
-                    "Select year",
-                    year_options,
-                    index=len(year_options) - 1 if year_options else 0,
-                    key="advanced_compare_year",
-                )
-                ac_df_sel = filter_by_period_labels(df_lookup_all, [ac_year], "Year") if year_options else df_lookup_all.iloc[0:0].copy()
-        
-        with ac_col2:
             ac_metric = st.selectbox(
                 "Compare Metric",
                 ["Sales", "Units"],
@@ -774,10 +946,54 @@ def render(ctx: dict):
             )
 
         if ac_timeframe_type == "Multi-week compare":
+            ac_weeks = st.selectbox(
+                "Weeks to compare",
+                [4, 8, 12, 16, 20, 24],
+                index=2,
+                key="advanced_compare_weeks",
+            )
+            # Create a period based on weeks
+            end_date = pd.Timestamp.now()
+            start_date = end_date - pd.Timedelta(weeks=ac_weeks)
+            ac_period = (start_date, end_date)
             _render_compare_section(df_lookup_all, ac_metric, ac_period)
-        else:
-            # For months/years, create a dummy period for the compare section
-            max_date = df_lookup_all["Date"].max()
-            min_date = df_lookup_all["Date"].min()
-            dummy_period = (min_date, max_date)
-            _render_compare_section(df_lookup_all, ac_metric, dummy_period)
+            
+        elif ac_timeframe_type == "Months":
+            month_options = available_month_labels(df_lookup_all)
+            ac_col_m1, ac_col_m2 = st.columns(2)
+            with ac_col_m1:
+                ac_cur_months = st.multiselect(
+                    "Current month(s)",
+                    options=month_options,
+                    default=month_options[-1:] if month_options else [],
+                    key="advanced_compare_cur_months",
+                )
+            with ac_col_m2:
+                ac_cmp_months = st.multiselect(
+                    "Compare month(s)",
+                    options=month_options,
+                    default=month_options[-2:-1] if len(month_options) > 1 else [],
+                    key="advanced_compare_cmp_months",
+                )
+            
+            _render_advanced_compare_months(df_lookup_all, ac_metric, ac_cur_months, ac_cmp_months)
+            
+        else:  # Years
+            year_options = available_year_labels(df_lookup_all)
+            ac_col_y1, ac_col_y2 = st.columns(2)
+            with ac_col_y1:
+                ac_cur_years = st.multiselect(
+                    "Current year(s)",
+                    options=year_options,
+                    default=year_options[-1:] if year_options else [],
+                    key="advanced_compare_cur_years",
+                )
+            with ac_col_y2:
+                ac_cmp_years = st.multiselect(
+                    "Compare year(s)",
+                    options=year_options,
+                    default=year_options[-2:-1] if len(year_options) > 1 else [],
+                    key="advanced_compare_cmp_years",
+                )
+            
+            _render_advanced_compare_years(df_lookup_all, ac_metric, ac_cur_years, ac_cmp_years)
