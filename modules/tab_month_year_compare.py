@@ -574,6 +574,123 @@ def render_visual_executive_dashboard(
         chart = alt.layer(*layers).properties(height=chart_height)
         return chart
 
+    def single_total_bar_chart(value: float, period_label: str, color_hex: str, xmax: float):
+        value = float(max(value, 0.0))
+        row_df = pd.DataFrame(
+            [
+                {
+                    "Period": period_label,
+                    "X0": 0.0,
+                    "X1": value,
+                    "Value": value,
+                    "Label": money(value),
+                    "ColorHex": color_hex,
+                }
+            ]
+        )
+
+        bars = (
+            alt.Chart(row_df)
+            .mark_bar(stroke="white", strokeWidth=1)
+            .encode(
+                y=alt.Y("Period:N", title="", axis=alt.Axis(labelFontSize=13)),
+                x=alt.X("X0:Q", title="Sales", scale=alt.Scale(domain=[0, xmax])),
+                x2="X1:Q",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+                tooltip=[
+                    alt.Tooltip("Period:N", title="Period"),
+                    alt.Tooltip("Value:Q", title="Sales", format=",.2f"),
+                ],
+            )
+        )
+
+        labels = (
+            alt.Chart(row_df)
+            .mark_text(align="left", dx=8, fontSize=14, fontWeight="bold")
+            .encode(
+                y=alt.Y("Period:N"),
+                x=alt.X("X1:Q", scale=alt.Scale(domain=[0, xmax])),
+                text="Label:N",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+            )
+        )
+
+        return (bars + labels).properties(height=62)
+
+    def change_only_center_chart(changes_df: pd.DataFrame):
+        if changes_df.empty or changes_df[changes_df["Delta"] != 0].empty:
+            empty_df = pd.DataFrame([{"Msg": "No change contributors available."}])
+            return (
+                alt.Chart(empty_df)
+                .mark_text(fontSize=13, color="#7a7a7a")
+                .encode(text="Msg:N")
+                .properties(height=90)
+            )
+
+        delta_df = changes_df[changes_df["Delta"] != 0].copy()
+        delta_df = pd.concat(
+            [
+                delta_df[delta_df["Delta"] > 0].sort_values(["Delta", "Label"], ascending=[False, True]),
+                delta_df[delta_df["Delta"] < 0].sort_values(["Delta", "Label"], ascending=[True, True]),
+            ],
+            ignore_index=True,
+        )
+
+        delta_df["Label"] = delta_df["Label"].astype(str)
+        delta_df["X0"] = np.where(delta_df["Delta"] > 0, 0.0, delta_df["Delta"])
+        delta_df["X1"] = np.where(delta_df["Delta"] > 0, delta_df["Delta"], 0.0)
+        delta_df["DeltaLabel"] = delta_df["Delta"].map(money)
+
+        max_abs = float(delta_df["Delta"].abs().max())
+        pad = max(max_abs * 0.10, CHANGE_BLOCK_VALUE * 2)
+        xmax = max_abs + pad
+
+        bars = (
+            alt.Chart(delta_df)
+            .mark_bar(stroke="white", strokeWidth=1)
+            .encode(
+                y=alt.Y("Label:N", title="", axis=alt.Axis(labelFontSize=12)),
+                x=alt.X("X0:Q", title="Sales Change", scale=alt.Scale(domain=[-xmax, xmax])),
+                x2="X1:Q",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+                tooltip=[
+                    alt.Tooltip("Label:N", title="Contributor"),
+                    alt.Tooltip("Delta:Q", title="Sales Change", format=",.2f"),
+                ],
+            )
+        )
+
+        zero_rule = (
+            alt.Chart(pd.DataFrame([{"Zero": 0.0}]))
+            .mark_rule(color="#7a7a7a", strokeDash=[4, 4], strokeWidth=1.5)
+            .encode(x=alt.X("Zero:Q", scale=alt.Scale(domain=[-xmax, xmax])))
+        )
+
+        pos_labels = (
+            alt.Chart(delta_df[delta_df["Delta"] > 0])
+            .mark_text(align="left", dx=8, fontSize=13, fontWeight="bold")
+            .encode(
+                y=alt.Y("Label:N"),
+                x=alt.X("X1:Q", scale=alt.Scale(domain=[-xmax, xmax])),
+                text="DeltaLabel:N",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+            )
+        )
+
+        neg_labels = (
+            alt.Chart(delta_df[delta_df["Delta"] < 0])
+            .mark_text(align="right", dx=-8, fontSize=13, fontWeight="bold")
+            .encode(
+                y=alt.Y("Label:N"),
+                x=alt.X("X0:Q", scale=alt.Scale(domain=[-xmax, xmax])),
+                text="DeltaLabel:N",
+                color=alt.Color("ColorHex:N", scale=None, legend=None),
+            )
+        )
+
+        mid_height = max(170, 34 * len(delta_df))
+        return (bars + zero_rule + pos_labels + neg_labels).properties(height=mid_height)
+
     def prep_grouped_share(df: pd.DataFrame, dim_name: str) -> pd.DataFrame:
         if df.empty:
             return pd.DataFrame(
@@ -822,16 +939,30 @@ def render_visual_executive_dashboard(
     change_rows = collect_change_contributors(dfA, dfB)
 
     st.markdown("#### Sales Change Compare")
-    st.caption("Totals: 1 block = $25,000 • Retailer changes: 1 block = $1,000")
+    st.caption("Separated view: Compare total (top), Sales Change contributors (middle), Current total (bottom)")
 
-    block_chart = simple_period_block_chart(
-        current_value=float(kA["Sales"]),
-        compare_value=float(kB["Sales"]),
-        current_label="Current",
-        compare_label="Compare",
-        changes_df=change_rows,
-    )
-    st.altair_chart(block_chart, use_container_width=True)
+    current_sales = float(kA["Sales"])
+    compare_sales = float(kB["Sales"])
+
+    if current_sales > compare_sales:
+        current_color = POSITIVE_BAR
+        compare_color = NEGATIVE_BAR
+    elif current_sales < compare_sales:
+        current_color = NEGATIVE_BAR
+        compare_color = POSITIVE_BAR
+    else:
+        current_color = NEUTRAL_BAR
+        compare_color = NEUTRAL_BAR
+
+    total_max = max(current_sales, compare_sales, TOTAL_BLOCK_VALUE)
+    total_xmax = float(np.ceil((total_max * 1.08) / TOTAL_BLOCK_VALUE) * TOTAL_BLOCK_VALUE)
+
+    compare_chart = single_total_bar_chart(compare_sales, "Compare", compare_color, total_xmax)
+    change_chart = change_only_center_chart(change_rows)
+    current_chart = single_total_bar_chart(current_sales, "Current", current_color, total_xmax)
+
+    stacked_compare_view = alt.vconcat(compare_chart, change_chart, current_chart, spacing=2).resolve_scale(x="independent")
+    st.altair_chart(stacked_compare_view, use_container_width=True)
 
     st.write("")
 
