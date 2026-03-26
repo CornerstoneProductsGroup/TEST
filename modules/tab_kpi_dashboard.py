@@ -211,7 +211,7 @@ def _render_split_cards(
         </div>
         <div class='kpi-split-row'>
             <div class='kpi-split-col'>
-                <div class='kpi-card kpi-compact-card'>
+                <div class='kpi-card kpi-compact-card' style='text-align:center;'>
                     <div class='kpi-metric-block'>
                         <div class='kpi-mini-label'>Sales</div>
                         <div class='kpi-mini-value'>{money(left_sales)}</div>
@@ -248,7 +248,7 @@ def _render_split_cards(
                 </div>
             </div>
             <div class='kpi-split-col'>
-                <div class='kpi-card kpi-compact-card'>
+                <div class='kpi-card kpi-compact-card' style='text-align:center;'>
                     <div class='kpi-metric-block'>
                         <div class='kpi-mini-label'>Sales</div>
                         <div class='kpi-mini-value'>{money(right_sales)}</div>
