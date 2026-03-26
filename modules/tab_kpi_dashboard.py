@@ -164,7 +164,17 @@ def _render_split_cards(
     right_best_week_label: str,
     right_best_week_sales: float,
     right_best_week_units: float,
+    left_entity_name: str | None = None,
+    right_entity_name: str | None = None,
 ):
+    def title_html(title: str, entity_name: str | None) -> str:
+        if entity_name:
+            return (
+                f"<div class='kpi-split-card-title-small'>{title}</div>"
+                f"<div class='kpi-split-card-title-name'>{entity_name}</div>"
+            )
+        return f"<div class='kpi-group-title kpi-split-card-title'>{title}</div>"
+
     def diff_html(val_now, val_prev, mode):
         delta = float(val_now) - float(val_prev)
         if delta > 0:
@@ -190,13 +200,13 @@ def _render_split_cards(
         f"""
         <div class='kpi-split-title-row'>
             <div class='kpi-split-col'>
-                <div class='kpi-group-title kpi-split-card-title'>{left_title}</div>
+                {title_html(left_title, left_entity_name)}
             </div>
             <div class='kpi-split-col'>
                 <div class='kpi-group-title kpi-split-card-title'>Difference</div>
             </div>
             <div class='kpi-split-col'>
-                <div class='kpi-group-title kpi-split-card-title'>{right_title}</div>
+                {title_html(right_title, right_entity_name)}
             </div>
         </div>
         <div class='kpi-split-row'>
@@ -402,8 +412,8 @@ def _render_dimension_section(
         right_best_lbl, right_best_sales, right_best_units, _ = _best_week_stats(right_df, dim, right_name)
 
         _render_split_cards(
-            left_title=f"{dim} #{idx + 1}: {left_name}",
-            right_title=f"{dim} #{idx + 1}: {right_name}",
+            left_title=f"{dim} #{idx + 1}",
+            right_title=f"{dim} #{idx + 1}",
             left_sales=left_sales,
             left_units=left_units,
             right_sales=right_sales,
@@ -420,6 +430,8 @@ def _render_dimension_section(
             right_best_week_label=right_best_lbl,
             right_best_week_sales=right_best_sales,
             right_best_week_units=right_best_units,
+            left_entity_name=left_name,
+            right_entity_name=right_name,
         )
 
 
@@ -446,6 +458,8 @@ def render(ctx: dict):
         .kpi-split-title-row{display:flex;justify-content:center;gap:64px;margin:4px 0 6px 0;}
         .kpi-split-col{flex:1;max-width:290px;margin:0 8px;}
         .kpi-split-card-title{text-align:center;margin-bottom:8px;display:block;}
+        .kpi-split-card-title-small{text-align:center;font-size:12px;font-weight:800;letter-spacing:0.04em;opacity:0.72;text-transform:uppercase;margin-bottom:2px;}
+        .kpi-split-card-title-name{text-align:center;font-size:20px;font-weight:900;line-height:1.2;margin-bottom:8px;}
         .kpi-metric-block{margin-bottom:14px;}
         .kpi-metric-block:last-child{margin-bottom:0;}
         .kpi-center-line{width:100%;background:rgba(20,20,20,0.82);border-radius:0;}
