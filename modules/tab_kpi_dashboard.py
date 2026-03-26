@@ -134,10 +134,10 @@ def _best_week_stats(df: pd.DataFrame, dim: str | None = None, key: str | None =
 def _render_split_header(current_label: str, diff_label: str, compare_label: str):
     st.markdown(
         f"""
-        <div style='display:flex;justify-content:center;gap:48px;margin-bottom:8px;'>
-            <div style='flex:1;text-align:center;'><h3 style='margin:0;font-size:18px;'>{current_label}</h3></div>
-            <div style='flex:1;text-align:center;'><h3 style='margin:0;font-size:18px;'>{diff_label}</h3></div>
-            <div style='flex:1;text-align:center;'><h3 style='margin:0;font-size:18px;'>{compare_label}</h3></div>
+        <div class='kpi-split-title-row' style='margin-bottom:10px;'>
+            <div class='kpi-split-col'><h3 style='margin:0;font-size:18px;text-align:center;'>{current_label}</h3></div>
+            <div class='kpi-split-col'><h3 style='margin:0;font-size:18px;text-align:center;'>{diff_label}</h3></div>
+            <div class='kpi-split-col'><h3 style='margin:0;font-size:18px;text-align:center;'>{compare_label}</h3></div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -182,16 +182,26 @@ def _render_split_cards(
         else:
             val_fmt = f"{abs(delta):,.0f}"
         return (
-            f"<div style='color:{color};font-weight:800;font-size:28px;line-height:1.18;margin-bottom:2px;'>{arrow} {val_fmt}</div>"
-            f"<div style='color:{color};font-weight:800;font-size:28px;line-height:1.18;'>{pct:,.1f}%</div>"
+            f"<div style='color:{color};font-weight:800;font-size:28px;line-height:1.18;text-align:center;'>{arrow} {val_fmt}</div>"
+            f"<div style='color:{color};font-weight:700;font-size:16px;line-height:1.2;text-align:center;margin-top:2px;'>{pct:,.1f}%</div>"
         )
 
     st.markdown(
         f"""
+        <div class='kpi-split-title-row'>
+            <div class='kpi-split-col'>
+                <div class='kpi-group-title kpi-split-card-title'>{left_title}</div>
+            </div>
+            <div class='kpi-split-col'>
+                <div class='kpi-group-title kpi-split-card-title'>Difference</div>
+            </div>
+            <div class='kpi-split-col'>
+                <div class='kpi-group-title kpi-split-card-title'>{right_title}</div>
+            </div>
+        </div>
         <div class='kpi-split-row'>
             <div class='kpi-split-col'>
                 <div class='kpi-card kpi-compact-card'>
-                    <div class='kpi-group-title'>{left_title}</div>
                     <div class='kpi-metric-block'>
                         <div class='kpi-mini-label'>Sales</div>
                         <div class='kpi-mini-value'>{money(left_sales)}</div>
@@ -213,7 +223,6 @@ def _render_split_cards(
             </div>
             <div class='kpi-split-col'>
                 <div class='kpi-card kpi-compact-card' style='text-align:center;'>
-                    <div class='kpi-group-title'>Difference</div>
                     <div class='kpi-metric-block'>
                         <div class='kpi-mini-label'>Sales Diff</div>
                         {diff_html(left_sales, right_sales, 'money')}
@@ -230,7 +239,6 @@ def _render_split_cards(
             </div>
             <div class='kpi-split-col'>
                 <div class='kpi-card kpi-compact-card'>
-                    <div class='kpi-group-title'>{right_title}</div>
                     <div class='kpi-metric-block'>
                         <div class='kpi-mini-label'>Sales</div>
                         <div class='kpi-mini-value'>{money(right_sales)}</div>
@@ -358,7 +366,7 @@ def _render_dimension_section(
     left_label: str,
     right_label: str,
 ):
-    st.markdown(f"### {section_title}")
+    st.markdown(f"<h3 style='text-align:center;margin:18px 0 10px 0;'>{section_title}</h3>", unsafe_allow_html=True)
 
     left_top = left_roll.head(top_n).copy()
     right_top = right_roll.head(top_n).copy()
@@ -434,8 +442,10 @@ def render(ctx: dict):
         .kpi-mini-value{font-size:28px; font-weight:800; line-height:1.18; white-space:nowrap;}
         .kpi-group-card{padding:12px 16px !important; border-radius:10px !important; margin-bottom:6px; display:inline-block !important; width:auto !important; min-width:0 !important;}
         .kpi-group-title{font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; opacity:0.75; margin-bottom:12px; white-space:nowrap;}
-        .kpi-split-row{display:flex;justify-content:center;gap:64px;margin:6px 0 4px 0;}
+        .kpi-split-row{display:flex;justify-content:center;gap:64px;margin:0 0 8px 0;}
+        .kpi-split-title-row{display:flex;justify-content:center;gap:64px;margin:4px 0 6px 0;}
         .kpi-split-col{flex:1;max-width:290px;margin:0 8px;}
+        .kpi-split-card-title{text-align:center;margin-bottom:8px;display:block;}
         .kpi-metric-block{margin-bottom:14px;}
         .kpi-metric-block:last-child{margin-bottom:0;}
         .kpi-center-line{width:100%;background:rgba(20,20,20,0.82);border-radius:0;}
