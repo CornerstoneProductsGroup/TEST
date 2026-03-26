@@ -255,7 +255,7 @@ def _render_retailer_vendor_row(
             align="right",
         )
     with c_div:
-        # _render_center_divider(300)  # Removed: no longer needed
+        pass  # Center divider removed, nothing to render here
     with c_ret_b:
         _render_grouped_dim_card(
             section_label=f"Top 3 Retailers — {b_lbl}",
