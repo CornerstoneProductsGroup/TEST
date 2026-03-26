@@ -141,32 +141,44 @@ def _render_split_cards(
 
     st.markdown(
         f"""
-        <div style='display:flex;justify-content:center;gap:48px;margin-bottom:0px;'>
-            <div style='flex:1;max-width:260px;margin:0 8px;'>
+        <div class='kpi-split-row'>
+            <div class='kpi-split-col'>
                 <div class='kpi-card kpi-compact-card'>
                     <div class='kpi-group-title'>{left_title}</div>
-                    <div class='kpi-mini-label'>Sales</div>
-                    <div class='kpi-mini-value'>{money(left_sales)}</div>
-                    <div class='kpi-mini-label' style='margin-top:8px;'>Units</div>
-                    <div class='kpi-mini-value'>{left_units:,.0f}</div>
+                    <div class='kpi-metric-block'>
+                        <div class='kpi-mini-label'>Sales</div>
+                        <div class='kpi-mini-value'>{money(left_sales)}</div>
+                    </div>
+                    <div class='kpi-metric-block'>
+                        <div class='kpi-mini-label'>Units</div>
+                        <div class='kpi-mini-value'>{left_units:,.0f}</div>
+                    </div>
                 </div>
             </div>
-            <div style='flex:1;max-width:260px;margin:0 8px;'>
+            <div class='kpi-split-col'>
                 <div class='kpi-card kpi-compact-card' style='text-align:center;'>
                     <div class='kpi-group-title'>Difference</div>
-                    <div class='kpi-mini-label'>Sales Diff</div>
-                    {diff_html(left_sales, right_sales, 'money')}
-                    <div class='kpi-mini-label' style='margin-top:8px;'>Units Diff</div>
-                    {diff_html(left_units, right_units, 'int')}
+                    <div class='kpi-metric-block'>
+                        <div class='kpi-mini-label'>Sales Diff</div>
+                        {diff_html(left_sales, right_sales, 'money')}
+                    </div>
+                    <div class='kpi-metric-block'>
+                        <div class='kpi-mini-label'>Units Diff</div>
+                        {diff_html(left_units, right_units, 'int')}
+                    </div>
                 </div>
             </div>
-            <div style='flex:1;max-width:260px;margin:0 8px;'>
+            <div class='kpi-split-col'>
                 <div class='kpi-card kpi-compact-card'>
                     <div class='kpi-group-title'>{right_title}</div>
-                    <div class='kpi-mini-label'>Sales</div>
-                    <div class='kpi-mini-value'>{money(right_sales)}</div>
-                    <div class='kpi-mini-label' style='margin-top:8px;'>Units</div>
-                    <div class='kpi-mini-value'>{right_units:,.0f}</div>
+                    <div class='kpi-metric-block'>
+                        <div class='kpi-mini-label'>Sales</div>
+                        <div class='kpi-mini-value'>{money(right_sales)}</div>
+                    </div>
+                    <div class='kpi-metric-block'>
+                        <div class='kpi-mini-label'>Units</div>
+                        <div class='kpi-mini-value'>{right_units:,.0f}</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -331,12 +343,16 @@ def render(ctx: dict):
     st.markdown(
         """
         <style>
-        .kpi-compact-card{padding:12px 16px !important; border-radius:10px !important; margin-bottom:6px; display:table !important; width:auto !important; min-width:0 !important;}
+        .kpi-compact-card{padding:16px 20px !important; border-radius:10px !important; margin-bottom:10px; display:block !important; width:100% !important; min-width:0 !important;}
         .kpi-compact-card .kpi-title{font-size:15px !important; white-space:nowrap;}
         .kpi-mini-label{font-size:13px; font-weight:700; opacity:0.70; text-transform:uppercase; white-space:nowrap;}
-        .kpi-mini-value{font-size:28px; font-weight:800; line-height:1.1; white-space:nowrap;}
+        .kpi-mini-value{font-size:28px; font-weight:800; line-height:1.18; white-space:nowrap;}
         .kpi-group-card{padding:12px 16px !important; border-radius:10px !important; margin-bottom:6px; display:inline-block !important; width:auto !important; min-width:0 !important;}
-        .kpi-group-title{font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; opacity:0.75; margin-bottom:8px; white-space:nowrap;}
+        .kpi-group-title{font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; opacity:0.75; margin-bottom:12px; white-space:nowrap;}
+        .kpi-split-row{display:flex;justify-content:center;gap:64px;margin:6px 0 4px 0;}
+        .kpi-split-col{flex:1;max-width:290px;margin:0 8px;}
+        .kpi-metric-block{margin-bottom:14px;}
+        .kpi-metric-block:last-child{margin-bottom:0;}
         .kpi-center-line{width:100%;background:rgba(20,20,20,0.82);border-radius:0;}
         </style>
         """,
