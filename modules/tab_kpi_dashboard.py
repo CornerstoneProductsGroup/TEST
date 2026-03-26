@@ -91,13 +91,16 @@ def _build_lookup(df_roll: pd.DataFrame, dim: str) -> dict[str, tuple[float, flo
 
 # New header with three centered titles above each card
 def _render_split_header(current_label: str, diff_label: str, compare_label: str):
-    st.markdown("""
+    st.markdown(
+        f"""
         <div style='display:flex;justify-content:center;gap:48px;margin-bottom:8px;'>
-            <div style='flex:1;text-align:center;'><h3 style='margin:0;font-size:18px;'>""" + current_label + "</h3></div>"
-            "<div style='flex:1;text-align:center;'><h3 style='margin:0;font-size:18px;'>" + diff_label + "</h3></div>"
-            "<div style='flex:1;text-align:center;'><h3 style='margin:0;font-size:18px;'>" + compare_label + "</h3></div>"
+            <div style='flex:1;text-align:center;'><h3 style='margin:0;font-size:18px;'>{current_label}</h3></div>
+            <div style='flex:1;text-align:center;'><h3 style='margin:0;font-size:18px;'>{diff_label}</h3></div>
+            <div style='flex:1;text-align:center;'><h3 style='margin:0;font-size:18px;'>{compare_label}</h3></div>
         </div>
-    """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _render_split_cards(
@@ -116,10 +119,11 @@ def _render_split_cards(
     right_baseline: str,
 ):
     # Centered row of three cards, each with its own title above
-    st.markdown("""
-        <div style='display:flex;justify-content:center;gap:48px;margin-bottom:0px;'>
-            <div style='flex:1;max-width:260px;margin:0 8px;'>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        "<div style='display:flex;justify-content:center;gap:48px;margin-bottom:0px;'>"
+        "<div style='flex:1;max-width:260px;margin:0 8px;'>",
+        unsafe_allow_html=True,
+    )
     st.markdown(
         f"<div class='kpi-card kpi-compact-card'>"
         f"<div class='kpi-mini-label'>Sales</div>"
