@@ -135,8 +135,8 @@ def _render_split_cards(
         else:
             val_fmt = f"{abs(delta):,.0f}"
         return (
-            f"<div style='color:{color};font-weight:800;font-size:18px;line-height:1.3;margin-bottom:2px;'>{arrow} {val_fmt}</div>"
-            f"<div style='color:{color};font-weight:700;font-size:15px;line-height:1.3;'>{pct:,.1f}%</div>"
+            f"<div style='color:{color};font-weight:800;font-size:28px;line-height:1.18;margin-bottom:2px;'>{arrow} {val_fmt}</div>"
+            f"<div style='color:{color};font-weight:800;font-size:28px;line-height:1.18;'>{pct:,.1f}%</div>"
         )
 
     st.markdown(
