@@ -506,6 +506,7 @@ def render(ctx: dict):
         .kpi-split-card-title-name{text-align:center;font-size:20px;font-weight:900;line-height:1.2;margin-bottom:8px;}
         .kpi-summary-wrap{text-align:center;}
         .kpi-summary-outline{display:inline-block;border:4px solid rgba(80,80,80,0.45); border-radius:12px; padding:10px 6px 8px 6px; margin:14px 0 12px 0;}
+        .kpi-summary-outline .kpi-split-col{flex:0 0 290px; max-width:290px;}
         .kpi-metric-block{margin-bottom:14px;}
         .kpi-metric-block:last-child{margin-bottom:0;}
         .kpi-center-line{width:100%;background:rgba(20,20,20,0.82);border-radius:0;}
