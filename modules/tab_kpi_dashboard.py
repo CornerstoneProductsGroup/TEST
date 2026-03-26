@@ -197,8 +197,8 @@ def _render_split_cards(
             f"<div style='color:{color};font-weight:700;font-size:16px;line-height:1.2;text-align:center;margin-top:2px;'>{pct:,.1f}%</div>"
         )
 
-    group_start = "<div class='kpi-summary-outline'>" if outlined_group else ""
-    group_end = "</div>" if outlined_group else ""
+    group_start = "<div class='kpi-summary-wrap'><div class='kpi-summary-outline'>" if outlined_group else ""
+    group_end = "</div></div>" if outlined_group else ""
 
     st.markdown(
         f"""
@@ -504,7 +504,8 @@ def render(ctx: dict):
         .kpi-split-card-title{text-align:center;margin-bottom:8px;display:block;}
         .kpi-split-card-title-small{text-align:center;font-size:12px;font-weight:800;letter-spacing:0.04em;opacity:0.72;text-transform:uppercase;margin-bottom:2px;}
         .kpi-split-card-title-name{text-align:center;font-size:20px;font-weight:900;line-height:1.2;margin-bottom:8px;}
-        .kpi-summary-outline{border:2px solid rgba(80,80,80,0.35); border-radius:12px; padding:12px 8px 10px 8px; margin:14px 0 12px 0;}
+        .kpi-summary-wrap{text-align:center;}
+        .kpi-summary-outline{display:inline-block;border:4px solid rgba(80,80,80,0.45); border-radius:12px; padding:10px 6px 8px 6px; margin:14px 0 12px 0;}
         .kpi-metric-block{margin-bottom:14px;}
         .kpi-metric-block:last-child{margin-bottom:0;}
         .kpi-center-line{width:100%;background:rgba(20,20,20,0.82);border-radius:0;}
