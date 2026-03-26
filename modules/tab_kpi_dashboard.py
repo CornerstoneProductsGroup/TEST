@@ -118,23 +118,6 @@ def _render_split_cards(
     left_baseline: str,
     right_baseline: str,
 ):
-    # Centered row of three cards, each with its own title above
-    st.markdown(
-        "<div style='display:flex;justify-content:center;gap:48px;margin-bottom:0px;'>"
-        "<div style='flex:1;max-width:260px;margin:0 8px;'>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        f"<div class='kpi-card kpi-compact-card'>"
-        f"<div class='kpi-mini-label'>Sales</div>"
-        f"<div class='kpi-mini-value'>{money(left_sales)}</div>"
-        f"<div class='kpi-mini-label' style='margin-top:8px;'>Units</div>"
-        f"<div class='kpi-mini-value'>{left_units:,.0f}</div>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown("<div style='flex:1;max-width:260px;margin:0 8px;'>", unsafe_allow_html=True)
     def diff_html(val_now, val_prev, mode):
         delta = float(val_now) - float(val_prev)
         if delta > 0:
@@ -155,27 +138,38 @@ def _render_split_cards(
             f"<div style='color:{color};font-weight:800;font-size:18px;line-height:1.3;margin-bottom:2px;'>{arrow} {val_fmt}</div>"
             f"<div style='color:{color};font-weight:700;font-size:15px;line-height:1.3;'>{pct:,.1f}%</div>"
         )
+
     st.markdown(
-        f"<div class='kpi-card kpi-compact-card' style='text-align:center;'>"
-        f"<div class='kpi-mini-label'>Sales Diff</div>"
-        f"{diff_html(left_sales, right_sales, 'money')}"
-        f"<div class='kpi-mini-label' style='margin-top:8px;'>Units Diff</div>"
-        f"{diff_html(left_units, right_units, 'int')}"
-        f"</div>",
+        f"""
+        <div style='display:flex;justify-content:center;gap:48px;margin-bottom:0px;'>
+            <div style='flex:1;max-width:260px;margin:0 8px;'>
+                <div class='kpi-card kpi-compact-card'>
+                    <div class='kpi-mini-label'>Sales</div>
+                    <div class='kpi-mini-value'>{money(left_sales)}</div>
+                    <div class='kpi-mini-label' style='margin-top:8px;'>Units</div>
+                    <div class='kpi-mini-value'>{left_units:,.0f}</div>
+                </div>
+            </div>
+            <div style='flex:1;max-width:260px;margin:0 8px;'>
+                <div class='kpi-card kpi-compact-card' style='text-align:center;'>
+                    <div class='kpi-mini-label'>Sales Diff</div>
+                    {diff_html(left_sales, right_sales, 'money')}
+                    <div class='kpi-mini-label' style='margin-top:8px;'>Units Diff</div>
+                    {diff_html(left_units, right_units, 'int')}
+                </div>
+            </div>
+            <div style='flex:1;max-width:260px;margin:0 8px;'>
+                <div class='kpi-card kpi-compact-card'>
+                    <div class='kpi-mini-label'>Sales</div>
+                    <div class='kpi-mini-value'>{money(right_sales)}</div>
+                    <div class='kpi-mini-label' style='margin-top:8px;'>Units</div>
+                    <div class='kpi-mini-value'>{right_units:,.0f}</div>
+                </div>
+            </div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
-    st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown("<div style='flex:1;max-width:260px;margin:0 8px;'>", unsafe_allow_html=True)
-    st.markdown(
-        f"<div class='kpi-card kpi-compact-card'>"
-        f"<div class='kpi-mini-label'>Sales</div>"
-        f"<div class='kpi-mini-value'>{money(right_sales)}</div>"
-        f"<div class='kpi-mini-label' style='margin-top:8px;'>Units</div>"
-        f"<div class='kpi-mini-value'>{right_units:,.0f}</div>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown("</div></div>", unsafe_allow_html=True)
 
 
 def _render_grouped_dim_card(
