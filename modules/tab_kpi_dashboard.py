@@ -166,6 +166,7 @@ def _render_split_cards(
     right_best_week_units: float,
     left_entity_name: str | None = None,
     right_entity_name: str | None = None,
+    outlined_group: bool = False,
 ):
     def title_html(title: str, entity_name: str | None) -> str:
         if entity_name:
@@ -196,8 +197,12 @@ def _render_split_cards(
             f"<div style='color:{color};font-weight:700;font-size:16px;line-height:1.2;text-align:center;margin-top:2px;'>{pct:,.1f}%</div>"
         )
 
+    group_start = "<div class='kpi-summary-outline'>" if outlined_group else ""
+    group_end = "</div>" if outlined_group else ""
+
     st.markdown(
         f"""
+        {group_start}
         <div class='kpi-split-title-row'>
             <div class='kpi-split-col'>
                 {title_html(left_title, left_entity_name)}
@@ -269,6 +274,7 @@ def _render_split_cards(
                 </div>
             </div>
         </div>
+        {group_end}
         """,
         unsafe_allow_html=True,
     )
@@ -469,6 +475,7 @@ def _render_dimension_section(
         right_best_week_units=right_best_units,
         left_entity_name=left_label,
         right_entity_name=right_label,
+        outlined_group=True,
     )
 
 
@@ -497,6 +504,7 @@ def render(ctx: dict):
         .kpi-split-card-title{text-align:center;margin-bottom:8px;display:block;}
         .kpi-split-card-title-small{text-align:center;font-size:12px;font-weight:800;letter-spacing:0.04em;opacity:0.72;text-transform:uppercase;margin-bottom:2px;}
         .kpi-split-card-title-name{text-align:center;font-size:20px;font-weight:900;line-height:1.2;margin-bottom:8px;}
+        .kpi-summary-outline{border:2px solid rgba(80,80,80,0.35); border-radius:12px; padding:12px 8px 10px 8px; margin:14px 0 12px 0;}
         .kpi-metric-block{margin-bottom:14px;}
         .kpi-metric-block:last-child{margin-bottom:0;}
         .kpi-center-line{width:100%;background:rgba(20,20,20,0.82);border-radius:0;}
