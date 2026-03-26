@@ -222,6 +222,10 @@ def _render_split_cards(
                         <div class='kpi-mini-label'>Units Diff</div>
                         {diff_html(left_units, right_units, 'int')}
                     </div>
+                    <div class='kpi-metric-block'>
+                        <div class='kpi-mini-label'>ASP Diff</div>
+                        {diff_html(_calc_asp(left_sales, left_units), _calc_asp(right_sales, right_units), 'money')}
+                    </div>
                 </div>
             </div>
             <div class='kpi-split-col'>
