@@ -123,27 +123,62 @@ def _render_split_cards(
     left_baseline: str,
     right_baseline: str,
 ):
-    left, mid, right = st.columns([1, 0.04, 1], gap="small")
+    left, mid, right = st.columns([1, 1, 1], gap="small")
+    # Left: Current period
     with left:
-        _render_entity_kpi_card(
-            title=left_title,
-            sales=left_sales,
-            units=left_units,
-            sales_ref=left_ref_sales,
-            units_ref=left_ref_units,
-            baseline_name=left_baseline,
-            align="right",
+        st.markdown(
+            f"<div class='kpi-card kpi-compact-card'>"
+            f"<div class='kpi-title'>{left_title}</div>"
+            f"<div class='kpi-mini-label'>Sales</div>"
+            f"<div class='kpi-mini-value'>{money(left_sales)}</div>"
+            f"<div class='kpi-mini-label' style='margin-top:8px;'>Units</div>"
+            f"<div class='kpi-mini-value'>{left_units:,.0f}</div>"
+            f"</div>",
+            unsafe_allow_html=True,
         )
+    # Middle: Difference
     with mid:
-        _render_center_divider(148)
+        def diff_html(val_now, val_prev, mode):
+            delta = float(val_now) - float(val_prev)
+            if delta > 0:
+                arrow = "▲"
+                color = "#2e7d32"
+            elif delta < 0:
+                arrow = "▼"
+                color = "#c62828"
+            else:
+                arrow = "•"
+                color = "#808080"
+            pct = (abs(delta) / abs(float(val_prev)) * 100.0) if float(val_prev) != 0 else 0.0
+            if mode == "money":
+                val_fmt = money(abs(delta))
+            else:
+                val_fmt = f"{abs(delta):,.0f}"
+            return (
+                f"<div style='color:{color};font-weight:800;font-size:18px;line-height:1.3;margin-bottom:2px;'>{arrow} {val_fmt}</div>"
+                f"<div style='color:{color};font-weight:700;font-size:15px;line-height:1.3;'>{pct:,.1f}%</div>"
+            )
+        st.markdown(
+            f"<div class='kpi-card kpi-compact-card' style='text-align:center;'>"
+            f"<div class='kpi-title'>Diff</div>"
+            f"<div class='kpi-mini-label'>Sales</div>"
+            f"{diff_html(left_sales, right_sales, 'money')}"
+            f"<div class='kpi-mini-label' style='margin-top:8px;'>Units</div>"
+            f"{diff_html(left_units, right_units, 'int')}"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    # Right: Prior period
     with right:
-        _render_entity_kpi_card(
-            title=right_title,
-            sales=right_sales,
-            units=right_units,
-            sales_ref=right_ref_sales,
-            units_ref=right_ref_units,
-            baseline_name=right_baseline,
+        st.markdown(
+            f"<div class='kpi-card kpi-compact-card'>"
+            f"<div class='kpi-title'>{right_title}</div>"
+            f"<div class='kpi-mini-label'>Sales</div>"
+            f"<div class='kpi-mini-value'>{money(right_sales)}</div>"
+            f"<div class='kpi-mini-label' style='margin-top:8px;'>Units</div>"
+            f"<div class='kpi-mini-value'>{right_units:,.0f}</div>"
+            f"</div>",
+            unsafe_allow_html=True,
         )
 
 
