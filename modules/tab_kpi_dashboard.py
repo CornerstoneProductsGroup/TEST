@@ -144,6 +144,7 @@ def _render_split_cards(
         <div style='display:flex;justify-content:center;gap:48px;margin-bottom:0px;'>
             <div style='flex:1;max-width:260px;margin:0 8px;'>
                 <div class='kpi-card kpi-compact-card'>
+                    <div class='kpi-group-title'>{left_title}</div>
                     <div class='kpi-mini-label'>Sales</div>
                     <div class='kpi-mini-value'>{money(left_sales)}</div>
                     <div class='kpi-mini-label' style='margin-top:8px;'>Units</div>
@@ -152,6 +153,7 @@ def _render_split_cards(
             </div>
             <div style='flex:1;max-width:260px;margin:0 8px;'>
                 <div class='kpi-card kpi-compact-card' style='text-align:center;'>
+                    <div class='kpi-group-title'>Difference</div>
                     <div class='kpi-mini-label'>Sales Diff</div>
                     {diff_html(left_sales, right_sales, 'money')}
                     <div class='kpi-mini-label' style='margin-top:8px;'>Units Diff</div>
@@ -160,6 +162,7 @@ def _render_split_cards(
             </div>
             <div style='flex:1;max-width:260px;margin:0 8px;'>
                 <div class='kpi-card kpi-compact-card'>
+                    <div class='kpi-group-title'>{right_title}</div>
                     <div class='kpi-mini-label'>Sales</div>
                     <div class='kpi-mini-value'>{money(right_sales)}</div>
                     <div class='kpi-mini-label' style='margin-top:8px;'>Units</div>
@@ -235,43 +238,25 @@ def _render_retailer_vendor_row(
     a_lbl: str,
     b_lbl: str,
 ):
-    c_ret_a, c_vend_a, c_div, c_ret_b, c_vend_b = st.columns([1, 1, 0.04, 1, 1], gap="small")
-    with c_ret_a:
-        _render_grouped_dim_card(
-            section_label=f"Top 3 Vendors — {a_lbl}",
-            dim="Vendor",
-            top_roll=vendors_a,
-            ref_roll=vendors_b,
-            top_n=3,
-            align="right",
-        )
-    with c_vend_a:
-        _render_grouped_dim_card(
-            section_label=f"Top 3 Retailers — {a_lbl}",
-            dim="Retailer",
-            top_roll=retailers_a,
-            ref_roll=retailers_b,
-            top_n=3,
-            align="right",
-        )
-    with c_div:
-        pass  # Center divider removed, nothing to render here
-    with c_ret_b:
-        _render_grouped_dim_card(
-            section_label=f"Top 3 Retailers — {b_lbl}",
-            dim="Retailer",
-            top_roll=retailers_b,
-            ref_roll=retailers_a,
-            top_n=3,
-        )
-    with c_vend_b:
-        _render_grouped_dim_card(
-            section_label=f"Top 3 Vendors — {b_lbl}",
-            dim="Vendor",
-            top_roll=vendors_b,
-            ref_roll=vendors_a,
-            top_n=3,
-        )
+    _render_dimension_section(
+        section_title="Top 3 Retailers",
+        dim="Retailer",
+        top_n=3,
+        left_roll=retailers_a,
+        right_roll=retailers_b,
+        left_label=a_lbl,
+        right_label=b_lbl,
+    )
+
+    _render_dimension_section(
+        section_title="Top 3 Vendors",
+        dim="Vendor",
+        top_n=3,
+        left_roll=vendors_a,
+        right_roll=vendors_b,
+        left_label=a_lbl,
+        right_label=b_lbl,
+    )
 
 
 def _render_dimension_section(
