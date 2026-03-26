@@ -434,6 +434,43 @@ def _render_dimension_section(
             right_entity_name=right_name,
         )
 
+    left_names = left_top[dim].astype(str).tolist() if (not left_top.empty and dim in left_top.columns) else []
+    right_names = right_top[dim].astype(str).tolist() if (not right_top.empty and dim in right_top.columns) else []
+
+    left_total_sales = float(left_top["Sales"].sum()) if "Sales" in left_top.columns else 0.0
+    left_total_units = float(left_top["Units"].sum()) if "Units" in left_top.columns else 0.0
+    right_total_sales = float(right_top["Sales"].sum()) if "Sales" in right_top.columns else 0.0
+    right_total_units = float(right_top["Units"].sum()) if "Units" in right_top.columns else 0.0
+
+    left_scope = left_df[left_df[dim].astype(str).isin(left_names)].copy() if (dim in left_df.columns and left_names) else left_df.iloc[0:0].copy()
+    right_scope = right_df[right_df[dim].astype(str).isin(right_names)].copy() if (dim in right_df.columns and right_names) else right_df.iloc[0:0].copy()
+
+    left_best_lbl, left_best_sales, left_best_units, _ = _best_week_stats(left_scope)
+    right_best_lbl, right_best_sales, right_best_units, _ = _best_week_stats(right_scope)
+
+    _render_split_cards(
+        left_title=f"{section_title} Total",
+        right_title=f"{section_title} Total",
+        left_sales=left_total_sales,
+        left_units=left_total_units,
+        right_sales=right_total_sales,
+        right_units=right_total_units,
+        left_ref_sales=right_total_sales,
+        left_ref_units=right_total_units,
+        right_ref_sales=left_total_sales,
+        right_ref_units=left_total_units,
+        left_baseline=f"{right_label} top {top_n}",
+        right_baseline=f"{left_label} top {top_n}",
+        left_best_week_label=left_best_lbl,
+        left_best_week_sales=left_best_sales,
+        left_best_week_units=left_best_units,
+        right_best_week_label=right_best_lbl,
+        right_best_week_sales=right_best_sales,
+        right_best_week_units=right_best_units,
+        left_entity_name=left_label,
+        right_entity_name=right_label,
+    )
+
 
 def render(ctx: dict):
     dfA = ctx["dfA"]
