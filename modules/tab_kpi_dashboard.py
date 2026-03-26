@@ -88,6 +88,47 @@ def _build_lookup(df_roll: pd.DataFrame, dim: str) -> dict[str, tuple[float, flo
     return out
 
 
+def _calc_asp(sales: float, units: float) -> float:
+    return (float(sales) / float(units)) if float(units) != 0 else 0.0
+
+
+def _best_week_stats(df: pd.DataFrame, dim: str | None = None, key: str | None = None) -> tuple[str, float, float, float]:
+    if df.empty or "Sales" not in df.columns:
+        return ("-", 0.0, 0.0, 0.0)
+
+    d = df.copy()
+    if dim and key is not None and dim in d.columns:
+        d = d[d[dim].astype(str) == str(key)]
+    if d.empty:
+        return ("-", 0.0, 0.0, 0.0)
+
+    if "WeekEnd" not in d.columns:
+        sales = float(d["Sales"].sum())
+        units = float(d["Units"].sum()) if "Units" in d.columns else 0.0
+        return ("-", sales, units, _calc_asp(sales, units))
+
+    wk = (
+        d.groupby("WeekEnd", as_index=False)
+        .agg(Sales=("Sales", "sum"), Units=("Units", "sum"))
+        .sort_values("Sales", ascending=False)
+    )
+    if wk.empty:
+        return ("-", 0.0, 0.0, 0.0)
+
+    top = wk.iloc[0]
+    best_end = pd.to_datetime(top["WeekEnd"], errors="coerce")
+    best_label = best_end.strftime("%Y-%m-%d") if pd.notna(best_end) else "-"
+
+    if "WeekLabel" in d.columns and pd.notna(best_end):
+        labels = d.loc[pd.to_datetime(d["WeekEnd"], errors="coerce") == best_end, "WeekLabel"].dropna()
+        if not labels.empty:
+            best_label = str(labels.iloc[0])
+
+    best_sales = float(top["Sales"])
+    best_units = float(top["Units"])
+    return (best_label, best_sales, best_units, _calc_asp(best_sales, best_units))
+
+
 
 # New header with three centered titles above each card
 def _render_split_header(current_label: str, diff_label: str, compare_label: str):
@@ -117,6 +158,12 @@ def _render_split_cards(
     right_ref_units: float,
     left_baseline: str,
     right_baseline: str,
+    left_best_week_label: str,
+    left_best_week_sales: float,
+    left_best_week_units: float,
+    right_best_week_label: str,
+    right_best_week_sales: float,
+    right_best_week_units: float,
 ):
     def diff_html(val_now, val_prev, mode):
         delta = float(val_now) - float(val_prev)
@@ -153,6 +200,15 @@ def _render_split_cards(
                         <div class='kpi-mini-label'>Units</div>
                         <div class='kpi-mini-value'>{left_units:,.0f}</div>
                     </div>
+                    <div class='kpi-metric-block'>
+                        <div class='kpi-mini-label'>ASP</div>
+                        <div class='kpi-mini-value'>{money(_calc_asp(left_sales, left_units))}</div>
+                    </div>
+                    <div class='kpi-metric-block'>
+                        <div class='kpi-mini-label'>Biggest Week</div>
+                        <div style='font-size:15px;font-weight:700;line-height:1.35;'>{left_best_week_label}</div>
+                        <div style='font-size:15px;font-weight:700;line-height:1.35;'>{money(left_best_week_sales)} | {left_best_week_units:,.0f} units</div>
+                    </div>
                 </div>
             </div>
             <div class='kpi-split-col'>
@@ -178,6 +234,15 @@ def _render_split_cards(
                     <div class='kpi-metric-block'>
                         <div class='kpi-mini-label'>Units</div>
                         <div class='kpi-mini-value'>{right_units:,.0f}</div>
+                    </div>
+                    <div class='kpi-metric-block'>
+                        <div class='kpi-mini-label'>ASP</div>
+                        <div class='kpi-mini-value'>{money(_calc_asp(right_sales, right_units))}</div>
+                    </div>
+                    <div class='kpi-metric-block'>
+                        <div class='kpi-mini-label'>Biggest Week</div>
+                        <div style='font-size:15px;font-weight:700;line-height:1.35;'>{right_best_week_label}</div>
+                        <div style='font-size:15px;font-weight:700;line-height:1.35;'>{money(right_best_week_sales)} | {right_best_week_units:,.0f} units</div>
                     </div>
                 </div>
             </div>
@@ -247,6 +312,8 @@ def _render_retailer_vendor_row(
     retailers_b: pd.DataFrame,
     vendors_a: pd.DataFrame,
     vendors_b: pd.DataFrame,
+    dfA: pd.DataFrame,
+    dfB: pd.DataFrame,
     a_lbl: str,
     b_lbl: str,
 ):
@@ -256,6 +323,8 @@ def _render_retailer_vendor_row(
         top_n=3,
         left_roll=retailers_a,
         right_roll=retailers_b,
+        left_df=dfA,
+        right_df=dfB,
         left_label=a_lbl,
         right_label=b_lbl,
     )
@@ -266,6 +335,8 @@ def _render_retailer_vendor_row(
         top_n=3,
         left_roll=vendors_a,
         right_roll=vendors_b,
+        left_df=dfA,
+        right_df=dfB,
         left_label=a_lbl,
         right_label=b_lbl,
     )
@@ -278,6 +349,8 @@ def _render_dimension_section(
     top_n: int,
     left_roll: pd.DataFrame,
     right_roll: pd.DataFrame,
+    left_df: pd.DataFrame,
+    right_df: pd.DataFrame,
     left_label: str,
     right_label: str,
 ):
@@ -313,6 +386,8 @@ def _render_dimension_section(
 
         left_ref_sales, left_ref_units = left_lookup.get(left_name, (0.0, 0.0))
         right_ref_sales, right_ref_units = right_lookup.get(right_name, (0.0, 0.0))
+        left_best_lbl, left_best_sales, left_best_units, _ = _best_week_stats(left_df, dim, left_name)
+        right_best_lbl, right_best_sales, right_best_units, _ = _best_week_stats(right_df, dim, right_name)
 
         _render_split_cards(
             left_title=f"{dim} #{idx + 1}: {left_name}",
@@ -327,6 +402,12 @@ def _render_dimension_section(
             right_ref_units=right_ref_units,
             left_baseline=f"{right_label} match",
             right_baseline=f"{left_label} match",
+            left_best_week_label=left_best_lbl,
+            left_best_week_sales=left_best_sales,
+            left_best_week_units=left_best_units,
+            right_best_week_label=right_best_lbl,
+            right_best_week_sales=right_best_sales,
+            right_best_week_units=right_best_units,
         )
 
 
@@ -365,6 +446,8 @@ def render(ctx: dict):
     total_units_a = float(dfA["Units"].sum()) if "Units" in dfA.columns else 0.0
     total_sales_b = float(dfB["Sales"].sum()) if "Sales" in dfB.columns else 0.0
     total_units_b = float(dfB["Units"].sum()) if "Units" in dfB.columns else 0.0
+    best_a_lbl, best_a_sales, best_a_units, _ = _best_week_stats(dfA)
+    best_b_lbl, best_b_sales, best_b_units, _ = _best_week_stats(dfB)
 
     _render_split_cards(
         left_title="Period Total",
@@ -379,6 +462,12 @@ def render(ctx: dict):
         right_ref_units=total_units_a,
         left_baseline=b_lbl,
         right_baseline=a_lbl,
+        left_best_week_label=best_a_lbl,
+        left_best_week_sales=best_a_sales,
+        left_best_week_units=best_a_units,
+        right_best_week_label=best_b_lbl,
+        right_best_week_sales=best_b_sales,
+        right_best_week_units=best_b_units,
     )
 
     retailers_a = _rollup_by_dim(dfA, "Retailer")
@@ -391,6 +480,8 @@ def render(ctx: dict):
         retailers_b=retailers_b,
         vendors_a=vendors_a,
         vendors_b=vendors_b,
+        dfA=dfA,
+        dfB=dfB,
         a_lbl=a_lbl,
         b_lbl=b_lbl,
     )
