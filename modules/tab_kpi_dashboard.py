@@ -214,6 +214,33 @@ def _render_top_metric_compare_bars(
     st.markdown(asp_html, unsafe_allow_html=True)
 
 
+def _render_split_cards_with_bars(
+    *,
+    current_label: str,
+    compare_label: str,
+    current_sales: float,
+    compare_sales: float,
+    current_units: float,
+    compare_units: float,
+    left_offset_class: str | None = None,
+    split_card_kwargs: dict,
+):
+    left_area, right_area = st.columns([1.2, 1.8], gap="large")
+    with left_area:
+        if left_offset_class:
+            st.markdown(f"<div class='{left_offset_class}'></div>", unsafe_allow_html=True)
+        _render_top_metric_compare_bars(
+            current_label=current_label,
+            compare_label=compare_label,
+            current_sales=current_sales,
+            compare_sales=compare_sales,
+            current_units=current_units,
+            compare_units=compare_units,
+        )
+    with right_area:
+        _render_split_cards(**split_card_kwargs)
+
+
 
 # New header with three centered titles above each card
 def _render_split_header(current_label: str, diff_label: str, compare_label: str):
@@ -502,27 +529,36 @@ def _render_dimension_section(
         left_best_lbl, left_best_sales, left_best_units, _ = _best_week_stats(left_df, dim, left_name)
         right_best_lbl, right_best_sales, right_best_units, _ = _best_week_stats(right_df, dim, right_name)
 
-        _render_split_cards(
-            left_title=f"{dim} #{idx + 1}",
-            right_title=f"{dim} #{idx + 1}",
-            left_sales=left_sales,
-            left_units=left_units,
-            right_sales=right_sales,
-            right_units=right_units,
-            left_ref_sales=left_ref_sales,
-            left_ref_units=left_ref_units,
-            right_ref_sales=right_ref_sales,
-            right_ref_units=right_ref_units,
-            left_baseline=f"{right_label} match",
-            right_baseline=f"{left_label} match",
-            left_best_week_label=left_best_lbl,
-            left_best_week_sales=left_best_sales,
-            left_best_week_units=left_best_units,
-            right_best_week_label=right_best_lbl,
-            right_best_week_sales=right_best_sales,
-            right_best_week_units=right_best_units,
-            left_entity_name=left_name,
-            right_entity_name=right_name,
+        _render_split_cards_with_bars(
+            current_label=left_name,
+            compare_label=right_name,
+            current_sales=left_sales,
+            compare_sales=right_sales,
+            current_units=left_units,
+            compare_units=right_units,
+            left_offset_class="kpi-left-row-offset",
+            split_card_kwargs={
+                "left_title": f"{dim} #{idx + 1}",
+                "right_title": f"{dim} #{idx + 1}",
+                "left_sales": left_sales,
+                "left_units": left_units,
+                "right_sales": right_sales,
+                "right_units": right_units,
+                "left_ref_sales": left_ref_sales,
+                "left_ref_units": left_ref_units,
+                "right_ref_sales": right_ref_sales,
+                "right_ref_units": right_ref_units,
+                "left_baseline": f"{right_label} match",
+                "right_baseline": f"{left_label} match",
+                "left_best_week_label": left_best_lbl,
+                "left_best_week_sales": left_best_sales,
+                "left_best_week_units": left_best_units,
+                "right_best_week_label": right_best_lbl,
+                "right_best_week_sales": right_best_sales,
+                "right_best_week_units": right_best_units,
+                "left_entity_name": left_name,
+                "right_entity_name": right_name,
+            },
         )
 
     left_names = left_top[dim].astype(str).tolist() if (not left_top.empty and dim in left_top.columns) else []
@@ -539,28 +575,37 @@ def _render_dimension_section(
     left_best_lbl, left_best_sales, left_best_units, _ = _best_week_stats(left_scope)
     right_best_lbl, right_best_sales, right_best_units, _ = _best_week_stats(right_scope)
 
-    _render_split_cards(
-        left_title=f"{section_title} Total",
-        right_title=f"{section_title} Total",
-        left_sales=left_total_sales,
-        left_units=left_total_units,
-        right_sales=right_total_sales,
-        right_units=right_total_units,
-        left_ref_sales=right_total_sales,
-        left_ref_units=right_total_units,
-        right_ref_sales=left_total_sales,
-        right_ref_units=left_total_units,
-        left_baseline=f"{right_label} top {top_n}",
-        right_baseline=f"{left_label} top {top_n}",
-        left_best_week_label=left_best_lbl,
-        left_best_week_sales=left_best_sales,
-        left_best_week_units=left_best_units,
-        right_best_week_label=right_best_lbl,
-        right_best_week_sales=right_best_sales,
-        right_best_week_units=right_best_units,
-        left_entity_name=left_label,
-        right_entity_name=right_label,
-        outlined_group=True,
+    _render_split_cards_with_bars(
+        current_label=left_label,
+        compare_label=right_label,
+        current_sales=left_total_sales,
+        compare_sales=right_total_sales,
+        current_units=left_total_units,
+        compare_units=right_total_units,
+        left_offset_class="kpi-left-row-offset",
+        split_card_kwargs={
+            "left_title": f"{section_title} Total",
+            "right_title": f"{section_title} Total",
+            "left_sales": left_total_sales,
+            "left_units": left_total_units,
+            "right_sales": right_total_sales,
+            "right_units": right_total_units,
+            "left_ref_sales": right_total_sales,
+            "left_ref_units": right_total_units,
+            "right_ref_sales": left_total_sales,
+            "right_ref_units": left_total_units,
+            "left_baseline": f"{right_label} top {top_n}",
+            "right_baseline": f"{left_label} top {top_n}",
+            "left_best_week_label": left_best_lbl,
+            "left_best_week_sales": left_best_sales,
+            "left_best_week_units": left_best_units,
+            "right_best_week_label": right_best_lbl,
+            "right_best_week_sales": right_best_sales,
+            "right_best_week_units": right_best_units,
+            "left_entity_name": left_label,
+            "right_entity_name": right_label,
+            "outlined_group": True,
+        },
     )
 
 
@@ -606,6 +651,7 @@ def render(ctx: dict):
         .kpi-bar-fill-low{background:linear-gradient(90deg,#c62828 0%,#ef5350 100%);}
         .kpi-bar-fill-neutral{background:linear-gradient(90deg,#60656d 0%,#8a9099 100%);}
         .kpi-left-offset{height:72px;}
+        .kpi-left-row-offset{height:42px;}
         </style>
         """,
         unsafe_allow_html=True,
