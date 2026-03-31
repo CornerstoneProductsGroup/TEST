@@ -985,12 +985,12 @@ def _prepare_retailer_share(df_current: pd.DataFrame, df_compare: pd.DataFrame) 
     merged = current.merge(compare, on="Retailer", how="outer").fillna(0.0)
     merged = merged.sort_values("Sales", ascending=False).reset_index(drop=True)
 
-    if len(merged) > 4:
-        top = merged.head(4).copy()
+    if len(merged) > 5:
+        top = merged.head(5).copy()
         top.loc[len(top)] = {
             "Retailer": "Other",
-            "Sales": float(merged.iloc[4:]["Sales"].sum()),
-            "CompareSales": float(merged.iloc[4:]["CompareSales"].sum()),
+            "Sales": float(merged.iloc[5:]["Sales"].sum()),
+            "CompareSales": float(merged.iloc[5:]["CompareSales"].sum()),
         }
         merged = top
 
