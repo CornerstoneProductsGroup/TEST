@@ -1752,6 +1752,13 @@ def render(ctx: dict):
 
     left_stack_col, right_stack_col = st.columns([2.6, 0.75], gap="small")
     with left_stack_col:
+        with st.container(border=True):
+            st.markdown("#### Weekly Sales Trend")
+            trend_chart = _weekly_sales_trend_chart(weekly_trend, current_label, compare_label)
+            if trend_chart is None:
+                st.info("No weekly trend data available for the selected timeframe.")
+            else:
+                st.altair_chart(trend_chart, use_container_width=True)
         _render_exec_kpi_ribbon(
             current_tiles=tiles["current"],
             current_row_label=f"Current Totals: {current_label}",
@@ -1760,13 +1767,6 @@ def render(ctx: dict):
             compare_tiles=tiles["compare"] if compare_label else None,
             compare_row_label=(f"Compare Totals: {compare_label}" if compare_label else None),
         )
-        with st.container(border=True):
-            st.markdown("#### Weekly Sales Trend")
-            trend_chart = _weekly_sales_trend_chart(weekly_trend, current_label, compare_label)
-            if trend_chart is None:
-                st.info("No weekly trend data available for the selected timeframe.")
-            else:
-                st.altair_chart(trend_chart, use_container_width=True)
 
     with right_stack_col:
         with st.container(border=True):
