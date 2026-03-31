@@ -756,49 +756,19 @@ def render(ctx: dict):
     st.markdown(
         """
         <style>
-        .kpi-compact-card{padding:16px 20px !important; border-radius:10px !important; margin-bottom:10px; display:block !important; width:100% !important; min-width:0 !important;}
-        .kpi-compact-card .kpi-title{font-size:15px !important; white-space:nowrap;}
-        .kpi-mini-label{font-size:13px; font-weight:700; opacity:0.70; text-transform:uppercase; white-space:nowrap;}
-        .kpi-mini-value{font-size:28px; font-weight:800; line-height:1.18; white-space:nowrap;}
-        .kpi-group-card{padding:12px 16px !important; border-radius:10px !important; margin-bottom:6px; display:inline-block !important; width:auto !important; min-width:0 !important;}
-        .kpi-group-title{font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:0.05em; opacity:0.75; margin-bottom:12px; white-space:nowrap;}
-        .kpi-split-row{display:flex;justify-content:center;gap:24px;margin:0 0 8px 0;}
-        .kpi-split-title-row{display:flex;justify-content:center;gap:24px;margin:4px 0 6px 0;}
-        .kpi-split-col{flex:1;max-width:270px;margin:0 6px;}
-        .kpi-split-card-title{text-align:center;margin-bottom:8px;display:block;}
-        .kpi-split-card-title-small{text-align:center;font-size:12px;font-weight:800;letter-spacing:0.04em;opacity:0.72;text-transform:uppercase;margin-bottom:2px;}
-        .kpi-split-card-title-name{text-align:center;font-size:20px;font-weight:900;line-height:1.2;margin-bottom:8px;}
-        .kpi-summary-wrap{text-align:center;}
-        .kpi-summary-outline{display:inline-block;border:4px solid rgba(80,80,80,0.45); border-radius:12px; padding:10px 6px 8px 6px; margin:14px 0 12px 0;}
-        .kpi-summary-outline .kpi-split-col{flex:0 0 290px; max-width:290px;}
-        .kpi-metric-block{margin-bottom:14px;}
-        .kpi-metric-block:last-child{margin-bottom:0;}
-        .kpi-center-line{width:100%;background:rgba(20,20,20,0.82);border-radius:0;}
-        .kpi-bar-card{border:2px solid rgba(128,128,128,0.35);border-radius:10px;padding:8px 10px 7px 10px;background:var(--secondary-background-color);margin-bottom:6px;max-width:420px;}
-        .kpi-bar-title{font-size:11px;font-weight:800;letter-spacing:0.04em;text-transform:uppercase;opacity:0.78;margin-bottom:5px;}
-        .kpi-bar-row{display:flex;justify-content:space-between;align-items:center;gap:10px;}
-        .kpi-bar-row-label{font-size:10px;font-weight:800;text-transform:uppercase;opacity:0.70;white-space:nowrap;}
-        .kpi-bar-row-value{font-size:12px;font-weight:800;white-space:nowrap;}
-        .kpi-bar-track{width:100%;height:9px;border-radius:999px;background:rgba(120,120,120,0.20);overflow:hidden;margin-top:3px;}
-        .kpi-bar-fill{height:100%;border-radius:999px;}
-        .kpi-bar-fill-high{background:linear-gradient(90deg,#2e7d32 0%,#4caf50 100%);}
-        .kpi-bar-fill-low{background:linear-gradient(90deg,#c62828 0%,#ef5350 100%);}
-        .kpi-bar-fill-neutral{background:linear-gradient(90deg,#60656d 0%,#8a9099 100%);}
-        .kpi-left-offset{height:72px;}
-        .kpi-left-row-offset{height:42px;}
-        .kpi-dim-subtitle{text-align:center;font-size:16px;font-weight:800;letter-spacing:0.01em;opacity:0.86;margin:-2px 0 8px 0;}
-        .kpi-side-summary{border:2px solid rgba(128,128,128,0.35);border-radius:10px;padding:10px 10px 8px 10px;background:var(--secondary-background-color);margin-top:42px;margin-bottom:10px;max-width:260px;}
-        .kpi-side-summary-title{font-size:11px;font-weight:900;letter-spacing:0.04em;text-transform:uppercase;opacity:0.80;margin-bottom:6px;}
-        .kpi-side-summary-line{font-size:12px;line-height:1.35;margin-bottom:6px;}
-        .kpi-side-summary-metrics{display:flex;flex-direction:column;gap:3px;margin-bottom:8px;}
-        .kpi-side-summary-metric-row{display:flex;align-items:center;gap:4px;font-size:11px;line-height:1.4;}
-        .kpi-side-summary-metric-label{font-weight:700;min-width:36px;opacity:0.75;}
-        .kpi-side-summary-metric-val{flex:1;font-weight:600;}
-        .kpi-side-summary-metric-delta{font-weight:800;font-size:11px;}
-        .kpi-side-summary-highlight{font-size:11px;font-weight:700;border-top:1px solid rgba(128,128,128,0.25);padding-top:6px;opacity:0.85;}
-        .kpi-side-summary-line:last-child{margin-bottom:0;}
-        .kpi-side-summary-reasons-title{font-size:11px;font-weight:900;letter-spacing:0.03em;text-transform:uppercase;opacity:0.78;margin-top:8px;margin-bottom:4px;}
-        .kpi-side-summary-reason{font-size:11px;line-height:1.3;margin-bottom:2px;opacity:0.9;}
+        .sales-shell{background:#121417;border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:14px 14px 8px 14px;margin-bottom:12px;}
+        .sales-shell-title{font-size:22px;font-weight:900;letter-spacing:0.03em;color:#f3f6fa;}
+        .sales-shell-sub{font-size:12px;color:#9ea7b3;margin-top:2px;}
+        .sales-tile{background:#1a1f26;border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:12px 12px 10px 12px;min-height:126px;}
+        .sales-tile-label{font-size:11px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#8c97a4;margin-bottom:6px;}
+        .sales-tile-value{font-size:30px;font-weight:900;line-height:1.1;color:#edf2f9;}
+        .sales-tile-compare{font-size:12px;color:#a7b1be;margin-top:3px;}
+        .sales-delta-up{font-size:12px;font-weight:800;color:#39c173;margin-top:5px;}
+        .sales-delta-down{font-size:12px;font-weight:800;color:#ff6961;margin-top:5px;}
+        .sales-delta-flat{font-size:12px;font-weight:800;color:#9ca3af;margin-top:5px;}
+        .sales-panel{background:#1a1f26;border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:12px;min-height:250px;}
+        .sales-panel-title{font-size:13px;font-weight:900;letter-spacing:0.04em;text-transform:uppercase;color:#eaf0f8;margin-bottom:8px;}
+        .sales-chip{display:inline-block;background:#202733;border:1px solid rgba(255,255,255,0.09);border-radius:999px;padding:4px 10px;font-size:11px;font-weight:700;color:#aeb8c5;margin-right:6px;}
         </style>
         """,
         unsafe_allow_html=True,
@@ -806,60 +776,185 @@ def render(ctx: dict):
 
     total_sales_a = float(dfA["Sales"].sum()) if "Sales" in dfA.columns else 0.0
     total_units_a = float(dfA["Units"].sum()) if "Units" in dfA.columns else 0.0
-    total_sales_b = float(dfB["Sales"].sum()) if "Sales" in dfB.columns else 0.0
-    total_units_b = float(dfB["Units"].sum()) if "Units" in dfB.columns else 0.0
-    best_a_lbl, best_a_sales, best_a_units, _ = _best_week_stats(dfA)
-    best_b_lbl, best_b_sales, best_b_units, _ = _best_week_stats(dfB)
+    total_sales_b = float(dfB["Sales"].sum()) if (not dfB.empty and "Sales" in dfB.columns) else 0.0
+    total_units_b = float(dfB["Units"].sum()) if (not dfB.empty and "Units" in dfB.columns) else 0.0
+    asp_a = _calc_asp(total_sales_a, total_units_a)
+    asp_b = _calc_asp(total_sales_b, total_units_b)
 
-    _render_split_cards_with_bars(
-        current_label=a_lbl,
-        compare_label=b_lbl,
-        current_sales=total_sales_a,
-        compare_sales=total_sales_b,
-        current_units=total_units_a,
-        compare_units=total_units_b,
-        left_offset_class="kpi-left-offset",
-        bar_card_title_prefix="Period Total",
-        bar_current_label="Current",
-        bar_compare_label="Compare",
-        summary_title="Period Total Summary",
-        render_header=True,
-        header_current_label=a_lbl,
-        header_compare_label=b_lbl,
-        split_card_kwargs={
-            "left_title": "Period Total",
-            "right_title": "Period Total",
-            "left_sales": total_sales_a,
-            "left_units": total_units_a,
-            "right_sales": total_sales_b,
-            "right_units": total_units_b,
-            "left_ref_sales": total_sales_b,
-            "left_ref_units": total_units_b,
-            "right_ref_sales": total_sales_a,
-            "right_ref_units": total_units_a,
-            "left_baseline": b_lbl,
-            "right_baseline": a_lbl,
-            "left_best_week_label": best_a_lbl,
-            "left_best_week_sales": best_a_sales,
-            "left_best_week_units": best_a_units,
-            "right_best_week_label": best_b_lbl,
-            "right_best_week_sales": best_b_sales,
-            "right_best_week_units": best_b_units,
-        },
+    def _delta_text(cur: float, prev: float, mode: str) -> tuple[str, str]:
+        d = float(cur) - float(prev)
+        pct = (abs(d) / abs(float(prev)) * 100.0) if float(prev) != 0 else 0.0
+        if d > 0:
+            cls = "sales-delta-up"
+            txt = f"▲ {_fmt_value(abs(d), mode)} ({pct:.1f}%)"
+        elif d < 0:
+            cls = "sales-delta-down"
+            txt = f"▼ {_fmt_value(abs(d), mode)} ({pct:.1f}%)"
+        else:
+            cls = "sales-delta-flat"
+            txt = "• No change"
+        return cls, txt
+
+    def _tile_html(label: str, value: str, compare_line: str, delta_cls: str, delta_line: str) -> str:
+        return (
+            "<div class='sales-tile'>"
+            f"<div class='sales-tile-label'>{label}</div>"
+            f"<div class='sales-tile-value'>{value}</div>"
+            f"<div class='sales-tile-compare'>{compare_line}</div>"
+            f"<div class='{delta_cls}'>{delta_line}</div>"
+            "</div>"
+        )
+
+    st.markdown(
+        (
+            "<div class='sales-shell'>"
+            "<div class='sales-shell-title'>Sales Dashboard</div>"
+            f"<div class='sales-shell-sub'>{a_lbl} vs {b_lbl or 'No compare period'}</div>"
+            "<div style='margin-top:8px;'>"
+            f"<span class='sales-chip'>Current: {a_lbl}</span>"
+            f"<span class='sales-chip'>Compare: {b_lbl or 'None'}</span>"
+            "</div>"
+            "</div>"
+        ),
+        unsafe_allow_html=True,
     )
 
+    c1, c2, c3, c4 = st.columns(4, gap="small")
+
+    sales_cls, sales_delta = _delta_text(total_sales_a, total_sales_b, "money")
+    units_cls, units_delta = _delta_text(total_units_a, total_units_b, "int")
+    asp_cls, asp_delta = _delta_text(asp_a, asp_b, "money")
+
+    with c1:
+        st.markdown(_tile_html("Total Sales", money(total_sales_a), f"Compare: {money(total_sales_b)}", sales_cls, sales_delta), unsafe_allow_html=True)
+    with c2:
+        st.markdown(_tile_html("Total Units", f"{total_units_a:,.0f}", f"Compare: {total_units_b:,.0f}", units_cls, units_delta), unsafe_allow_html=True)
+    with c3:
+        st.markdown(_tile_html("ASP", money(asp_a), f"Compare: {money(asp_b)}", asp_cls, asp_delta), unsafe_allow_html=True)
+    with c4:
+        active_skus = int(dfA.loc[dfA["Sales"] > 0, "SKU"].nunique()) if "SKU" in dfA.columns else 0
+        active_retailers = int(dfA.loc[dfA["Sales"] > 0, "Retailer"].nunique()) if "Retailer" in dfA.columns else 0
+        active_vendors = int(dfA.loc[dfA["Sales"] > 0, "Vendor"].nunique()) if "Vendor" in dfA.columns else 0
+        st.markdown(
+            _tile_html(
+                "Coverage",
+                f"{active_skus:,}",
+                f"Retailers: {active_retailers:,} | Vendors: {active_vendors:,}",
+                "sales-delta-flat",
+                "Active SKU count",
+            ),
+            unsafe_allow_html=True,
+        )
+
+    wkA = pd.DataFrame(columns=["WeekEnd", "Sales", "Units"])
+    wkB = pd.DataFrame(columns=["WeekEnd", "Sales", "Units"])
+    if "WeekEnd" in dfA.columns:
+        wkA = (
+            dfA.groupby("WeekEnd", as_index=False)
+            .agg(Sales=("Sales", "sum"), Units=("Units", "sum"))
+            .sort_values("WeekEnd")
+        )
+    if not dfB.empty and "WeekEnd" in dfB.columns:
+        wkB = (
+            dfB.groupby("WeekEnd", as_index=False)
+            .agg(Sales=("Sales", "sum"), Units=("Units", "sum"))
+            .sort_values("WeekEnd")
+        )
+
+    trend_cols = st.columns([1.4, 1.0], gap="small")
+    with trend_cols[0]:
+        st.markdown("<div class='sales-panel'><div class='sales-panel-title'>Sales Trend</div>", unsafe_allow_html=True)
+        if not wkA.empty:
+            sales_trend = wkA[["WeekEnd", "Sales"]].rename(columns={"Sales": a_lbl}).copy()
+            if not wkB.empty:
+                sales_trend = sales_trend.merge(
+                    wkB[["WeekEnd", "Sales"]].rename(columns={"Sales": b_lbl}),
+                    on="WeekEnd",
+                    how="outer",
+                )
+            sales_trend = sales_trend.sort_values("WeekEnd").set_index("WeekEnd").fillna(0.0)
+            st.line_chart(sales_trend.tail(16), use_container_width=True, height=250)
+        else:
+            st.info("No weekly trend data.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with trend_cols[1]:
+        st.markdown("<div class='sales-panel'><div class='sales-panel-title'>Units Trend</div>", unsafe_allow_html=True)
+        if not wkA.empty:
+            units_trend = wkA[["WeekEnd", "Units"]].rename(columns={"Units": a_lbl}).copy()
+            if not wkB.empty:
+                units_trend = units_trend.merge(
+                    wkB[["WeekEnd", "Units"]].rename(columns={"Units": b_lbl}),
+                    on="WeekEnd",
+                    how="outer",
+                )
+            units_trend = units_trend.sort_values("WeekEnd").set_index("WeekEnd").fillna(0.0)
+            st.line_chart(units_trend.tail(16), use_container_width=True, height=250)
+        else:
+            st.info("No weekly trend data.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    movers = st.columns(4, gap="small")
     retailers_a = _rollup_by_dim(dfA, "Retailer")
-    retailers_b = _rollup_by_dim(dfB, "Retailer")
     vendors_a = _rollup_by_dim(dfA, "Vendor")
-    vendors_b = _rollup_by_dim(dfB, "Vendor")
+    retailers_b = _rollup_by_dim(dfB, "Retailer") if not dfB.empty else pd.DataFrame(columns=["Retailer", "Sales", "Units"])
 
-    _render_retailer_vendor_row(
-        retailers_a=retailers_a,
-        retailers_b=retailers_b,
-        vendors_a=vendors_a,
-        vendors_b=vendors_b,
-        dfA=dfA,
-        dfB=dfB,
-        a_lbl=a_lbl,
-        b_lbl=b_lbl,
-    )
+    top_retailer = retailers_a.iloc[0] if not retailers_a.empty else None
+    top_vendor = vendors_a.iloc[0] if not vendors_a.empty else None
+
+    retail_compare = retailers_a.merge(
+        retailers_b.rename(columns={"Sales": "Sales_B", "Units": "Units_B"}),
+        on="Retailer",
+        how="outer",
+    ).fillna(0.0)
+    if not retail_compare.empty:
+        retail_compare["Delta"] = retail_compare["Sales"] - retail_compare["Sales_B"]
+        best_gain = retail_compare.sort_values("Delta", ascending=False).iloc[0]
+        best_drop = retail_compare.sort_values("Delta", ascending=True).iloc[0]
+    else:
+        best_gain = None
+        best_drop = None
+
+    with movers[0]:
+        if top_retailer is not None:
+            st.markdown(_tile_html("Top Retailer", str(top_retailer["Retailer"]), f"Sales: {money(float(top_retailer['Sales']))}", "sales-delta-flat", f"Units: {float(top_retailer['Units']):,.0f}"), unsafe_allow_html=True)
+        else:
+            st.markdown(_tile_html("Top Retailer", "-", "Sales: $0", "sales-delta-flat", "Units: 0"), unsafe_allow_html=True)
+    with movers[1]:
+        if top_vendor is not None:
+            st.markdown(_tile_html("Top Vendor", str(top_vendor["Vendor"]), f"Sales: {money(float(top_vendor['Sales']))}", "sales-delta-flat", f"Units: {float(top_vendor['Units']):,.0f}"), unsafe_allow_html=True)
+        else:
+            st.markdown(_tile_html("Top Vendor", "-", "Sales: $0", "sales-delta-flat", "Units: 0"), unsafe_allow_html=True)
+    with movers[2]:
+        if best_gain is not None:
+            st.markdown(_tile_html("Largest Gain", str(best_gain["Retailer"]), f"Current: {money(float(best_gain['Sales']))}", "sales-delta-up", f"▲ {money(float(best_gain['Delta']))}"), unsafe_allow_html=True)
+        else:
+            st.markdown(_tile_html("Largest Gain", "-", "Current: $0", "sales-delta-flat", "▲ $0"), unsafe_allow_html=True)
+    with movers[3]:
+        if best_drop is not None:
+            st.markdown(_tile_html("Largest Decline", str(best_drop["Retailer"]), f"Current: {money(float(best_drop['Sales']))}", "sales-delta-down", f"▼ {money(abs(float(best_drop['Delta'])))}"), unsafe_allow_html=True)
+        else:
+            st.markdown(_tile_html("Largest Decline", "-", "Current: $0", "sales-delta-flat", "▼ $0"), unsafe_allow_html=True)
+
+    table_cols = st.columns(2, gap="small")
+    with table_cols[0]:
+        st.markdown("<div class='sales-panel'><div class='sales-panel-title'>Retailer Leaderboard</div>", unsafe_allow_html=True)
+        if not retailers_a.empty:
+            r_show = retailers_a.head(8).copy()
+            r_show["Sales"] = r_show["Sales"].map(money)
+            r_show["Units"] = r_show["Units"].map(lambda v: f"{v:,.0f}")
+            st.dataframe(r_show, use_container_width=True, hide_index=True, height=295)
+        else:
+            st.info("No retailer data.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with table_cols[1]:
+        st.markdown("<div class='sales-panel'><div class='sales-panel-title'>Vendor Leaderboard</div>", unsafe_allow_html=True)
+        if not vendors_a.empty:
+            v_show = vendors_a.head(8).copy()
+            v_show["Sales"] = v_show["Sales"].map(money)
+            v_show["Units"] = v_show["Units"].map(lambda v: f"{v:,.0f}")
+            st.dataframe(v_show, use_container_width=True, hide_index=True, height=295)
+        else:
+            st.info("No vendor data.")
+        st.markdown("</div>", unsafe_allow_html=True)
