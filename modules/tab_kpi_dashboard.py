@@ -1152,41 +1152,88 @@ def _build_exec_kpi_tiles(ctx: dict, sales_per_week: float, compare_sales_per_we
     kB = ctx["kB"]
     show_compare = ctx["compare_mode"] != "None"
 
-    sales_growth = _safe_pct_change(float(kA.get("Sales", 0.0)), float(kB.get("Sales", 0.0))) if show_compare else 0.0
-    units_growth = _safe_pct_change(float(kA.get("Units", 0.0)), float(kB.get("Units", 0.0))) if show_compare else 0.0
-    asp_growth = _safe_pct_change(float(kA.get("ASP", 0.0)), float(kB.get("ASP", 0.0))) if show_compare else 0.0
-    sales_per_week_growth = _safe_pct_change(sales_per_week, compare_sales_per_week) if show_compare else 0.0
-    sales_diff = float(kA.get("Sales", 0.0)) - float(kB.get("Sales", 0.0)) if show_compare else 0.0
-    units_diff = float(kA.get("Units", 0.0)) - float(kB.get("Units", 0.0)) if show_compare else 0.0
-    asp_diff = float(kA.get("ASP", 0.0)) - float(kB.get("ASP", 0.0)) if show_compare else 0.0
-    sales_per_week_diff = sales_per_week - compare_sales_per_week if show_compare else 0.0
-    active_sku_delta = float(kA.get("Active SKUs", 0.0)) - float(kB.get("Active SKUs", 0.0)) if show_compare else 0.0
+    def _build_tile(title: str, value: float, reference: float, mode: str) -> dict[str, str]:
+        if mode == "money":
+            value_fmt = money(value)
+            diff_fmt = _fmt_signed_money(value - reference)
+        else:
+            value_fmt = f"{value:,.0f}"
+            diff_fmt = _fmt_signed_int(value - reference)
 
-    return [
-        {"title": "Total Sales", "value": money(float(kA.get("Sales", 0.0))), "delta": _arrow_delta_text(sales_growth, f"{_fmt_signed_money(sales_diff)} ({_fmt_signed_pct(sales_growth)})"), "color": _delta_color(sales_growth)},
-        {"title": "Units Sold", "value": f"{float(kA.get('Units', 0.0)):,.0f}", "delta": _arrow_delta_text(units_growth, f"{_fmt_signed_int(units_diff)} ({_fmt_signed_pct(units_growth)})"), "color": _delta_color(units_growth)},
-        {"title": "Avg Selling Price", "value": money(float(kA.get("ASP", 0.0))), "delta": _arrow_delta_text(asp_growth, f"{_fmt_signed_money(asp_diff)} ({_fmt_signed_pct(asp_growth)})"), "color": _delta_color(asp_growth)},
-        {"title": "Sales per Week", "value": money(sales_per_week), "delta": _arrow_delta_text(sales_per_week_growth, f"{_fmt_signed_money(sales_per_week_diff)} ({_fmt_signed_pct(sales_per_week_growth, 0)})"), "color": _delta_color(sales_per_week_growth)},
-        {"title": "% Growth vs Compare", "value": _fmt_signed_pct(sales_growth), "delta": "", "color": _delta_color(sales_growth)},
-        {"title": "Active SKUs", "value": f"{float(kA.get('Active SKUs', 0.0)):,.0f}", "delta": _fmt_signed_int(active_sku_delta) if show_compare else "", "color": _delta_color(active_sku_delta)},
-        {"title": "New SKUs", "value": f"{new_sku_count:,.0f}", "delta": "", "color": "#111827"},
+        pct = _safe_pct_change(value, reference) if show_compare else 0.0
+        delta_text = (
+            _arrow_delta_text(value - reference, f"{diff_fmt} ({_fmt_signed_pct(pct)})")
+            if show_compare
+            else ""
+        )
+        return {
+            "title": title,
+            "value": value_fmt,
+            "delta": delta_text,
+            "color": _delta_color(value - reference),
+        }
+
+    current_sales = float(kA.get("Sales", 0.0))
+    current_units = float(kA.get("Units", 0.0))
+    current_asp = float(kA.get("ASP", 0.0))
+
+    compare_sales = float(kB.get("Sales", 0.0))
+    compare_units = float(kB.get("Units", 0.0))
+    compare_asp = float(kB.get("ASP", 0.0))
+
+    current_tiles = [
+        _build_tile("Total Sales", current_sales, compare_sales, "money"),
+        _build_tile("Total Units", current_units, compare_units, "int"),
+        _build_tile("ASP", current_asp, compare_asp, "money"),
     ]
 
+    compare_tiles = [
+        _build_tile("Total Sales", compare_sales, current_sales, "money"),
+        _build_tile("Total Units", compare_units, current_units, "int"),
+        _build_tile("ASP", compare_asp, current_asp, "money"),
+    ] if show_compare else []
 
-def _render_exec_kpi_ribbon(tiles: list[dict[str, str]], current_label: str, compare_label: str | None):
-    tiles_html = ""
-    for tile in tiles:
-        delta_html = ""
-        if tile.get("delta"):
-            delta_html = f"<span class='sales-exec-kpi-delta' style='color:{tile['color']};'>{html.escape(tile['delta'])}</span>"
-        tiles_html += (
-            "<div class='sales-exec-kpi-tile'>"
-            f"<div class='sales-exec-kpi-title'>{html.escape(tile['title'])}</div>"
-            "<div class='sales-exec-kpi-metric-row'>"
-            f"<div class='sales-exec-kpi-value'>{html.escape(tile['value'])}</div>"
-            f"{delta_html}"
+    return {"current": current_tiles, "compare": compare_tiles}
+
+
+def _render_exec_kpi_ribbon(
+    current_tiles: list[dict[str, str]],
+    current_row_label: str,
+    current_label: str,
+    compare_label: str | None,
+    compare_tiles: list[dict[str, str]] | None = None,
+    compare_row_label: str | None = None,
+):
+    def _tiles_html(tiles: list[dict[str, str]]) -> str:
+        html_out = ""
+        for tile in tiles:
+            delta_html = ""
+            if tile.get("delta"):
+                delta_html = f"<span class='sales-exec-kpi-delta' style='color:{tile['color']};'>{html.escape(tile['delta'])}</span>"
+            html_out += (
+                "<div class='sales-exec-kpi-tile'>"
+                f"<div class='sales-exec-kpi-title'>{html.escape(tile['title'])}</div>"
+                "<div class='sales-exec-kpi-metric-row'>"
+                f"<div class='sales-exec-kpi-value'>{html.escape(tile['value'])}</div>"
+                f"{delta_html}"
+                "</div>"
+                "</div>"
+            )
+        return html_out
+
+    sections_html = (
+        "<div class='sales-exec-row-label'>"
+        f"{html.escape(current_row_label)}"
+        "</div>"
+        f"<div class='sales-exec-kpi-ribbon'>{_tiles_html(current_tiles)}</div>"
+    )
+
+    if compare_tiles and compare_row_label:
+        sections_html += (
+            "<div class='sales-exec-row-label'>"
+            f"{html.escape(compare_row_label)}"
             "</div>"
-            "</div>"
+            f"<div class='sales-exec-kpi-ribbon'>{_tiles_html(compare_tiles)}</div>"
         )
 
     context = f"Current: {current_label}"
@@ -1195,7 +1242,7 @@ def _render_exec_kpi_ribbon(tiles: list[dict[str, str]], current_label: str, com
 
     st.markdown(
         "<div class='sales-exec-accent'></div>"
-        f"<div class='sales-exec-kpi-ribbon'>{tiles_html}</div>"
+        f"{sections_html}"
         f"<div class='sales-exec-context'>{html.escape(context)}</div>",
         unsafe_allow_html=True,
     )
@@ -1431,7 +1478,14 @@ def render(ctx: dict):
         compare_sales_per_week=compare_sales_per_week,
         new_sku_count=new_sku_count,
     )
-    _render_exec_kpi_ribbon(tiles, current_label, compare_label)
+    _render_exec_kpi_ribbon(
+        current_tiles=tiles["current"],
+        current_row_label=f"Current Totals: {current_label}",
+        current_label=current_label,
+        compare_label=compare_label,
+        compare_tiles=tiles["compare"] if compare_label else None,
+        compare_row_label=(f"Compare Totals: {compare_label}" if compare_label else None),
+    )
 
     weekly_trend = _prepare_weekly_trend(dfA, dfB, current_label, compare_label)
     with st.container(border=True):

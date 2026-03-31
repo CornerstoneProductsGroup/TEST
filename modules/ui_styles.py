@@ -47,7 +47,8 @@ def apply_global_styles():
     .sales-dashboard-context-copy{font-size:13px;color:var(--text-color);opacity:0.82;line-height:1.35;}
 
     .sales-exec-accent{height:14px;background:#1f3f72;border-radius:0;margin:0 0 8px 0;}
-    .sales-exec-kpi-ribbon{display:grid;grid-template-columns:repeat(8,minmax(120px,1fr));gap:0;border:1px solid rgba(148,163,184,0.35);background:#ffffff;box-shadow:0 1px 3px rgba(15,23,42,0.08);margin-bottom:6px;}
+    .sales-exec-row-label{font-size:12px;font-weight:700;color:#4b5563;margin:0 0 4px 0;}
+    .sales-exec-kpi-ribbon{display:grid;grid-template-columns:repeat(3,minmax(140px,1fr));gap:0;border:1px solid rgba(148,163,184,0.35);background:#ffffff;box-shadow:0 1px 3px rgba(15,23,42,0.08);margin-bottom:8px;}
     .sales-exec-kpi-tile{padding:14px 16px;border-right:1px solid rgba(203,213,225,0.8);min-width:0;}
     .sales-exec-kpi-tile:last-child{border-right:none;}
     .sales-exec-kpi-title{font-size:11px;font-weight:700;letter-spacing:0.01em;color:#5b6472;text-transform:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -71,7 +72,7 @@ def apply_global_styles():
     @media (max-width: 1100px) {
         .sales-dashboard-top-row{justify-content:flex-start;}
         .sales-dashboard-kpi-strip{justify-content:flex-start;}
-        .sales-exec-kpi-ribbon{grid-template-columns:repeat(4,minmax(140px,1fr));}
+        .sales-exec-kpi-ribbon{grid-template-columns:repeat(3,minmax(140px,1fr));}
     }
 
     @media (max-width: 768px) {
