@@ -1156,8 +1156,8 @@ def _prepare_top_movers(df_current: pd.DataFrame, df_compare: pd.DataFrame) -> l
 
     movers = pd.concat(
         [
-            combined.sort_values("Delta", ascending=False).head(7),
-            combined.sort_values("Delta", ascending=True).head(7),
+            combined.sort_values("Delta", ascending=False).head(8),
+            combined.sort_values("Delta", ascending=True).head(8),
         ],
         ignore_index=True,
     )
@@ -1179,7 +1179,7 @@ def _prepare_top_movers(df_current: pd.DataFrame, df_compare: pd.DataFrame) -> l
                 "Color": _delta_color(delta),
             }
         )
-        if len(rows) == 14:
+        if len(rows) == 15:
             break
     return rows
 
@@ -1772,6 +1772,9 @@ def render(ctx: dict):
         with st.container(border=True):
             st.markdown("#### Top Movers")
             _render_movers_panel(movers)
+
+    # Match the visual gap below KPI's lower accent bar before the retailer section.
+    st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
 
     retailer_left_col, retailer_mid_col = st.columns([1.0, 1.0], gap="small")
 
