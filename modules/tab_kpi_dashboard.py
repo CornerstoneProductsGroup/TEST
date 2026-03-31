@@ -1750,7 +1750,7 @@ def render(ctx: dict):
     vendor_share_change = _prepare_vendor_share_change(dfA, dfB)
     movers = _prepare_top_movers(dfA, dfB)
 
-    left_stack_col, _ = st.columns([2.6, 0.75], gap="small")
+    left_stack_col, movers_col = st.columns([2.6, 0.75], gap="small")
     with left_stack_col:
         with st.container(border=True):
             st.markdown("#### Weekly Sales Trend")
@@ -1768,13 +1768,10 @@ def render(ctx: dict):
             compare_row_label=(f"Compare Totals: {compare_label}" if compare_label else None),
         )
 
-    _, movers_col = st.columns([2.6, 0.75], gap="small")
     with movers_col:
         with st.container(border=True):
             st.markdown("#### Top Movers")
             _render_movers_panel(movers)
-
-    st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
 
     retailer_left_col, retailer_mid_col = st.columns([1.0, 1.0], gap="small")
 
