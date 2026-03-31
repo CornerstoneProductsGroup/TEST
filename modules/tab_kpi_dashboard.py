@@ -778,26 +778,26 @@ def render(ctx: dict):
     st.markdown(
         """
         <style>
-        .sales-shell{background:#121417;border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:14px 14px 8px 14px;margin-bottom:12px;}
-        .sales-shell-title{font-size:22px;font-weight:900;letter-spacing:0.03em;color:#f3f6fa;}
-        .sales-shell-sub{font-size:12px;color:#9ea7b3;margin-top:2px;}
-        .sales-tile{background:#1a1f26;border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:12px 12px 10px 12px;min-height:126px;}
-        .sales-tile-label{font-size:11px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#8c97a4;margin-bottom:6px;}
-        .sales-tile-value{font-size:30px;font-weight:900;line-height:1.1;color:#edf2f9;}
-        .sales-tile-compare{font-size:12px;color:#a7b1be;margin-top:3px;}
+        .sales-shell{background:var(--secondary-background-color);border:1px solid rgba(128,128,128,0.22);border-radius:14px;padding:14px 14px 8px 14px;margin-bottom:12px;}
+        .sales-shell-title{font-size:22px;font-weight:900;letter-spacing:0.03em;color:var(--text-color);}
+        .sales-shell-sub{font-size:12px;color:var(--text-color);opacity:0.72;margin-top:2px;}
+        .sales-tile{background:var(--secondary-background-color);border:1px solid rgba(128,128,128,0.22);border-radius:12px;padding:12px 12px 10px 12px;min-height:126px;}
+        .sales-tile-label{font-size:11px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-color);opacity:0.68;margin-bottom:6px;}
+        .sales-tile-value{font-size:30px;font-weight:900;line-height:1.1;color:var(--text-color);}
+        .sales-tile-compare{font-size:12px;color:var(--text-color);opacity:0.72;margin-top:3px;}
         .sales-delta-up{font-size:12px;font-weight:800;color:#39c173;margin-top:5px;}
         .sales-delta-down{font-size:12px;font-weight:800;color:#ff6961;margin-top:5px;}
         .sales-delta-flat{font-size:12px;font-weight:800;color:#9ca3af;margin-top:5px;}
-        .sales-panel{background:#1a1f26;border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:12px;min-height:250px;}
-        .sales-panel-title{font-size:13px;font-weight:900;letter-spacing:0.04em;text-transform:uppercase;color:#eaf0f8;margin-bottom:8px;}
-        .sales-chip{display:inline-block;background:#202733;border:1px solid rgba(255,255,255,0.09);border-radius:999px;padding:4px 10px;font-size:11px;font-weight:700;color:#aeb8c5;margin-right:6px;}
-        .sales-logo-card{background:#1a1f26;border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:12px 10px;text-align:center;min-height:148px;}
+        .sales-panel{background:var(--secondary-background-color);border:1px solid rgba(128,128,128,0.22);border-radius:12px;padding:12px;min-height:250px;}
+        .sales-panel-title{font-size:13px;font-weight:900;letter-spacing:0.04em;text-transform:uppercase;color:var(--text-color);margin-bottom:8px;}
+        .sales-chip{display:inline-block;background:rgba(128,128,128,0.14);border:1px solid rgba(128,128,128,0.22);border-radius:999px;padding:4px 10px;font-size:11px;font-weight:700;color:var(--text-color);opacity:0.8;margin-right:6px;}
+        .sales-logo-card{background:var(--secondary-background-color);border:1px solid rgba(128,128,128,0.22);border-radius:12px;padding:12px 10px;text-align:center;min-height:148px;}
         .sales-logo-wrap{height:52px;display:flex;align-items:center;justify-content:center;margin-bottom:8px;}
         .sales-logo-img{max-height:46px;max-width:110px;object-fit:contain;filter:drop-shadow(0 2px 3px rgba(0,0,0,0.35));}
-        .sales-logo-fallback{width:46px;height:46px;border-radius:999px;background:#2a3340;color:#dbe6f2;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;border:1px solid rgba(255,255,255,0.14);}
-        .sales-logo-name{font-size:12px;font-weight:800;color:#e8eef6;line-height:1.2;min-height:30px;display:flex;align-items:center;justify-content:center;}
-        .sales-logo-sales{font-size:18px;font-weight:900;color:#f7fbff;line-height:1.2;margin-top:6px;}
-        .sales-logo-caption{font-size:10px;color:#9aa5b2;text-transform:uppercase;letter-spacing:0.06em;margin-top:2px;}
+        .sales-logo-fallback{width:46px;height:46px;border-radius:999px;background:rgba(128,128,128,0.18);color:var(--text-color);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;border:1px solid rgba(128,128,128,0.28);}
+        .sales-logo-name{font-size:12px;font-weight:800;color:var(--text-color);line-height:1.2;min-height:30px;display:flex;align-items:center;justify-content:center;}
+        .sales-logo-sales{font-size:18px;font-weight:900;color:var(--text-color);line-height:1.2;margin-top:6px;}
+        .sales-logo-caption{font-size:10px;color:var(--text-color);opacity:0.62;text-transform:uppercase;letter-spacing:0.06em;margin-top:2px;}
         </style>
         """,
         unsafe_allow_html=True,
