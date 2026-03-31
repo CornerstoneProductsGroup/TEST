@@ -1156,8 +1156,8 @@ def _prepare_top_movers(df_current: pd.DataFrame, df_compare: pd.DataFrame) -> l
 
     movers = pd.concat(
         [
-            combined.sort_values("Delta", ascending=False).head(4),
-            combined.sort_values("Delta", ascending=True).head(4),
+            combined.sort_values("Delta", ascending=False).head(5),
+            combined.sort_values("Delta", ascending=True).head(5),
         ],
         ignore_index=True,
     )
@@ -1179,7 +1179,7 @@ def _prepare_top_movers(df_current: pd.DataFrame, df_compare: pd.DataFrame) -> l
                 "Color": _delta_color(delta),
             }
         )
-        if len(rows) == 7:
+        if len(rows) == 10:
             break
     return rows
 
@@ -1744,7 +1744,6 @@ def render(ctx: dict):
         new_sku_count=new_sku_count,
     )
     weekly_trend = _prepare_weekly_trend(dfA, dfB, current_label, compare_label)
-    top_skus = _prepare_top_skus(dfA, dfB)
     retailer_share = _prepare_retailer_share(dfA, dfB)
     share_change_df = _prepare_retailer_share_change(dfA, dfB)
     vendor_share = _prepare_vendor_share(dfA, dfB)
@@ -1774,7 +1773,9 @@ def render(ctx: dict):
             st.markdown("#### Top Movers")
             _render_movers_panel(movers)
 
-    retailer_left_col, retailer_mid_col, _ = st.columns([1.35, 1.35, 0.30], gap="small")
+    st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+
+    retailer_left_col, retailer_mid_col = st.columns([1.0, 1.0], gap="small")
 
     with retailer_left_col:
         with st.container(border=True):
@@ -1794,7 +1795,7 @@ def render(ctx: dict):
             else:
                 st.altair_chart(share_change_chart, use_container_width=True)
 
-    vendor_left_col, vendor_mid_col, _ = st.columns([1.35, 1.35, 0.30], gap="small")
+    vendor_left_col, vendor_mid_col = st.columns([1.0, 1.0], gap="small")
 
     with vendor_left_col:
         with st.container(border=True):
@@ -1814,12 +1815,3 @@ def render(ctx: dict):
             else:
                 st.altair_chart(vendor_share_change_chart, use_container_width=True)
 
-    sku_left_col, sku_right_col = st.columns([2.6, 0.75], gap="small")
-    with sku_right_col:
-        with st.container(border=True):
-            st.markdown("#### Top Selling SKUs")
-            sku_chart = _top_sku_chart(top_skus)
-            if sku_chart is None:
-                st.info("No SKU sales available for the selected timeframe.")
-            else:
-                st.altair_chart(sku_chart, use_container_width=True)
