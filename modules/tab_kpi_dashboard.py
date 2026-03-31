@@ -1585,7 +1585,12 @@ def render(ctx: dict):
         )
 
     weekly_trend = _prepare_weekly_trend(dfA, dfB, current_label, compare_label)
-    trend_col, _ = st.columns([2.6, 0.75], gap="small")
+    top_skus = _prepare_top_skus(dfA, dfB)
+    retailer_share = _prepare_retailer_share(dfA, dfB)
+    share_change_df = _prepare_retailer_share_change(dfA, dfB)
+    movers = _prepare_top_movers(dfA, dfB)
+
+    trend_col, movers_col, _ = st.columns([1.7, 0.9, 0.75], gap="small")
     with trend_col:
         with st.container(border=True):
             st.markdown("#### Weekly Sales Trend")
@@ -1595,20 +1600,21 @@ def render(ctx: dict):
             else:
                 st.altair_chart(trend_chart, use_container_width=True)
 
-    top_skus = _prepare_top_skus(dfA, dfB)
-    retailer_share = _prepare_retailer_share(dfA, dfB)
-    movers = _prepare_top_movers(dfA, dfB)
+    with movers_col:
+        with st.container(border=True):
+            st.markdown("#### Top Movers")
+            _render_movers_panel(movers)
 
     left_col, middle_col, _ = st.columns([1.15, 1.45, 0.75], gap="small")
 
     with left_col:
         with st.container(border=True):
-            st.markdown("#### Top Selling SKUs")
-            sku_chart = _top_sku_chart(top_skus)
-            if sku_chart is None:
-                st.info("No SKU sales available for the selected timeframe.")
+            st.markdown("#### Retailer Share Change")
+            share_change_chart = _retailer_share_change_chart(share_change_df)
+            if share_change_chart is None:
+                st.info("No retailer share change data available for the selected timeframe.")
             else:
-                st.altair_chart(sku_chart, use_container_width=True)
+                st.altair_chart(share_change_chart, use_container_width=True)
 
     with middle_col:
         with st.container(border=True):
@@ -1619,19 +1625,13 @@ def render(ctx: dict):
             else:
                 st.altair_chart(share_chart, use_container_width=True)
 
-    share_change_df = _prepare_retailer_share_change(dfA, dfB)
-    bottom_left, bottom_right, _ = st.columns([1.55, 1.05, 0.75], gap="small")
+    bottom_left, _, _ = st.columns([1.55, 1.05, 0.75], gap="small")
 
     with bottom_left:
         with st.container(border=True):
-            st.markdown("#### Retailer Share Change")
-            share_change_chart = _retailer_share_change_chart(share_change_df)
-            if share_change_chart is None:
-                st.info("No retailer share change data available for the selected timeframe.")
+            st.markdown("#### Top Selling SKUs")
+            sku_chart = _top_sku_chart(top_skus)
+            if sku_chart is None:
+                st.info("No SKU sales available for the selected timeframe.")
             else:
-                st.altair_chart(share_change_chart, use_container_width=True)
-
-    with bottom_right:
-        with st.container(border=True):
-            st.markdown("#### Top Movers")
-            _render_movers_panel(movers)
+                st.altair_chart(sku_chart, use_container_width=True)
