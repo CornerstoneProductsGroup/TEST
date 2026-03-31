@@ -1589,13 +1589,15 @@ def render(ctx: dict):
     )
 
     weekly_trend = _prepare_weekly_trend(dfA, dfB, current_label, compare_label)
-    with st.container(border=True):
-        st.markdown("#### Weekly Sales Trend")
-        trend_chart = _weekly_sales_trend_chart(weekly_trend, current_label, compare_label)
-        if trend_chart is None:
-            st.info("No weekly trend data available for the selected timeframe.")
-        else:
-            st.altair_chart(trend_chart, use_container_width=True)
+    trend_col, _ = st.columns([2.6, 0.75], gap="small")
+    with trend_col:
+        with st.container(border=True):
+            st.markdown("#### Weekly Sales Trend")
+            trend_chart = _weekly_sales_trend_chart(weekly_trend, current_label, compare_label)
+            if trend_chart is None:
+                st.info("No weekly trend data available for the selected timeframe.")
+            else:
+                st.altair_chart(trend_chart, use_container_width=True)
 
     top_skus = _prepare_top_skus(dfA, dfB)
     retailer_share = _prepare_retailer_share(dfA, dfB)
