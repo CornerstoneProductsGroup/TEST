@@ -56,8 +56,8 @@ def apply_global_styles():
     .sales-exec-kpi-delta{font-size:12px;font-weight:800;line-height:1.1;}
     .sales-exec-context{font-size:12px;color:#6b7280;margin:0 0 10px 0;}
 
-    .sales-movers-table{display:flex;flex-direction:column;gap:0;}
-    .sales-movers-row{display:grid;grid-template-columns:minmax(0,1.1fr) auto auto minmax(0,1fr);gap:10px;align-items:center;padding:8px 6px;border-top:1px solid rgba(226,232,240,0.9);}
+    .sales-movers-table{display:flex;flex-direction:column;gap:0;height:300px;}
+    .sales-movers-row{display:grid;grid-template-columns:minmax(0,1.1fr) auto auto minmax(0,1fr);gap:10px;align-items:center;padding:6px 6px;border-top:1px solid rgba(226,232,240,0.9);flex:1;}
     .sales-movers-row:first-child{border-top:none;}
     .sales-movers-sku{font-size:13px;font-weight:800;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .sales-movers-delta,.sales-movers-pct{font-size:13px;font-weight:800;white-space:nowrap;}
