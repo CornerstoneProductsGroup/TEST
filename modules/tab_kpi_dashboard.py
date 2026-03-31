@@ -1147,12 +1147,14 @@ def _build_new_product_lines(df_scope: pd.DataFrame, df_current: pd.DataFrame, m
     return lines[:3]
 
 
-def _build_exec_kpi_tiles(ctx: dict, sales_per_week: float, compare_sales_per_week: float, new_sku_count: int) -> list[dict[str, str]]:
+def _build_exec_kpi_tiles(ctx: dict, sales_per_week: float, compare_sales_per_week: float, new_sku_count: int) -> dict[str, list[dict[str, object]]]:
     kA = ctx["kA"]
     kB = ctx["kB"]
+    dfA = ctx.get("dfA", pd.DataFrame())
+    dfB = ctx.get("dfB", pd.DataFrame())
     show_compare = ctx["compare_mode"] != "None"
 
-    def _build_tile(title: str, value: float, reference: float, mode: str) -> dict[str, str]:
+    def _build_tile(title: str, value: float, reference: float, mode: str) -> dict[str, object]:
         if mode == "money":
             value_fmt = money(value)
             diff_fmt = _fmt_signed_money(value - reference)
@@ -1173,6 +1175,57 @@ def _build_exec_kpi_tiles(ctx: dict, sales_per_week: float, compare_sales_per_we
             "color": _delta_color(value - reference),
         }
 
+    def _sku_metrics(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty or "SKU" not in df.columns or "Sales" not in df.columns:
+            return pd.DataFrame(columns=["SKU", "Sales"])
+        out = (
+            df.assign(SKU=df["SKU"].astype(str))
+            .groupby("SKU", as_index=False)
+            .agg(Sales=("Sales", "sum"))
+        )
+        return out
+
+    def _sku_churn(primary_df: pd.DataFrame, reference_df: pd.DataFrame) -> tuple[int, float, int, float]:
+        primary = _sku_metrics(primary_df)
+        reference = _sku_metrics(reference_df)
+        if primary.empty and reference.empty:
+            return (0, 0.0, 0, 0.0)
+
+        reference_skus = set(reference["SKU"].tolist()) if not reference.empty else set()
+        primary_skus = set(primary["SKU"].tolist()) if not primary.empty else set()
+
+        new_rows = primary[~primary["SKU"].isin(reference_skus)] if not primary.empty else primary
+        lost_rows = reference[~reference["SKU"].isin(primary_skus)] if not reference.empty else reference
+
+        return (
+            int(len(new_rows)),
+            float(new_rows["Sales"].sum()) if not new_rows.empty else 0.0,
+            int(len(lost_rows)),
+            float(lost_rows["Sales"].sum()) if not lost_rows.empty else 0.0,
+        )
+
+    def _build_sku_churn_tile(primary_df: pd.DataFrame, reference_df: pd.DataFrame) -> dict[str, object]:
+        new_count, new_sales, lost_count, lost_sales = _sku_churn(primary_df, reference_df)
+        if not show_compare:
+            return {
+                "title": "SKU Churn",
+                "value": "No compare selected",
+                "delta": "",
+                "color": "#6b7280",
+                "meta_lines": [],
+            }
+
+        return {
+            "title": "SKU Churn",
+            "value": f"New SKUs: {new_count:,}",
+            "delta": f"New Sales: {money(new_sales)}",
+            "color": _delta_color(new_sales - lost_sales),
+            "meta_lines": [
+                f"Lost SKUs: {lost_count:,}",
+                f"Lost Sales: {money(lost_sales)}",
+            ],
+        }
+
     current_sales = float(kA.get("Sales", 0.0))
     current_units = float(kA.get("Units", 0.0))
     current_asp = float(kA.get("ASP", 0.0))
@@ -1185,31 +1238,36 @@ def _build_exec_kpi_tiles(ctx: dict, sales_per_week: float, compare_sales_per_we
         _build_tile("Total Sales", current_sales, compare_sales, "money"),
         _build_tile("Total Units", current_units, compare_units, "int"),
         _build_tile("ASP", current_asp, compare_asp, "money"),
+        _build_sku_churn_tile(dfA, dfB),
     ]
 
     compare_tiles = [
         _build_tile("Total Sales", compare_sales, current_sales, "money"),
         _build_tile("Total Units", compare_units, current_units, "int"),
         _build_tile("ASP", compare_asp, current_asp, "money"),
+        _build_sku_churn_tile(dfB, dfA),
     ] if show_compare else []
 
     return {"current": current_tiles, "compare": compare_tiles}
 
 
 def _render_exec_kpi_ribbon(
-    current_tiles: list[dict[str, str]],
+    current_tiles: list[dict[str, object]],
     current_row_label: str,
     current_label: str,
     compare_label: str | None,
-    compare_tiles: list[dict[str, str]] | None = None,
+    compare_tiles: list[dict[str, object]] | None = None,
     compare_row_label: str | None = None,
 ):
-    def _tiles_html(tiles: list[dict[str, str]]) -> str:
+    def _tiles_html(tiles: list[dict[str, object]]) -> str:
         html_out = ""
         for tile in tiles:
             delta_html = ""
             if tile.get("delta"):
                 delta_html = f"<span class='sales-exec-kpi-delta' style='color:{tile['color']};'>{html.escape(tile['delta'])}</span>"
+            meta_html = ""
+            for line in tile.get("meta_lines", []):
+                meta_html += f"<div class='sales-exec-kpi-meta-line'>{html.escape(str(line))}</div>"
             html_out += (
                 "<div class='sales-exec-kpi-tile'>"
                 f"<div class='sales-exec-kpi-title'>{html.escape(tile['title'])}</div>"
@@ -1217,6 +1275,7 @@ def _render_exec_kpi_ribbon(
                 f"<div class='sales-exec-kpi-value'>{html.escape(tile['value'])}</div>"
                 f"{delta_html}"
                 "</div>"
+                f"{meta_html}"
                 "</div>"
             )
         return html_out
