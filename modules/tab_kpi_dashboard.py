@@ -1156,8 +1156,8 @@ def _prepare_top_movers(df_current: pd.DataFrame, df_compare: pd.DataFrame) -> l
 
     movers = pd.concat(
         [
-            combined.sort_values("Delta", ascending=False).head(5),
-            combined.sort_values("Delta", ascending=True).head(5),
+            combined.sort_values("Delta", ascending=False).head(7),
+            combined.sort_values("Delta", ascending=True).head(7),
         ],
         ignore_index=True,
     )
@@ -1179,7 +1179,7 @@ def _prepare_top_movers(df_current: pd.DataFrame, df_compare: pd.DataFrame) -> l
                 "Color": _delta_color(delta),
             }
         )
-        if len(rows) == 10:
+        if len(rows) == 14:
             break
     return rows
 
@@ -1750,7 +1750,7 @@ def render(ctx: dict):
     vendor_share_change = _prepare_vendor_share_change(dfA, dfB)
     movers = _prepare_top_movers(dfA, dfB)
 
-    left_stack_col, right_stack_col = st.columns([2.6, 0.75], gap="small")
+    left_stack_col, _ = st.columns([2.6, 0.75], gap="small")
     with left_stack_col:
         with st.container(border=True):
             st.markdown("#### Weekly Sales Trend")
@@ -1768,7 +1768,8 @@ def render(ctx: dict):
             compare_row_label=(f"Compare Totals: {compare_label}" if compare_label else None),
         )
 
-    with right_stack_col:
+    _, movers_col = st.columns([2.6, 0.75], gap="small")
+    with movers_col:
         with st.container(border=True):
             st.markdown("#### Top Movers")
             _render_movers_panel(movers)
