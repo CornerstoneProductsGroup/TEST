@@ -289,54 +289,16 @@ def run_app():
     st.set_page_config(page_title=APP_TITLE, layout="wide")
     apply_global_styles()
 
-    logo_path = Path(__file__).resolve().parents[1] / "data" / "cornerstone_logo.jpg"
-    if logo_path.exists():
-        st.image(str(logo_path), width=320)
-
     st.title(APP_TITLE)
 
     vm = load_vendor_map()
     store = load_store()
+    logo_path = Path(__file__).resolve().parents[1] / "data" / "cornerstone_logo.jpg"
 
     with st.sidebar:
-        st.header("Data")
-        uploads = st.file_uploader(
-            "Upload weekly sales workbook (.xlsx)",
-            type=["xlsx"],
-            accept_multiple_files=True,
-        )
-        year = st.number_input(
-            "Year hint (for filename parsing)",
-            min_value=2010,
-            max_value=2100,
-            value=date.today().year,
-            step=1,
-        )
+        if logo_path.exists():
+            st.image(str(logo_path), width=240)
 
-        if st.button("Ingest upload(s)", disabled=(not uploads)):
-            if uploads:
-                all_raw = []
-                uploaded_names = []
-
-                for up in uploads:
-                    raw = read_weekly_workbook(up, int(year))
-                    all_raw.append(raw)
-                    uploaded_names.append(getattr(up, "name", "upload.xlsx"))
-
-                raw_merged = pd.concat(all_raw, ignore_index=True) if all_raw else pd.DataFrame()
-                if raw_merged.empty:
-                    st.info("No rows were ingested from the selected upload(s).")
-                else:
-                    _ = enrich_sales(raw_merged, vm)
-                    merged = pd.concat([store, raw_merged], ignore_index=True)
-                    save_store(merged)
-                    st.success(
-                        f"Ingested {len(raw_merged):,} rows from {len(uploaded_names)} file(s): "
-                        + ", ".join(uploaded_names)
-                    )
-                    store = load_store()
-
-        st.divider()
         st.header("Filters")
 
         scope = st.selectbox("Scope", ["All", "Retailer", "Vendor", "SKU"], index=0)
@@ -480,6 +442,44 @@ def run_app():
         min_units = st.number_input("Min Units for lists", min_value=0.0, value=0.0, step=10.0)
         driver_level = st.selectbox("Driver Level", ["SKU", "Vendor", "Retailer"], index=0)
         show_full_history_lifecycle = st.toggle("Lifecycle uses full history", value=True)
+
+        st.divider()
+        st.header("Data")
+        uploads = st.file_uploader(
+            "Upload weekly sales workbook (.xlsx)",
+            type=["xlsx"],
+            accept_multiple_files=True,
+        )
+        year = st.number_input(
+            "Year hint (for filename parsing)",
+            min_value=2010,
+            max_value=2100,
+            value=date.today().year,
+            step=1,
+        )
+
+        if st.button("Ingest upload(s)", disabled=(not uploads)):
+            if uploads:
+                all_raw = []
+                uploaded_names = []
+
+                for up in uploads:
+                    raw = read_weekly_workbook(up, int(year))
+                    all_raw.append(raw)
+                    uploaded_names.append(getattr(up, "name", "upload.xlsx"))
+
+                raw_merged = pd.concat(all_raw, ignore_index=True) if all_raw else pd.DataFrame()
+                if raw_merged.empty:
+                    st.info("No rows were ingested from the selected upload(s).")
+                else:
+                    _ = enrich_sales(raw_merged, vm)
+                    merged = pd.concat([store, raw_merged], ignore_index=True)
+                    save_store(merged)
+                    st.success(
+                        f"Ingested {len(raw_merged):,} rows from {len(uploaded_names)} file(s): "
+                        + ", ".join(uploaded_names)
+                    )
+                    store = load_store()
 
     df_scope = df_all.copy()
     if scope == "Retailer" and scope_pick:
