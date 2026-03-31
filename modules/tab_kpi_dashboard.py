@@ -966,33 +966,41 @@ def _prepare_top_skus(df_current: pd.DataFrame, df_compare: pd.DataFrame) -> pd.
     return merged
 
 
-def _prepare_retailer_share(df_current: pd.DataFrame) -> pd.DataFrame:
+def _prepare_retailer_share(df_current: pd.DataFrame, df_compare: pd.DataFrame) -> pd.DataFrame:
+    cols = ["Retailer", "Sales", "CompareSales", "Delta", "Color", "SalesLabel", "DeltaLabel", "DeltaX", "SalesX"]
     if df_current.empty or "Retailer" not in df_current.columns:
-        return pd.DataFrame(columns=["Retailer", "Sales", "Share", "Label"])
+        return pd.DataFrame(columns=cols)
 
-    share = (
+    current = (
         df_current.groupby("Retailer", as_index=False)
         .agg(Sales=("Sales", "sum"))
         .sort_values("Sales", ascending=False)
         .reset_index(drop=True)
     )
-    if len(share) > 4:
-        top = share.head(3).copy()
+    compare = (
+        df_compare.groupby("Retailer", as_index=False).agg(CompareSales=("Sales", "sum"))
+        if not df_compare.empty and "Retailer" in df_compare.columns
+        else pd.DataFrame(columns=["Retailer", "CompareSales"])
+    )
+    merged = current.merge(compare, on="Retailer", how="outer").fillna(0.0)
+    merged = merged.sort_values("Sales", ascending=False).reset_index(drop=True)
+
+    if len(merged) > 4:
+        top = merged.head(4).copy()
         top.loc[len(top)] = {
             "Retailer": "Other",
-            "Sales": float(share.iloc[3:]["Sales"].sum()),
+            "Sales": float(merged.iloc[4:]["Sales"].sum()),
+            "CompareSales": float(merged.iloc[4:]["CompareSales"].sum()),
         }
-        share = top
+        merged = top
 
-    total_sales = float(share["Sales"].sum()) or 1.0
-    share["Share"] = (share["Sales"] / total_sales) * 100.0
-    share["Label"] = share.apply(
-        lambda row: f"{row['Retailer']}  {_money_compact(float(row['Sales']))}  {row['Share']:.0f}%",
-        axis=1,
-    )
-    share["PctLabel"] = share["Share"].map(lambda value: f"{value:.0f}%")
-    share["LegendLabel"] = share.apply(lambda row: f"{row['Retailer']} ({row['Share']:.0f}%)", axis=1)
-    return share
+    merged["Delta"] = merged["Sales"] - merged["CompareSales"]
+    merged["Color"] = merged["Delta"].apply(_delta_color)
+    merged["SalesLabel"] = merged["Sales"].apply(money)
+    merged["DeltaLabel"] = merged["Delta"].apply(_fmt_signed_money)
+    merged["DeltaX"] = merged["Sales"] * 1.02
+    merged["SalesX"] = merged["Sales"] * 1.14
+    return merged[cols]
 
 
 def _prepare_retailer_share_change(df_current: pd.DataFrame, df_compare: pd.DataFrame) -> pd.DataFrame:
@@ -1241,32 +1249,32 @@ def _top_sku_chart(df: pd.DataFrame):
     if df.empty:
         return None
 
-    xmax = float(df["Sales"].max()) * 1.22 if not df.empty else 1.0
+    ymax = float(df["Sales"].max()) * 1.30 if not df.empty else 1.0
     bars = (
         alt.Chart(df)
-        .mark_bar(cornerRadiusEnd=6)
+        .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6)
         .encode(
-            y=alt.Y("SKU:N", sort="-x", title=None),
-            x=alt.X("Sales:Q", title=None, axis=alt.Axis(labels=False, ticks=False, domain=False), scale=alt.Scale(domain=[0, xmax])),
+            x=alt.X("SKU:N", sort="-y", title=None, axis=alt.Axis(labelAngle=-28)),
+            y=alt.Y("Sales:Q", title=None, axis=alt.Axis(labels=False, ticks=False, domain=False), scale=alt.Scale(domain=[0, ymax])),
             color=alt.Color("Color:N", scale=None, legend=None),
             tooltip=[alt.Tooltip("SKU:N"), alt.Tooltip("Sales:Q", format=",.0f")],
         )
     )
     labels = (
         alt.Chart(df)
-        .mark_text(align="left", baseline="middle", dx=8, color="#1f2937", fontSize=15, fontWeight="bold")
+        .mark_text(align="center", baseline="bottom", dy=-8, color="#1f2937", fontSize=13, fontWeight="bold")
         .encode(
-            y=alt.Y("SKU:N", sort="-x", title=None),
-            x=alt.X("Sales:Q", scale=alt.Scale(domain=[0, xmax])),
+            x=alt.X("SKU:N", sort="-y", title=None),
+            y=alt.Y("Sales:Q", scale=alt.Scale(domain=[0, ymax])),
             text="SalesLabel:N",
         )
     )
     delta_labels = (
         alt.Chart(df)
-        .mark_text(align="left", baseline="middle", dx=94, fontSize=13, fontWeight="bold")
+        .mark_text(align="center", baseline="bottom", dy=-24, fontSize=12, fontWeight="bold")
         .encode(
-            y=alt.Y("SKU:N", sort="-x", title=None),
-            x=alt.X("Sales:Q", scale=alt.Scale(domain=[0, xmax])),
+            x=alt.X("SKU:N", sort="-y", title=None),
+            y=alt.Y("Sales:Q", scale=alt.Scale(domain=[0, ymax])),
             text="DeltaLabel:N",
             color=alt.Color("Color:N", scale=None, legend=None),
         )
@@ -1278,23 +1286,41 @@ def _retailer_share_chart(df: pd.DataFrame):
     if df.empty:
         return None
 
-    pie = (
+    x_max = max(float(df["Sales"].max()) * 1.30 if not df.empty else 1.0, 1.0)
+    bars = (
         alt.Chart(df)
-        .mark_arc(innerRadius=0, outerRadius=146, stroke="#ffffff", strokeWidth=2)
+        .mark_bar(cornerRadiusEnd=6, color="#2b78d0")
         .encode(
-            theta=alt.Theta("Sales:Q"),
-            color=alt.Color("Retailer:N", scale=alt.Scale(range=["#f58220", "#205bac", "#ef4d2d", "#6b7280"]), legend=None),
-            tooltip=[alt.Tooltip("Retailer:N"), alt.Tooltip("Sales:Q", format=",.0f"), alt.Tooltip("Share:Q", format=",.1f")],
+            y=alt.Y("Retailer:N", sort="-x", title=None),
+            x=alt.X("Sales:Q", title=None, axis=alt.Axis(labels=False, ticks=False, domain=False), scale=alt.Scale(domain=[0, x_max])),
+            tooltip=[
+                alt.Tooltip("Retailer:N"),
+                alt.Tooltip("Sales:Q", format=",.0f"),
+                alt.Tooltip("Delta:Q", title="Difference", format=",.0f"),
+            ],
+        )
+    )
+    delta_labels = (
+        alt.Chart(df)
+        .mark_text(align="left", baseline="middle", dx=8, fontSize=12, fontWeight="bold")
+        .encode(
+            y=alt.Y("Retailer:N", sort="-x", title=None),
+            x=alt.X("DeltaX:Q", scale=alt.Scale(domain=[0, x_max])),
+            text="DeltaLabel:N",
+            color=alt.Color("Color:N", scale=None, legend=None),
+        )
+    )
+    sales_labels = (
+        alt.Chart(df)
+        .mark_text(align="left", baseline="middle", dx=8, color="#1f2937", fontSize=13, fontWeight="bold")
+        .encode(
+            y=alt.Y("Retailer:N", sort="-x", title=None),
+            x=alt.X("SalesX:Q", scale=alt.Scale(domain=[0, x_max])),
+            text="SalesLabel:N",
         )
     )
 
-    in_slice_labels = (
-        alt.Chart(df)
-        .mark_text(radius=96, color="white", fontSize=10, fontWeight="bold")
-        .encode(theta=alt.Theta("Sales:Q"), text="Label:N")
-    )
-
-    return (pie + in_slice_labels).properties(height=300)
+    return (bars + delta_labels + sales_labels).properties(height=300)
 
 
 def _retailer_share_change_chart(df: pd.DataFrame):
@@ -1416,10 +1442,10 @@ def render(ctx: dict):
             st.altair_chart(trend_chart, use_container_width=True)
 
     top_skus = _prepare_top_skus(dfA, dfB)
-    retailer_share = _prepare_retailer_share(dfA)
+    retailer_share = _prepare_retailer_share(dfA, dfB)
     movers = _prepare_top_movers(dfA, dfB)
 
-    left_col, middle_col, right_col = st.columns([1.55, 0.95, 0.9], gap="small")
+    left_col, middle_col, right_col = st.columns([1.35, 1.25, 0.75], gap="small")
 
     with left_col:
         with st.container(border=True):
