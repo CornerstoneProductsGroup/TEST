@@ -1780,7 +1780,7 @@ def render(ctx: dict):
             else:
                 st.altair_chart(sku_chart, use_container_width=True)
 
-    retailer_left_col, retailer_mid_col, _ = st.columns([1.45, 1.15, 0.75], gap="small")
+    retailer_left_col, retailer_mid_col, _ = st.columns([1.35, 1.35, 0.30], gap="small")
 
     with retailer_left_col:
         with st.container(border=True):
@@ -1800,7 +1800,7 @@ def render(ctx: dict):
             else:
                 st.altair_chart(share_change_chart, use_container_width=True)
 
-    vendor_left_col, vendor_mid_col, _ = st.columns([1.45, 1.15, 0.75], gap="small")
+    vendor_left_col, vendor_mid_col, _ = st.columns([1.35, 1.35, 0.30], gap="small")
 
     with vendor_left_col:
         with st.container(border=True):
