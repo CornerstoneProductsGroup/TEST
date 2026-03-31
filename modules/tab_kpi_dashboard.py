@@ -967,7 +967,10 @@ def _prepare_retailer_share(df_current: pd.DataFrame) -> pd.DataFrame:
 
     total_sales = float(share["Sales"].sum()) or 1.0
     share["Share"] = (share["Sales"] / total_sales) * 100.0
-    share["Label"] = share["Retailer"].astype(str)
+    share["Label"] = share.apply(
+        lambda row: f"{row['Retailer']}\n{money(float(row['Sales']))}\n{row['Share']:.0f}%",
+        axis=1,
+    )
     share["PctLabel"] = share["Share"].map(lambda value: f"{value:.0f}%")
     share["LegendLabel"] = share.apply(lambda row: f"{row['Retailer']} ({row['Share']:.0f}%)", axis=1)
     return share
@@ -1244,23 +1247,21 @@ def _retailer_share_chart(df: pd.DataFrame):
 
     pie = (
         alt.Chart(df)
-        .mark_arc(innerRadius=70, outerRadius=122, stroke="#ffffff", strokeWidth=2)
+        .mark_arc(innerRadius=0, outerRadius=126, stroke="#ffffff", strokeWidth=2)
         .encode(
             theta=alt.Theta("Sales:Q"),
-            color=alt.Color(
-                "LegendLabel:N",
-                scale=alt.Scale(range=["#f58220", "#205bac", "#ef4d2d", "#6b7280"]),
-                legend=alt.Legend(title=None, orient="right"),
-            ),
+            color=alt.Color("Retailer:N", scale=alt.Scale(range=["#f58220", "#205bac", "#ef4d2d", "#6b7280"]), legend=None),
             tooltip=[alt.Tooltip("Retailer:N"), alt.Tooltip("Sales:Q", format=",.0f"), alt.Tooltip("Share:Q", format=",.1f")],
         )
     )
-    pct_labels = (
+
+    in_slice_labels = (
         alt.Chart(df)
-        .mark_text(radius=82, color="white", fontSize=10, fontWeight="bold")
-        .encode(theta=alt.Theta("Sales:Q"), text="PctLabel:N")
+        .mark_text(radius=76, color="white", fontSize=11, fontWeight="bold", lineBreak="\n")
+        .encode(theta=alt.Theta("Sales:Q"), text="Label:N")
     )
-    return (pie + pct_labels).properties(height=300)
+
+    return (pie + in_slice_labels).properties(height=300)
 
 
 def _retailer_share_change_chart(df: pd.DataFrame):
@@ -1284,7 +1285,7 @@ def _retailer_share_change_chart(df: pd.DataFrame):
     )
     share_text = (
         alt.Chart(df)
-        .mark_text(align="left", baseline="middle", dx=6, color="#1f2937", fontWeight="bold")
+        .mark_text(align="left", baseline="middle", dx=6, color="#1f2937", fontWeight="bold", fontSize=15)
         .encode(
             y=alt.Y("Retailer:N", sort="-x", title=None),
             x=alt.X("CurrentShare:Q", scale=alt.Scale(domain=[0, x_max])),
@@ -1293,7 +1294,7 @@ def _retailer_share_change_chart(df: pd.DataFrame):
     )
     delta_text = (
         alt.Chart(df)
-        .mark_text(align="left", baseline="middle", dx=68, fontWeight="bold")
+        .mark_text(align="left", baseline="middle", dx=74, fontWeight="bold", fontSize=14)
         .encode(
             y=alt.Y("Retailer:N", sort="-x", title=None),
             x=alt.X("CurrentShare:Q", scale=alt.Scale(domain=[0, x_max])),
