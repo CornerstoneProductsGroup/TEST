@@ -1223,7 +1223,7 @@ def _build_exec_kpi_tiles(ctx: dict, sales_per_week: float, compare_sales_per_we
     ) -> dict[str, object]:
         primary_2m = _last_two_months(primary_df)
         reference_2m = _last_two_months(reference_df)
-        new_count, new_sales, lost_count, lost_sales = _sku_churn(primary_2m, reference_2m)
+        primary_only_count, primary_only_sales, reference_only_count, reference_only_sales = _sku_churn(primary_2m, reference_2m)
         if not show_compare:
             return {
                 "title": "SKU Movement (2M)",
@@ -1233,14 +1233,38 @@ def _build_exec_kpi_tiles(ctx: dict, sales_per_week: float, compare_sales_per_we
                 "meta_lines": [],
             }
 
+        if primary_name == "Current":
+            return {
+                "title": "SKU Movement (2M)",
+                "value": f"New SKUs (Current not Compare): {primary_only_count:,}",
+                "delta": f"Total Sales (New): {money(primary_only_sales)}",
+                "color": _delta_color(primary_only_sales - reference_only_sales),
+                "meta_lines": [
+                    f"Lost SKUs (Compare not Current): {reference_only_count:,}",
+                    f"Total Sales (Lost): {money(reference_only_sales)}",
+                ],
+            }
+
+        if primary_name == "Compare":
+            return {
+                "title": "SKU Movement (2M)",
+                "value": f"New SKUs (Compare not Current): {primary_only_count:,}",
+                "delta": f"Total Sales (New): {money(primary_only_sales)}",
+                "color": _delta_color(primary_only_sales - reference_only_sales),
+                "meta_lines": [
+                    f"Lost SKUs (Compare not Current): {primary_only_count:,}",
+                    f"Total Sales (Lost): {money(primary_only_sales)}",
+                ],
+            }
+
         return {
             "title": "SKU Movement (2M)",
-            "value": f"In {primary_name} Not {reference_name}: {new_count:,}",
-            "delta": f"Sales ({primary_name}-only): {money(new_sales)}",
-            "color": _delta_color(new_sales - lost_sales),
+            "value": f"In {primary_name} Not {reference_name}: {primary_only_count:,}",
+            "delta": f"Sales ({primary_name}-only): {money(primary_only_sales)}",
+            "color": _delta_color(primary_only_sales - reference_only_sales),
             "meta_lines": [
-                f"In {reference_name} Not {primary_name}: {lost_count:,}",
-                f"Sales ({reference_name}-only): {money(lost_sales)}",
+                f"In {reference_name} Not {primary_name}: {reference_only_count:,}",
+                f"Sales ({reference_name}-only): {money(reference_only_sales)}",
             ],
         }
 
