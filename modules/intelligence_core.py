@@ -70,11 +70,11 @@ def get_global_view_mode():
 def render_current_analysis_view(ctx: dict):
     analysis_view = ctx.get("analysis_view")
 
-    if analysis_view == "KPI Dashboard":
+    if analysis_view == "Sales Dashboard":
         if hasattr(tab_kpi_dashboard, "render"):
             tab_kpi_dashboard.render(ctx)
             return
-        st.warning("KPI Dashboard tab render function was not found.")
+        st.warning("Sales Dashboard tab render function was not found.")
     elif analysis_view == "Standard Intelligence":
         if hasattr(tab_standard_intelligence, "render"):
             tab_standard_intelligence.render(ctx)
@@ -115,11 +115,11 @@ def render_current_analysis_view(ctx: dict):
 def render_visual_analysis_view(ctx: dict):
     analysis_view = ctx.get("analysis_view")
 
-    if analysis_view == "KPI Dashboard":
+    if analysis_view == "Sales Dashboard":
         if hasattr(tab_kpi_dashboard, "render"):
             tab_kpi_dashboard.render(ctx)
             return
-        st.warning("KPI Dashboard visual dashboard function was not found.")
+        st.warning("Sales Dashboard visual dashboard function was not found.")
         return
 
     if analysis_view == "Standard Intelligence":
@@ -360,7 +360,7 @@ def run_app():
         analysis_view = st.radio(
             "Analysis View",
             [
-                "KPI Dashboard",
+                "Sales Dashboard",
                 "Standard Intelligence",
                 "Month / Year Compare",
                 "Multi Month / Year Compare",
@@ -380,7 +380,7 @@ def run_app():
             timeframe = "YTD"
             compare_mode = "None"
 
-        elif analysis_view in ["KPI Dashboard", "Standard Intelligence"]:
+        elif analysis_view in ["Sales Dashboard", "Standard Intelligence"]:
             timeframe = st.selectbox(
                 "Timeframe",
                 [
@@ -619,7 +619,7 @@ def run_app():
         render_visual_analysis_view(ctx)
         return
 
-    if analysis_view != "KPI Dashboard":
+    if analysis_view != "Sales Dashboard":
         render_model_header_and_summary(
             analysis_view=analysis_view,
             scope=scope,
