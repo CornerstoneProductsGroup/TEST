@@ -1510,7 +1510,7 @@ def _retailer_share_change_chart(df: pd.DataFrame):
             color=alt.Color("DeltaColor:N", scale=None, legend=None),
         )
     )
-    return (bars + share_text + delta_text).properties(height=220)
+    return (bars + share_text + delta_text).properties(height=312)
 
 
 def _weekly_growth_chart(df: pd.DataFrame):
@@ -1606,6 +1606,7 @@ def render(ctx: dict):
     left_col, middle_col, _ = st.columns([1.15, 1.45, 0.75], gap="small")
 
     with left_col:
+        st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
         with st.container(border=True):
             st.markdown("#### Top Selling SKUs")
             sku_chart = _top_sku_chart(top_skus)
