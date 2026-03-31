@@ -46,18 +46,45 @@ def apply_global_styles():
     .sales-dashboard-kpi-pct-line{font-size:12px;font-weight:700;line-height:1.1;}
     .sales-dashboard-context-copy{font-size:13px;color:var(--text-color);opacity:0.82;line-height:1.35;}
 
+    .sales-exec-accent{height:14px;background:#1f3f72;border-radius:0;margin:0 0 8px 0;}
+    .sales-exec-kpi-ribbon{display:grid;grid-template-columns:repeat(8,minmax(120px,1fr));gap:0;border:1px solid rgba(148,163,184,0.35);background:#ffffff;box-shadow:0 1px 3px rgba(15,23,42,0.08);margin-bottom:6px;}
+    .sales-exec-kpi-tile{padding:14px 16px;border-right:1px solid rgba(203,213,225,0.8);min-width:0;}
+    .sales-exec-kpi-tile:last-child{border-right:none;}
+    .sales-exec-kpi-title{font-size:11px;font-weight:700;letter-spacing:0.01em;color:#5b6472;text-transform:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .sales-exec-kpi-metric-row{display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap;}
+    .sales-exec-kpi-value{font-size:18px;font-weight:800;line-height:1.1;color:#1f2937;}
+    .sales-exec-kpi-delta{font-size:12px;font-weight:800;line-height:1.1;}
+    .sales-exec-context{font-size:12px;color:#6b7280;margin:0 0 10px 0;}
+
+    .sales-movers-table{display:flex;flex-direction:column;gap:0;}
+    .sales-movers-row{display:grid;grid-template-columns:minmax(0,1.1fr) auto auto minmax(0,1fr);gap:10px;align-items:center;padding:12px 6px;border-top:1px solid rgba(226,232,240,0.9);}
+    .sales-movers-row:first-child{border-top:none;}
+    .sales-movers-sku{font-size:14px;font-weight:800;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .sales-movers-delta,.sales-movers-pct{font-size:14px;font-weight:800;white-space:nowrap;}
+    .sales-movers-retailer{font-size:13px;color:#374151;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+    .sales-new-products-list{display:flex;flex-direction:column;gap:0;}
+    .sales-new-products-item{padding:12px 4px 12px 18px;border-top:1px solid rgba(226,232,240,0.9);font-size:14px;font-weight:600;color:#243244;position:relative;line-height:1.35;}
+    .sales-new-products-item:first-child{border-top:none;}
+    .sales-new-products-item::before{content:'•';position:absolute;left:4px;top:12px;color:#667085;font-size:18px;line-height:1;}
+
     @media (max-width: 1100px) {
         .sales-dashboard-top-row{justify-content:flex-start;}
         .sales-dashboard-kpi-strip{justify-content:flex-start;}
+        .sales-exec-kpi-ribbon{grid-template-columns:repeat(4,minmax(140px,1fr));}
     }
 
     @media (max-width: 768px) {
         .sales-dashboard-kpi-strip{display:grid;grid-template-columns:repeat(2, minmax(140px, 1fr));width:100%;}
         .sales-dashboard-kpi-card{max-width:none;min-width:0;}
+        .sales-exec-kpi-ribbon{grid-template-columns:repeat(2,minmax(150px,1fr));}
+        .sales-movers-row{grid-template-columns:minmax(0,1fr) auto;gap:8px;}
+        .sales-movers-retailer{grid-column:1 / -1;text-align:left;}
     }
 
     @media (max-width: 540px) {
         .sales-dashboard-kpi-strip{grid-template-columns:1fr;}
+        .sales-exec-kpi-ribbon{grid-template-columns:1fr;}
     }
     
     /* Dataframe Header Styling */

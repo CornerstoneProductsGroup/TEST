@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import altair as alt
 import html
 
 import pandas as pd
 import streamlit as st
 
-from .shared_core import money
+from .shared_core import (
+    first_sale_ever,
+    money,
+    momentum_label,
+    momentum_score,
+    new_placement,
+    period_from_df,
+)
 
 
 def _retailer_logo_url(retailer_name: str) -> str:
@@ -848,21 +856,480 @@ def _render_dimension_section(
     )
 
 
+def _safe_pct_change(value: float, reference: float) -> float:
+    value = float(value or 0.0)
+    reference = float(reference or 0.0)
+    if reference == 0:
+        return 0.0 if value == 0 else 100.0
+    return ((value - reference) / abs(reference)) * 100.0
+
+
+def _delta_color(value: float) -> str:
+    if value > 0:
+        return "#1f8f4e"
+    if value < 0:
+        return "#d64541"
+    return "#6b7280"
+
+
+def _fmt_signed_pct(value: float, decimals: int = 1) -> str:
+    prefix = "+" if value > 0 else ""
+    return f"{prefix}{value:,.{decimals}f}%"
+
+
+def _fmt_signed_int(value: float) -> str:
+    prefix = "+" if value > 0 else ""
+    return f"{prefix}{value:,.0f}"
+
+
+def _series_by_week(df: pd.DataFrame, metric: str = "Sales") -> pd.DataFrame:
+    if df.empty or metric not in df.columns or "WeekEnd" not in df.columns:
+        return pd.DataFrame(columns=["WeekIndex", "Week Label", "Value"])
+
+    weekly = (
+        df.groupby("WeekEnd", as_index=False)
+        .agg(Value=(metric, "sum"))
+        .sort_values("WeekEnd")
+        .reset_index(drop=True)
+    )
+    weekly["WeekIndex"] = range(1, len(weekly) + 1)
+    weekly["Week Label"] = weekly["WeekIndex"].map(lambda idx: f"Week {idx}")
+    return weekly[["WeekIndex", "Week Label", "Value"]]
+
+
+def _prepare_weekly_trend(df_current: pd.DataFrame, df_compare: pd.DataFrame, current_label: str, compare_label: str | None) -> pd.DataFrame:
+    current_weekly = _series_by_week(df_current, "Sales")
+    compare_weekly = _series_by_week(df_compare, "Sales")
+    max_len = max(len(current_weekly), len(compare_weekly))
+    if max_len == 0:
+        return pd.DataFrame(columns=["Week Label", "Series", "Sales"])
+
+    current_lookup = dict(zip(current_weekly["WeekIndex"], current_weekly["Value"]))
+    compare_lookup = dict(zip(compare_weekly["WeekIndex"], compare_weekly["Value"]))
+
+    rows: list[dict[str, object]] = []
+    for idx in range(1, max_len + 1):
+        week_label = f"Week {idx}"
+        rows.append({"Week Label": week_label, "Series": current_label, "Sales": float(current_lookup.get(idx, 0.0))})
+        if compare_label:
+            rows.append({"Week Label": week_label, "Series": compare_label, "Sales": float(compare_lookup.get(idx, 0.0))})
+    return pd.DataFrame(rows)
+
+
+def _prepare_top_skus(df_current: pd.DataFrame, df_compare: pd.DataFrame) -> pd.DataFrame:
+    if df_current.empty or "SKU" not in df_current.columns:
+        return pd.DataFrame(columns=["SKU", "Sales", "Delta", "Color", "SalesLabel"])
+
+    current = df_current.groupby("SKU", as_index=False).agg(Sales=("Sales", "sum"))
+    compare = (
+        df_compare.groupby("SKU", as_index=False).agg(CompareSales=("Sales", "sum"))
+        if not df_compare.empty and "SKU" in df_compare.columns
+        else pd.DataFrame(columns=["SKU", "CompareSales"])
+    )
+    merged = current.merge(compare, on="SKU", how="left").fillna({"CompareSales": 0.0})
+    merged["Delta"] = merged["Sales"] - merged["CompareSales"]
+    merged = merged.sort_values("Sales", ascending=False).head(5).copy()
+    merged["Color"] = merged["Delta"].apply(lambda value: "#2da663" if value >= 0 else "#f04e3e")
+    merged["SalesLabel"] = merged["Sales"].apply(money)
+    return merged
+
+
+def _prepare_retailer_share(df_current: pd.DataFrame) -> pd.DataFrame:
+    if df_current.empty or "Retailer" not in df_current.columns:
+        return pd.DataFrame(columns=["Retailer", "Sales", "Share", "Label"])
+
+    share = (
+        df_current.groupby("Retailer", as_index=False)
+        .agg(Sales=("Sales", "sum"))
+        .sort_values("Sales", ascending=False)
+        .reset_index(drop=True)
+    )
+    if len(share) > 4:
+        top = share.head(3).copy()
+        top.loc[len(top)] = {
+            "Retailer": "Other",
+            "Sales": float(share.iloc[3:]["Sales"].sum()),
+        }
+        share = top
+
+    total_sales = float(share["Sales"].sum()) or 1.0
+    share["Share"] = (share["Sales"] / total_sales) * 100.0
+    share["Label"] = share.apply(lambda row: f"{row['Retailer']}\n{row['Share']:.0f}%", axis=1)
+    return share
+
+
+def _prepare_top_movers(df_current: pd.DataFrame, df_compare: pd.DataFrame) -> list[dict[str, object]]:
+    if df_current.empty or "SKU" not in df_current.columns:
+        return []
+
+    current = df_current.groupby("SKU", as_index=False).agg(Sales=("Sales", "sum"))
+    compare = (
+        df_compare.groupby("SKU", as_index=False).agg(CompareSales=("Sales", "sum"))
+        if not df_compare.empty and "SKU" in df_compare.columns
+        else pd.DataFrame(columns=["SKU", "CompareSales"])
+    )
+    combined = current.merge(compare, on="SKU", how="outer").fillna(0.0)
+    combined["Delta"] = combined["Sales"] - combined["CompareSales"]
+    combined["Pct"] = combined.apply(lambda row: _safe_pct_change(row["Sales"], row["CompareSales"]), axis=1)
+
+    if "Retailer" in df_current.columns:
+        retailer_lookup = (
+            df_current.groupby(["SKU", "Retailer"], as_index=False)
+            .agg(Sales=("Sales", "sum"))
+            .sort_values(["SKU", "Sales"], ascending=[True, False])
+            .drop_duplicates(subset=["SKU"])
+        )
+        combined = combined.merge(retailer_lookup[["SKU", "Retailer"]], on="SKU", how="left")
+    else:
+        combined["Retailer"] = ""
+
+    movers = pd.concat(
+        [
+            combined.sort_values("Delta", ascending=False).head(2),
+            combined.sort_values("Delta", ascending=True).head(2),
+        ],
+        ignore_index=True,
+    )
+
+    rows: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for _, row in movers.iterrows():
+        sku = str(row["SKU"])
+        if sku in seen:
+            continue
+        seen.add(sku)
+        delta = float(row["Delta"])
+        rows.append(
+            {
+                "SKU": sku,
+                "Retailer": str(row.get("Retailer", "") or ""),
+                "DeltaText": (f"+{money(abs(delta))}" if delta >= 0 else f"-{money(abs(delta))}"),
+                "PctText": _fmt_signed_pct(float(row["Pct"]), 0),
+                "Color": _delta_color(delta),
+            }
+        )
+        if len(rows) == 4:
+            break
+    return rows
+
+
+def _prepare_growth_series(df_current: pd.DataFrame, df_compare: pd.DataFrame, compare_label: str | None) -> pd.DataFrame:
+    current = _series_by_week(df_current, "Sales")
+    if current.empty:
+        return pd.DataFrame(columns=["Week Label", "Current Growth", "Compare Growth"])
+
+    current["Current Growth"] = current["Value"].pct_change().fillna(0.0) * 100.0
+
+    if compare_label:
+        compare = _series_by_week(df_compare, "Sales")
+        compare["Compare Growth"] = compare["Value"].pct_change().fillna(0.0) * 100.0
+        out = current[["WeekIndex", "Week Label", "Current Growth"]].merge(
+            compare[["WeekIndex", "Compare Growth"]],
+            on="WeekIndex",
+            how="left",
+        )
+        out["Compare Growth"] = out["Compare Growth"].fillna(0.0)
+        return out[["Week Label", "Current Growth", "Compare Growth"]]
+
+    current["Compare Growth"] = current["Current Growth"].rolling(3, min_periods=1).mean()
+    return current[["Week Label", "Current Growth", "Compare Growth"]]
+
+
+def _build_new_product_lines(df_scope: pd.DataFrame, df_current: pd.DataFrame, movers: list[dict[str, object]]) -> list[str]:
+    period = period_from_df(df_current)
+    if period is None or df_scope.empty:
+        return ["No new or emerging product signals for the selected timeframe."]
+
+    lines: list[str] = []
+    first_ever = first_sale_ever(df_scope, period)
+    if not first_ever.empty:
+        row = first_ever.iloc[0]
+        retailer = str(row.get("FirstRetailer", row.get("Retailer", "a new retailer")))
+        lines.append(f"New SKU {row['SKU']} launched at {retailer}.")
+
+    placements = new_placement(df_scope, period)
+    if not placements.empty:
+        row = placements.iloc[0]
+        lines.append(f"New retailer placement: {row['SKU']} is now selling at {row['Retailer']}.")
+
+    if movers:
+        best = next((item for item in movers if item["Color"] == "#1f8f4e"), movers[0])
+        lines.append(f"Fastest growing SKU: {best['SKU']} {best['PctText']}.")
+
+    if not lines:
+        lines.append("No new or emerging product signals for the selected timeframe.")
+    return lines[:3]
+
+
+def _build_exec_kpi_tiles(ctx: dict, momentum_value: float, momentum_text: str, sales_per_week: float, compare_sales_per_week: float, new_sku_count: int) -> list[dict[str, str]]:
+    kA = ctx["kA"]
+    kB = ctx["kB"]
+    show_compare = ctx["compare_mode"] != "None"
+
+    sales_growth = _safe_pct_change(float(kA.get("Sales", 0.0)), float(kB.get("Sales", 0.0))) if show_compare else 0.0
+    units_growth = _safe_pct_change(float(kA.get("Units", 0.0)), float(kB.get("Units", 0.0))) if show_compare else 0.0
+    asp_growth = _safe_pct_change(float(kA.get("ASP", 0.0)), float(kB.get("ASP", 0.0))) if show_compare else 0.0
+    sales_per_week_growth = _safe_pct_change(sales_per_week, compare_sales_per_week) if show_compare else 0.0
+    active_sku_delta = float(kA.get("Active SKUs", 0.0)) - float(kB.get("Active SKUs", 0.0)) if show_compare else 0.0
+
+    return [
+        {"title": "Total Sales", "value": money(float(kA.get("Sales", 0.0))), "delta": _fmt_signed_pct(sales_growth), "color": _delta_color(sales_growth)},
+        {"title": "Units Sold", "value": f"{float(kA.get('Units', 0.0)):,.0f}", "delta": _fmt_signed_pct(units_growth), "color": _delta_color(units_growth)},
+        {"title": "Avg Selling Price", "value": money(float(kA.get("ASP", 0.0))), "delta": _fmt_signed_pct(asp_growth), "color": _delta_color(asp_growth)},
+        {"title": "Sales per Week", "value": money(sales_per_week), "delta": _fmt_signed_pct(sales_per_week_growth, 0), "color": _delta_color(sales_per_week_growth)},
+        {"title": "Momentum Score", "value": f"{momentum_value:,.0f}", "delta": momentum_text, "color": "#2b78d0"},
+        {"title": "% Growth vs Compare", "value": _fmt_signed_pct(sales_growth), "delta": "", "color": _delta_color(sales_growth)},
+        {"title": "Active SKUs", "value": f"{float(kA.get('Active SKUs', 0.0)):,.0f}", "delta": _fmt_signed_int(active_sku_delta) if show_compare else "", "color": _delta_color(active_sku_delta)},
+        {"title": "New SKUs", "value": f"{new_sku_count:,.0f}", "delta": "", "color": "#111827"},
+    ]
+
+
+def _render_exec_kpi_ribbon(tiles: list[dict[str, str]], current_label: str, compare_label: str | None):
+    tiles_html = ""
+    for tile in tiles:
+        delta_html = ""
+        if tile.get("delta"):
+            delta_html = f"<span class='sales-exec-kpi-delta' style='color:{tile['color']};'>{html.escape(tile['delta'])}</span>"
+        tiles_html += (
+            "<div class='sales-exec-kpi-tile'>"
+            f"<div class='sales-exec-kpi-title'>{html.escape(tile['title'])}</div>"
+            "<div class='sales-exec-kpi-metric-row'>"
+            f"<div class='sales-exec-kpi-value'>{html.escape(tile['value'])}</div>"
+            f"{delta_html}"
+            "</div>"
+            "</div>"
+        )
+
+    context = f"Current: {current_label}"
+    if compare_label:
+        context += f"  |  Compare: {compare_label}"
+
+    st.markdown(
+        "<div class='sales-exec-accent'></div>"
+        f"<div class='sales-exec-kpi-ribbon'>{tiles_html}</div>"
+        f"<div class='sales-exec-context'>{html.escape(context)}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _render_movers_panel(movers: list[dict[str, object]]):
+    if not movers:
+        st.info("No movers available for the selected timeframe.")
+        return
+
+    rows_html = ""
+    for mover in movers:
+        rows_html += (
+            "<div class='sales-movers-row'>"
+            f"<div class='sales-movers-sku'>{html.escape(str(mover['SKU']))}</div>"
+            f"<div class='sales-movers-delta' style='color:{mover['Color']};'>{html.escape(str(mover['DeltaText']))}</div>"
+            f"<div class='sales-movers-pct' style='color:{mover['Color']};'>{html.escape(str(mover['PctText']))}</div>"
+            f"<div class='sales-movers-retailer'>{html.escape(str(mover['Retailer']))}</div>"
+            "</div>"
+        )
+
+    st.markdown(f"<div class='sales-movers-table'>{rows_html}</div>", unsafe_allow_html=True)
+
+
+def _render_new_products_panel(lines: list[str]):
+    items_html = "".join(
+        f"<div class='sales-new-products-item'>{html.escape(line)}</div>" for line in lines
+    )
+    st.markdown(f"<div class='sales-new-products-list'>{items_html}</div>", unsafe_allow_html=True)
+
+
+def _weekly_sales_trend_chart(df: pd.DataFrame, current_label: str, compare_label: str | None):
+    if df.empty:
+        return None
+
+    domain = [current_label] + ([compare_label] if compare_label else [])
+    color_range = ["#2b78d0", "#7f93b0"] if compare_label else ["#2b78d0"]
+    return (
+        alt.Chart(df)
+        .mark_line(point=alt.OverlayMarkDef(size=70, filled=True))
+        .encode(
+            x=alt.X("Week Label:N", sort=None, title=None, axis=alt.Axis(labelAngle=0)),
+            y=alt.Y("Sales:Q", title=None, axis=alt.Axis(format="$,.0s", gridColor="#e5e7eb")),
+            color=alt.Color("Series:N", scale=alt.Scale(domain=domain, range=color_range), legend=alt.Legend(title=None, orient="bottom")),
+            tooltip=[alt.Tooltip("Series:N"), alt.Tooltip("Week Label:N", title="Week"), alt.Tooltip("Sales:Q", format=",.0f")],
+        )
+        .properties(height=230)
+    )
+
+
+def _top_sku_chart(df: pd.DataFrame):
+    if df.empty:
+        return None
+
+    xmax = float(df["Sales"].max()) * 1.22 if not df.empty else 1.0
+    bars = (
+        alt.Chart(df)
+        .mark_bar(cornerRadiusEnd=6)
+        .encode(
+            y=alt.Y("SKU:N", sort="-x", title=None),
+            x=alt.X("Sales:Q", title=None, axis=alt.Axis(labels=False, ticks=False, domain=False), scale=alt.Scale(domain=[0, xmax])),
+            color=alt.Color("Color:N", scale=None, legend=None),
+            tooltip=[alt.Tooltip("SKU:N"), alt.Tooltip("Sales:Q", format=",.0f")],
+        )
+    )
+    labels = (
+        alt.Chart(df)
+        .mark_text(align="left", baseline="middle", dx=8, color="#1f2937", fontSize=15, fontWeight="bold")
+        .encode(
+            y=alt.Y("SKU:N", sort="-x", title=None),
+            x=alt.X("Sales:Q", scale=alt.Scale(domain=[0, xmax])),
+            text="SalesLabel:N",
+        )
+    )
+    return (bars + labels).properties(height=220)
+
+
+def _retailer_share_chart(df: pd.DataFrame):
+    if df.empty:
+        return None
+
+    pie = (
+        alt.Chart(df)
+        .mark_arc(innerRadius=58, outerRadius=105, stroke="#ffffff", strokeWidth=2)
+        .encode(
+            theta=alt.Theta("Sales:Q"),
+            color=alt.Color("Retailer:N", scale=alt.Scale(range=["#f58220", "#205bac", "#ef4d2d", "#6b7280"]), legend=None),
+            tooltip=[alt.Tooltip("Retailer:N"), alt.Tooltip("Sales:Q", format=",.0f"), alt.Tooltip("Share:Q", format=",.1f")],
+        )
+    )
+    labels = (
+        alt.Chart(df)
+        .mark_text(radius=78, color="white", fontSize=12, fontWeight="bold", lineBreak="\n")
+        .encode(theta=alt.Theta("Sales:Q"), text="Label:N")
+    )
+    return (pie + labels).properties(height=220)
+
+
+def _weekly_growth_chart(df: pd.DataFrame):
+    if df.empty:
+        return None
+
+    bars = (
+        alt.Chart(df)
+        .mark_bar(color="#4a90e2", opacity=0.9, cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
+        .encode(
+            x=alt.X("Week Label:N", title=None, axis=alt.Axis(labelAngle=0)),
+            y=alt.Y("Current Growth:Q", title=None, axis=alt.Axis(format=",.0f")),
+            tooltip=[alt.Tooltip("Week Label:N"), alt.Tooltip("Current Growth:Q", title="Current Growth", format=",.1f")],
+        )
+    )
+    line = (
+        alt.Chart(df)
+        .mark_line(color="#375a8c", point=True, strokeDash=[6, 4])
+        .encode(
+            x=alt.X("Week Label:N", title=None),
+            y=alt.Y("Compare Growth:Q", title=None),
+            tooltip=[alt.Tooltip("Week Label:N"), alt.Tooltip("Compare Growth:Q", title="Trend", format=",.1f")],
+        )
+    )
+    rule = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="#cbd5e1").encode(y="y:Q")
+    return (rule + bars + line).properties(height=180)
+
+
 def render(ctx: dict):
     kA = ctx["kA"]
     kB = ctx["kB"]
     a_lbl = ctx["a_lbl"]
     b_lbl = ctx["b_lbl"]
     compare_mode = ctx["compare_mode"]
+    dfA = ctx["dfA"]
+    dfB = ctx["dfB"]
+    df_scope = ctx.get("df_scope", pd.DataFrame())
+
+    current_label = a_lbl or "Current timeframe"
+    compare_label = b_lbl if compare_mode != "None" and b_lbl else None
+
+    current_weeks = max(int(dfA["WeekEnd"].nunique()) if (not dfA.empty and "WeekEnd" in dfA.columns) else 0, 1)
+    compare_weeks = max(int(dfB["WeekEnd"].nunique()) if (not dfB.empty and "WeekEnd" in dfB.columns) else 0, 1)
+    current_sales_per_week = float(kA.get("Sales", 0.0)) / current_weeks
+    compare_sales_per_week = float(kB.get("Sales", 0.0)) / compare_weeks if compare_label else 0.0
+
+    anchor = pd.to_datetime(dfA.get("WeekEnd"), errors="coerce").max() if (not dfA.empty and "WeekEnd" in dfA.columns) else pd.NaT
+    if pd.notna(anchor) and not df_scope.empty and "WeekEnd" in df_scope.columns:
+        hist_up_to_anchor = df_scope[pd.to_datetime(df_scope["WeekEnd"], errors="coerce") <= anchor].copy()
+    else:
+        hist_up_to_anchor = pd.DataFrame()
+
+    overall_weekly = (
+        hist_up_to_anchor.groupby("WeekEnd", as_index=False).agg(Sales=("Sales", "sum")).sort_values("WeekEnd").tail(8)
+        if not hist_up_to_anchor.empty
+        else pd.DataFrame(columns=["WeekEnd", "Sales"])
+    )
+    overall_momentum = momentum_score(overall_weekly["Sales"]) if not overall_weekly.empty else 0.0
+    overall_momentum_label = momentum_label(overall_momentum)
+
+    period = period_from_df(dfA)
+    new_sku_count = len(first_sale_ever(df_scope, period)) if period is not None and not df_scope.empty else 0
 
     st.markdown("### Sales Dashboard")
 
-    _render_compact_top_right_kpis(
-        current_label=a_lbl or "Current timeframe",
-        compare_label=b_lbl,
-        current_sales=float(kA.get("Sales", 0.0)),
-        compare_sales=float(kB.get("Sales", 0.0)),
-        current_units=float(kA.get("Units", 0.0)),
-        compare_units=float(kB.get("Units", 0.0)),
-        show_compare=(compare_mode != "None" and bool(b_lbl)),
+    tiles = _build_exec_kpi_tiles(
+        ctx,
+        momentum_value=overall_momentum,
+        momentum_text=overall_momentum_label,
+        sales_per_week=current_sales_per_week,
+        compare_sales_per_week=compare_sales_per_week,
+        new_sku_count=new_sku_count,
     )
+    _render_exec_kpi_ribbon(tiles, current_label, compare_label)
+
+    weekly_trend = _prepare_weekly_trend(dfA, dfB, current_label, compare_label)
+    with st.container(border=True):
+        st.markdown("#### Weekly Sales Trend")
+        trend_chart = _weekly_sales_trend_chart(weekly_trend, current_label, compare_label)
+        if trend_chart is None:
+            st.info("No weekly trend data available for the selected timeframe.")
+        else:
+            st.altair_chart(trend_chart, use_container_width=True)
+
+    top_skus = _prepare_top_skus(dfA, dfB)
+    retailer_share = _prepare_retailer_share(dfA)
+    movers = _prepare_top_movers(dfA, dfB)
+
+    left_col, middle_col, right_col = st.columns([1.55, 0.95, 0.9], gap="small")
+
+    with left_col:
+        with st.container(border=True):
+            st.markdown("#### Top Selling SKUs")
+            sku_chart = _top_sku_chart(top_skus)
+            if sku_chart is None:
+                st.info("No SKU sales available for the selected timeframe.")
+            else:
+                st.altair_chart(sku_chart, use_container_width=True)
+
+    with middle_col:
+        with st.container(border=True):
+            st.markdown("#### Sales by Retailer")
+            share_chart = _retailer_share_chart(retailer_share)
+            if share_chart is None:
+                st.info("No retailer mix available for the selected timeframe.")
+            else:
+                st.altair_chart(share_chart, use_container_width=True)
+
+    with right_col:
+        with st.container(border=True):
+            st.markdown("#### Top Movers")
+            _render_movers_panel(movers)
+
+    growth_df = _prepare_growth_series(dfA, dfB, compare_label)
+    emerging_lines = _build_new_product_lines(df_scope, dfA, movers)
+    bottom_left, bottom_right = st.columns([1.75, 0.95], gap="small")
+
+    with bottom_left:
+        with st.container(border=True):
+            st.markdown("#### Weekly Growth Rate")
+            growth_chart = _weekly_growth_chart(growth_df)
+            if growth_chart is None:
+                st.info("No weekly growth data available for the selected timeframe.")
+            else:
+                st.altair_chart(growth_chart, use_container_width=True)
+
+    with bottom_right:
+        with st.container(border=True):
+            st.markdown("#### New & Emerging Products")
+            _render_new_products_panel(emerging_lines)
