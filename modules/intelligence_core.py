@@ -372,15 +372,45 @@ def run_app():
                     "Last 13 weeks",
                     "Last 26 weeks",
                     "Last 52 weeks",
+                    "Quarter",
                     "YTD",
                 ],
                 index=2,
             )
-            compare_mode = st.selectbox(
-                "Compare",
-                ["None", "Prior period (same length)", "YoY (same dates)"],
-                index=1,
-            )
+            quarter_choice = None
+            quarter_year_choice = None
+            if timeframe == "Quarter":
+                quarter_labels = ["Q1", "Q2", "Q3", "Q4"]
+                year_options = list(reversed(available_year_labels(df_all)))
+
+                q_col, y_col = st.columns(2)
+                with q_col:
+                    quarter_choice = st.selectbox(
+                        "Quarter",
+                        quarter_labels,
+                        index=0,
+                        key="left_sidebar_quarter_choice",
+                    )
+                with y_col:
+                    quarter_year_choice = st.selectbox(
+                        "Year",
+                        year_options,
+                        index=0,
+                        key="left_sidebar_quarter_year_choice",
+                    ) if year_options else None
+
+                compare_mode = st.selectbox(
+                    "Compare",
+                    ["None", "Same quarter last year"],
+                    index=1,
+                    key="left_sidebar_quarter_compare_mode",
+                )
+            else:
+                compare_mode = st.selectbox(
+                    "Compare",
+                    ["None", "Prior period (same length)", "YoY (same dates)"],
+                    index=1,
+                )
 
         elif analysis_view == "Month / Year Compare":
             multi_granularity = st.selectbox(
@@ -466,24 +496,50 @@ def run_app():
         b_lbl = None
 
     else:
-        pA = pick_period(df_scope, timeframe)
-        if pA is None:
-            st.info("Upload or ingest data to begin.")
-            return
+        if timeframe == "Quarter":
+            if not quarter_choice or not quarter_year_choice:
+                st.info("Select a quarter and year to begin.")
+                return
 
-        dfA = filter_by_period(df_scope, pA)
+            quarter_num = int(str(quarter_choice).replace("Q", ""))
+            current_quarter_label = f"Q{quarter_num} {quarter_year_choice}"
+            prior_quarter_label = f"Q{quarter_num} {int(quarter_year_choice) - 1}"
 
-        if compare_mode == "None":
-            pB = None
-            dfB = dfA.iloc[0:0].copy()
-        elif compare_mode.startswith("Prior"):
-            pB = period_prev_same_length(pA)
-            dfB = filter_by_period(df_scope, pB)
+            dfA = filter_by_period_labels(df_scope, [current_quarter_label], "Quarter")
+            pA = period_from_df(dfA)
+            if pA is None:
+                st.info("No data available for the selected quarter.")
+                return
+
+            if compare_mode == "Same quarter last year":
+                dfB = filter_by_period_labels(df_scope, [prior_quarter_label], "Quarter")
+                pB = period_from_df(dfB) if not dfB.empty else None
+                b_lbl = prior_quarter_label
+            else:
+                pB = None
+                dfB = dfA.iloc[0:0].copy()
+                b_lbl = None
+
+            a_lbl = current_quarter_label
         else:
-            pB = period_yoy(pA)
-            dfB = filter_by_period(df_scope, pB)
+            pA = pick_period(df_scope, timeframe)
+            if pA is None:
+                st.info("Upload or ingest data to begin.")
+                return
 
-        a_lbl, b_lbl = ab_labels(timeframe, compare_mode, pA, pB)
+            dfA = filter_by_period(df_scope, pA)
+
+            if compare_mode == "None":
+                pB = None
+                dfB = dfA.iloc[0:0].copy()
+            elif compare_mode.startswith("Prior"):
+                pB = period_prev_same_length(pA)
+                dfB = filter_by_period(df_scope, pB)
+            else:
+                pB = period_yoy(pA)
+                dfB = filter_by_period(df_scope, pB)
+
+            a_lbl, b_lbl = ab_labels(timeframe, compare_mode, pA, pB)
 
     st.sidebar.markdown("### Period Definition")
     if analysis_view == "Multi Month / Year Compare":
