@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import altair as alt
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -625,7 +626,7 @@ def _render_advanced_compare_years(df_base: pd.DataFrame, metric: str, cur_years
         render_df(show, height=360)
 
 
-def _render_advanced_multi_year(df_base: pd.DataFrame, metric: str, selected_years: list):
+def _render_advanced_multi_year(df_base: pd.DataFrame, metric: str, selected_years: list, lookup_type: str):
     """Render single-box multi-year analysis for selected years."""
     if not selected_years:
         st.info("Select one or more years to view the multi-year analysis.")
@@ -708,6 +709,162 @@ def _render_advanced_multi_year(df_base: pd.DataFrame, metric: str, selected_yea
 
             st.markdown(f"#### Retailer Breakdown ({metric})")
             render_df(show_retailer, height=360)
+
+    _render_advanced_multi_year_visuals(
+        df_sel=df_sel,
+        selected_years=selected_years,
+        metric=metric,
+        lookup_type=lookup_type,
+    )
+
+
+def _render_advanced_multi_year_visuals(
+    df_sel: pd.DataFrame,
+    selected_years: list,
+    metric: str,
+    lookup_type: str,
+):
+    """Render multi-year visuals similar to Multi Month / Year Compare."""
+    d = df_sel.copy()
+
+    if "Year" not in d.columns:
+        d["WeekEnd"] = pd.to_datetime(d.get("WeekEnd"), errors="coerce")
+        d["Year"] = d["WeekEnd"].dt.year
+
+    d = d[d["Year"].notna()].copy()
+    if d.empty:
+        return
+
+    year_summary = (
+        d.groupby("Year", as_index=False)
+        .agg(
+            Sales=("Sales", "sum"),
+            Units=("Units", "sum"),
+            SKUs=("SKU", "nunique"),
+        )
+        .sort_values("Year", ascending=True)
+        .reset_index(drop=True)
+    )
+    year_summary["ASP"] = np.where(year_summary["Units"] != 0, year_summary["Sales"] / year_summary["Units"], 0.0)
+    year_summary["AvgSalesPerSKU"] = np.where(year_summary["SKUs"] != 0, year_summary["Sales"] / year_summary["SKUs"], 0.0)
+    year_summary["AvgUnitsPerSKU"] = np.where(year_summary["SKUs"] != 0, year_summary["Units"] / year_summary["SKUs"], 0.0)
+    year_summary["YearLabel"] = year_summary["Year"].astype(int).astype(str)
+
+    if year_summary.empty:
+        return
+
+    st.markdown("#### Multi-Year Visuals")
+
+    sales_units_base = alt.Chart(year_summary).encode(
+        x=alt.X("YearLabel:N", title="Year", sort=year_summary["YearLabel"].tolist())
+    )
+    sales_bars = sales_units_base.mark_bar(color="#4f7df3", opacity=0.75).encode(
+        y=alt.Y("Sales:Q", title="Sales"),
+        tooltip=[
+            alt.Tooltip("YearLabel:N", title="Year"),
+            alt.Tooltip("Sales:Q", title="Sales", format=",.2f"),
+            alt.Tooltip("Units:Q", title="Units", format=",.0f"),
+            alt.Tooltip("ASP:Q", title="ASP", format=",.2f"),
+        ],
+    )
+    units_line = sales_units_base.mark_line(color="#f59e0b", strokeWidth=3, point=True).encode(
+        y=alt.Y("Units:Q", title="Units")
+    )
+
+    avg_sku_base = alt.Chart(year_summary).encode(
+        x=alt.X("YearLabel:N", title="Year", sort=year_summary["YearLabel"].tolist())
+    )
+    avg_sales_line = avg_sku_base.mark_line(color="#10b981", strokeWidth=3, point=True).encode(
+        y=alt.Y("AvgSalesPerSKU:Q", title="Avg Sales per SKU"),
+        tooltip=[
+            alt.Tooltip("YearLabel:N", title="Year"),
+            alt.Tooltip("AvgSalesPerSKU:Q", title="Avg Sales/SKU", format=",.2f"),
+            alt.Tooltip("AvgUnitsPerSKU:Q", title="Avg Units/SKU", format=",.2f"),
+        ],
+    )
+    avg_units_line = avg_sku_base.mark_line(color="#ef4444", strokeWidth=3, point=True).encode(
+        y=alt.Y("AvgUnitsPerSKU:Q", title="Avg Units per SKU")
+    )
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("##### Sales with Units Overlay")
+        st.altair_chart((sales_bars + units_line).resolve_scale(y="independent"), use_container_width=True)
+    with c2:
+        st.markdown("##### Average Sales/Units per SKU")
+        st.altair_chart((avg_sales_line + avg_units_line).resolve_scale(y="independent"), use_container_width=True)
+
+    d["Quarter"] = pd.to_datetime(d.get("WeekEnd"), errors="coerce").dt.quarter.map(lambda q: f"Q{int(q)}")
+    qdf = (
+        d[d["Quarter"].isin(["Q1", "Q2", "Q3", "Q4"])]
+        .groupby(["Year", "Quarter"], as_index=False)
+        .agg(Value=(metric, "sum"))
+    )
+    if not qdf.empty:
+        qdf["YearLabel"] = qdf["Year"].astype(int).astype(str)
+        st.markdown(f"##### Quarterly Stacked Bars ({metric})")
+        qchart = (
+            alt.Chart(qdf)
+            .mark_bar()
+            .encode(
+                x=alt.X("YearLabel:N", title="Year"),
+                y=alt.Y("Value:Q", title=metric),
+                color=alt.Color(
+                    "Quarter:N",
+                    scale=alt.Scale(domain=["Q1", "Q2", "Q3", "Q4"], range=["#dbe7f5", "#a8c4e5", "#6f9fd1", "#2f6fb3"]),
+                ),
+                order=alt.Order("Quarter:N"),
+                tooltip=[
+                    alt.Tooltip("YearLabel:N", title="Year"),
+                    alt.Tooltip("Quarter:N", title="Quarter"),
+                    alt.Tooltip("Value:Q", title=metric, format=",.2f" if metric == "Sales" else ",.0f"),
+                ],
+            )
+        )
+        st.altair_chart(qchart, use_container_width=True)
+
+    if lookup_type == "SKU":
+        entity_dim = "Retailer"
+    elif lookup_type == "Vendor":
+        entity_dim = "SKU"
+    else:
+        entity_dim = "Vendor"
+
+    if entity_dim in d.columns:
+        entity_totals = (
+            d.groupby(entity_dim, as_index=False)
+            .agg(Total=(metric, "sum"))
+            .sort_values("Total", ascending=False)
+            .head(5)
+        )
+        top_entities = entity_totals[entity_dim].astype(str).tolist()
+
+        if top_entities:
+            trend = (
+                d[d[entity_dim].astype(str).isin(top_entities)]
+                .groupby(["Year", entity_dim], as_index=False)
+                .agg(Value=(metric, "sum"))
+                .sort_values([entity_dim, "Year"], ascending=[True, True])
+            )
+            trend["YearLabel"] = trend["Year"].astype(int).astype(str)
+            trend[entity_dim] = trend[entity_dim].astype(str)
+
+            st.markdown(f"##### Top {entity_dim} Trend by Year ({metric})")
+            trend_chart = (
+                alt.Chart(trend)
+                .mark_line(point=True)
+                .encode(
+                    x=alt.X("YearLabel:N", title="Year"),
+                    y=alt.Y("Value:Q", title=metric),
+                    color=alt.Color(f"{entity_dim}:N", title=entity_dim),
+                    tooltip=[
+                        alt.Tooltip("YearLabel:N", title="Year"),
+                        alt.Tooltip(f"{entity_dim}:N", title=entity_dim),
+                        alt.Tooltip("Value:Q", title=metric, format=",.2f" if metric == "Sales" else ",.0f"),
+                    ],
+                )
+            )
+            st.altair_chart(trend_chart, use_container_width=True)
 
 
 def _render_compare_section(df_base: pd.DataFrame, metric: str, default_period):
@@ -1088,4 +1245,4 @@ def render(ctx: dict):
             key="advanced_compare_selected_years",
         )
 
-        _render_advanced_multi_year(df_lookup_all, ac_metric, ac_selected_years)
+        _render_advanced_multi_year(df_lookup_all, ac_metric, ac_selected_years, lookup_type)
