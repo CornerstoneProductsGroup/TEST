@@ -8218,3 +8218,248 @@ def make_simple_data_pdf(title: str, subtitle: str, data_df: pd.DataFrame) -> by
         return buf.getvalue()
     except Exception:
         return b""
+
+
+def make_standard_intelligence_pdf(
+    title: str,
+    subtitle: str,
+    kpi_data: dict,
+    current_label: str,
+    compare_label: str,
+    first_sales_df: pd.DataFrame | None = None,
+    new_placements_df: pd.DataFrame | None = None,
+    opportunity_data: dict | None = None,
+    drivers_df: pd.DataFrame | None = None,
+) -> bytes:
+    """Generate comprehensive Standard Intelligence PDF with KPIs, new activity, opportunities, and drivers.
+    
+    This exports everything from the top KPI section down to above the weekly detail table.
+    """
+    try:
+        from io import BytesIO
+        from reportlab.lib.pagesizes import letter, landscape
+        from reportlab.lib.units import inch
+        from reportlab.lib import colors
+        from reportlab.platypus import (
+            SimpleDocTemplate,
+            Paragraph,
+            Spacer,
+            Table,
+            TableStyle,
+            PageBreak,
+        )
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    except Exception:
+        return b""
+
+    try:
+        buf = BytesIO()
+        doc = SimpleDocTemplate(
+            buf,
+            pagesize=landscape(letter),
+            leftMargin=0.5 * inch,
+            rightMargin=0.5 * inch,
+            topMargin=0.6 * inch,
+            bottomMargin=0.6 * inch,
+        )
+        styles = getSampleStyleSheet()
+        
+        if "H1" not in styles:
+            styles.add(ParagraphStyle(name="H1", parent=styles["Heading1"], fontSize=14, leading=16, spaceAfter=10))
+        if "H2" not in styles:
+            styles.add(ParagraphStyle(name="H2", parent=styles["Heading2"], fontSize=11, leading=13, spaceAfter=6))
+        if "H3" not in styles:
+            styles.add(ParagraphStyle(name="H3", parent=styles["Heading3"], fontSize=10, leading=12, spaceAfter=4))
+        if "Body" not in styles:
+            styles.add(ParagraphStyle(name="Body", parent=styles["Normal"], fontSize=9, leading=11))
+
+        story = []
+
+        # Header
+        header_text = f"<b>{html.escape(str(title))}</b>"
+        if subtitle:
+            header_text += f"<br/><font size=9 color='#6b7280'>{html.escape(str(subtitle))}</font>"
+        story.append(Paragraph(header_text, styles["H1"]))
+        story.append(Spacer(1, 0.2 * inch))
+
+        # KPI Summary Box
+        if kpi_data:
+            story.append(Paragraph("KPI Summary", styles["H2"]))
+            kpi_rows = []
+            for metric in ["Sales", "Units", "ASP"]:
+                current_val = kpi_data.get(metric, 0.0)
+                compare_val = kpi_data.get(f"{metric}_compare", 0.0) if f"{metric}_compare" in kpi_data else current_val
+                
+                if metric == "Sales":
+                    fmt_current = f"${current_val:,.2f}"
+                    fmt_compare = f"${compare_val:,.2f}"
+                elif metric == "ASP":
+                    fmt_current = f"${current_val:,.2f}"
+                    fmt_compare = f"${compare_val:,.2f}"
+                else:
+                    fmt_current = f"{int(round(current_val)):,}"
+                    fmt_compare = f"{int(round(compare_val)):,}"
+                
+                delta = current_val - compare_val
+                if delta > 0:
+                    delta_fmt = f"+{delta:,.2f}" if metric == "ASP" else (f"+${delta:,.2f}" if metric == "Sales" else f"+{int(round(delta)):,}")
+                    delta_color = "#2e7d32"
+                elif delta < 0:
+                    delta_fmt = f"{delta:,.2f}" if metric == "ASP" else (f"${delta:,.2f}" if metric == "Sales" else f"{int(round(delta)):,}")
+                    delta_color = "#c62828"
+                else:
+                    delta_fmt = "—"
+                    delta_color = "#808080"
+                
+                kpi_rows.append([metric, fmt_current, fmt_compare, f"<font color='{delta_color}'><b>{delta_fmt}</b></font>"])
+            
+            kpi_table = Table(kpi_rows, colWidths=[1.5 * inch, 1.5 * inch, 1.5 * inch, 1.5 * inch])
+            kpi_style = [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 10),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d1d5db")),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]
+            kpi_table.setStyle(TableStyle(kpi_style))
+            story.append(kpi_table)
+            story.append(Spacer(1, 0.15 * inch))
+
+        # New Activity Section
+        if not (first_sales_df is None or first_sales_df.empty) or not (new_placements_df is None or new_placements_df.empty):
+            story.append(Paragraph("New Activity", styles["H2"]))
+            
+            activity_data = []
+            
+            if first_sales_df is not None and not first_sales_df.empty:
+                activity_data.append([f"First Sales Ever (Launches): {len(first_sales_df)} found", "", "", ""])
+                activity_data.append(["SKU", "Retailer", "Date", "Sales"])
+                for _, row in first_sales_df.head(8).iterrows():
+                    sku = str(row.get("SKU", "")).strip()
+                    retailer = str(row.get("Retailer", "")).strip()
+                    date = str(row.get("Date", "")).strip()
+                    sales = str(row.get("Sales", "")).strip()
+                    activity_data.append([sku, retailer, date, sales])
+            
+            if new_placements_df is not None and not new_placements_df.empty:
+                activity_data.append(["", "", "", ""])
+                activity_data.append([f"New Retailer Placements: {len(new_placements_df)} found", "", "", ""])
+                activity_data.append(["SKU", "Retailer", "Date", "Sales"])
+                for _, row in new_placements_df.head(8).iterrows():
+                    sku = str(row.get("SKU", "")).strip()
+                    retailer = str(row.get("Retailer", "")).strip()
+                    date = str(row.get("Date", "")).strip()
+                    sales = str(row.get("Sales", "")).strip()
+                    activity_data.append([sku, retailer, date, sales])
+            
+            if activity_data:
+                activity_table = Table(activity_data, colWidths=[2 * inch, 2 * inch, 1.5 * inch, 2 * inch])
+                activity_style = [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#111827")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, 0), 9),
+                    ("BACKGROUND", (0, 1), (-1, 1), colors.HexColor("#f3f4f6")),
+                    ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 1), (-1, 1), 8),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d1d5db")),
+                    ("ROWBACKGROUNDS", (0, 2), (-1, -1), [colors.white, colors.HexColor("#f9fafb")]),
+                    ("FONTSIZE", (0, 2), (-1, -1), 8),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ]
+                activity_table.setStyle(TableStyle(activity_style))
+                story.append(activity_table)
+                story.append(Spacer(1, 0.15 * inch))
+
+        # Opportunity Detector Section
+        if opportunity_data and len(opportunity_data) > 0:
+            story.append(Paragraph("Opportunity Detector", styles["H2"]))
+            
+            for opp_name, opp_df in opportunity_data.items():
+                if opp_df is not None and not opp_df.empty:
+                    story.append(Paragraph(opp_name, styles["H3"]))
+                    
+                    opp_disp = opp_df.copy()
+                    for col in opp_disp.columns:
+                        col_lower = str(col).lower()
+                        num_data = pd.to_numeric(opp_disp[col], errors="coerce")
+                        if not num_data.notna().any():
+                            opp_disp[col] = opp_disp[col].astype(str)
+                            continue
+                        if "sales" in col_lower or "revenue" in col_lower:
+                            opp_disp[col] = num_data.apply(lambda x: f"${x:,.2f}" if pd.notna(x) else "—")
+                        elif "units" in col_lower or "qty" in col_lower or "unit" in col_lower:
+                            opp_disp[col] = num_data.apply(lambda x: f"{int(round(x)):,}" if pd.notna(x) else "—")
+                        else:
+                            opp_disp[col] = num_data.apply(lambda x: f"{x:,.2f}" if pd.notna(x) else "—")
+                    
+                    opp_data_list = [list(opp_disp.columns.astype(str))] + opp_disp.astype(str).values.tolist()
+                    opp_tbl = Table(opp_data_list)
+                    opp_ts = [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#111827")),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("FONTSIZE", (0, 0), (-1, 0), 8),
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d1d5db")),
+                        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f9fafb")]),
+                        ("FONTSIZE", (0, 1), (-1, -1), 7.5),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                        ("TOPPADDING", (0, 0), (-1, -1), 2),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                    ]
+                    opp_tbl.setStyle(TableStyle(opp_ts))
+                    story.append(opp_tbl)
+                    story.append(Spacer(1, 0.1 * inch))
+
+        # Drivers Section
+        if drivers_df is not None and not drivers_df.empty:
+            story.append(Paragraph("Drivers (Contribution to change)", styles["H2"]))
+            
+            drv_disp = drivers_df.copy()
+            for col in drv_disp.columns:
+                col_lower = str(col).lower()
+                num_data = pd.to_numeric(drv_disp[col], errors="coerce")
+                if not num_data.notna().any():
+                    drv_disp[col] = drv_disp[col].astype(str)
+                    continue
+                if "sales" in col_lower or "revenue" in col_lower:
+                    drv_disp[col] = num_data.apply(lambda x: f"${x:,.2f}" if pd.notna(x) else "—")
+                elif "units" in col_lower or "qty" in col_lower or "unit" in col_lower:
+                    drv_disp[col] = num_data.apply(lambda x: f"{int(round(x)):,}" if pd.notna(x) else "—")
+                elif "contribution" in col_lower or "%" in col_lower:
+                    drv_disp[col] = num_data.apply(lambda x: f"{x:.1%}" if pd.notna(x) else "—")
+                else:
+                    drv_disp[col] = num_data.apply(lambda x: f"{x:,.2f}" if pd.notna(x) else "—")
+            
+            drv_data = [list(drv_disp.columns.astype(str))] + drv_disp.astype(str).values.tolist()
+            drv_tbl = Table(drv_data)
+            drv_ts = [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#111827")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 9),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d1d5db")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f9fafb")]),
+                ("FONTSIZE", (0, 1), (-1, -1), 8),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]
+            drv_tbl.setStyle(TableStyle(drv_ts))
+            story.append(drv_tbl)
+
+        doc.build(story)
+        return buf.getvalue()
+    except Exception as e:
+        print(f"Error generating standard intelligence PDF: {e}")
+        return b""
