@@ -9,7 +9,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from .app_core import read_weekly_workbook
+from .app_core import generate_context_aware_pdf, read_weekly_workbook
 from .shared_core import (
     APP_TITLE,
     load_vendor_map,
@@ -634,6 +634,26 @@ def run_app():
         scope=scope,
         scope_pick=scope_pick,
     )
+
+    st.sidebar.markdown("### Export")
+    try:
+        pdf_bytes = generate_context_aware_pdf(ctx)
+        if pdf_bytes:
+            file_stub = str(analysis_view).strip().lower().replace(" ", "_").replace("/", "_")
+            st.sidebar.download_button(
+                label=f"Download {analysis_view} PDF",
+                data=pdf_bytes,
+                file_name=f"{file_stub}_export.pdf",
+                mime="application/pdf",
+                key=f"left_sidebar_pdf_export_{file_stub}",
+                use_container_width=True,
+            )
+        else:
+            st.sidebar.caption(f"PDF export not available for {analysis_view} with current context.")
+    except Exception as e:
+        st.sidebar.warning(f"PDF export error: {str(e)}")
+
+    st.sidebar.divider()
 
     if get_global_view_mode() == "Visual Analytics":
         render_visual_analysis_view(ctx)
