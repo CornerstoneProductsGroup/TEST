@@ -20,7 +20,7 @@ from .shared_core import (
     new_placement,
 )
 from . import tab_kpi_dashboard
-from .app_core import make_simple_data_pdf, make_standard_intelligence_pdf
+from .app_core import make_simple_data_pdf
 
 
 def render(ctx: dict):
@@ -755,104 +755,7 @@ def render(ctx: dict):
                     "No signals found with current filters/thresholds."
                 )
 
-    st.divider()
-    try:
-        if compare_mode != "None":
-            # Gather all data for comprehensive PDF export
-            drv = drivers(dfA, dfB, driver_level)
-            
-            # Prepare KPI data
-            kpi_export_data = {
-                "Sales": float(kA.get("Sales", 0.0)),
-                "Sales_compare": float(kB.get("Sales", 0.0)),
-                "Units": float(kA.get("Units", 0.0)),
-                "Units_compare": float(kB.get("Units", 0.0)),
-                "ASP": float(kA.get("ASP", 0.0)),
-                "ASP_compare": float(kB.get("ASP", 0.0)),
-            }
-            
-            # Prepare new activity data - First Sales Ever
-            first_sales_export = None
-            if not first_ever.empty:
-                fe = first_ever.copy()
-                fe["FirstWeek"] = pd.to_datetime(fe["FirstWeek"], errors="coerce")
-                if "FirstRetailer" in fe.columns:
-                    fe["Retailer"] = fe["FirstRetailer"]
-                if "Sales" not in fe.columns:
-                    if "FirstSales" in fe.columns:
-                        fe["Sales"] = fe["FirstSales"]
-                    else:
-                        fe["Sales"] = np.nan
-                fe["Date"] = fe["FirstWeek"].dt.date.astype(str)
-                fe["Sales"] = fe["Sales"].map(lambda v: "" if pd.isna(v) else money(v))
-                cols = [c for c in ["SKU", "Retailer", "Date", "Sales"] if c in fe.columns]
-                first_sales_export = fe[cols].copy() if cols else None
-            
-            # Prepare new activity data - New Placements
-            new_placements_export = None
-            if not placements.empty:
-                pl = placements.copy()
-                pl["FirstWeek"] = pd.to_datetime(pl["FirstWeek"], errors="coerce")
-                if "Sales" not in pl.columns:
-                    if "FirstSales" in pl.columns:
-                        pl["Sales"] = pl["FirstSales"]
-                    else:
-                        pl["Sales"] = np.nan
-                pl["Date"] = pl["FirstWeek"].dt.date.astype(str)
-                pl["Sales"] = pl["Sales"].map(lambda v: "" if pd.isna(v) else money(v))
-                cols = [c for c in ["SKU", "Retailer", "Date", "Sales"] if c in pl.columns]
-                new_placements_export = pl[cols].copy() if cols else None
-            
-            # Prepare opportunity detector data (only top opportunities from each category)
-            opp_export = {}
-            if compare_mode != "None":
-                opp_full = opportunity_detector(df_hist_for_new, dfA, dfB, pA)
-                for opp_name, opp_df in opp_full.items():
-                    if opp_df is not None and not opp_df.empty:
-                        opp_export[opp_name] = opp_df.head(10).copy()
-            
-            # Prepare drivers data
-            drv_export = None
-            if not drv.empty:
-                drv_show = drv.copy()
-                drv_show = drv_show[(drv_show["Sales_A"] >= min_sales) | (drv_show["Sales_B"] >= min_sales)]
-                
-                # Format drivers for PDF
-                drv_export = drv_show.copy()
-                drv_export["Sales_A"] = drv_export["Sales_A"].map(money)
-                drv_export["Sales_B"] = drv_export["Sales_B"].map(money)
-                drv_export["Sales_Δ"] = drv_export["Sales_Δ"].map(money)
-                drv_export["Contribution_%"] = drv_export["Contribution_%"].map(pct_fmt)
-                
-                # Rename columns based on labels
-                drv_export = rename_ab_columns(drv_export, a_lbl, b_lbl)
-                sales_a_col = f"Sales ({a_lbl})"
-                sales_b_col = f"Sales ({b_lbl})" if b_lbl else "Sales (Comparison)"
-                drv_export = drv_export[[driver_level, sales_a_col, sales_b_col, "Sales_Δ", "Contribution_%"]]
-            
-            # Generate comprehensive PDF
-            pdf_bytes = make_standard_intelligence_pdf(
-                title=f"Standard Intelligence — {a_lbl} vs {b_lbl}",
-                subtitle=f"Comprehensive analysis including KPIs, new activity, opportunities, and drivers by {driver_level}",
-                kpi_data=kpi_export_data,
-                current_label=a_lbl,
-                compare_label=b_lbl,
-                first_sales_df=first_sales_export,
-                new_placements_df=new_placements_export,
-                opportunity_data=opp_export if opp_export else None,
-                drivers_df=drv_export,
-            )
-            
-            if pdf_bytes:
-                st.download_button(
-                    "⬇️ Download Standard Intelligence PDF",
-                    data=pdf_bytes,
-                    file_name=f"standard_intelligence_{a_lbl}_{b_lbl}.pdf".replace(" ", "_").lower(),
-                    mime="application/pdf",
-                    key="download_std_comprehensive_pdf",
-                )
-    except Exception as e:
-        st.warning(f"Could not generate PDF: {str(e)}")
+
 
 def render_visual_only(ctx: dict):
     dfA = ctx["dfA"]

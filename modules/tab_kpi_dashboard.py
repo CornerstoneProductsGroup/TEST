@@ -1814,3 +1814,27 @@ def render(ctx: dict):
             else:
                 st.altair_chart(vendor_share_change_chart, use_container_width=True)
 
+    # Centralized PDF Export
+    st.divider()
+    st.markdown("### Export")
+    
+    try:
+        from .app_core import generate_context_aware_pdf
+        
+        analysis_view = ctx.get("analysis_view", "Unknown")
+        pdf_bytes = generate_context_aware_pdf(ctx)
+        
+        if pdf_bytes:
+            st.download_button(
+                f"⬇️ Download {analysis_view} PDF",
+                data=pdf_bytes,
+                file_name=f"{analysis_view.lower().replace(' ', '_')}_export.pdf",
+                mime="application/pdf",
+                key="download_central_pdf",
+                use_container_width=False,
+            )
+        else:
+            st.caption(f"PDF export not available for {analysis_view} or no data to export.")
+    except Exception as e:
+        st.warning(f"PDF export error: {str(e)}")
+

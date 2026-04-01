@@ -27,7 +27,6 @@ from .shared_core import (
     filter_by_period_labels,
     kpi_card,
 )
-from .app_core import make_simple_data_pdf
 
 LINE_ACCENT = "#FF4FC3"
 RADAR_FILL = "#4CC9F0"
@@ -2122,25 +2121,6 @@ def render_visual_only(ctx: dict):
         st.info("No data available for the selected visual periods.")
         return
 
-    try:
-        pdf_bytes = build_visual_analytics_pdf_bytes(
-            df_scope=df_scope,
-            df_vis=df_vis,
-            df_hist_all=df_hist_all,
-            granularity=granularity,
-            labels=ordered_labels,
-        )
-        st.download_button(
-            "Download Visual Analytics PDF",
-            data=pdf_bytes,
-            file_name=f"multi_compare_visual_analytics_{granularity.lower()}.pdf",
-            mime="application/pdf",
-            key="download_multi_compare_visual_pdf",
-            use_container_width=False,
-        )
-    except Exception as e:
-        st.warning(f"PDF export unavailable: {e}")
-
     summary_df = _period_summary_df(df_vis)
 
     st.markdown("### Sales with ASP and Units Overlay")
@@ -2247,23 +2227,3 @@ def render(ctx: dict):
     _render_share_of_total_table(df_scope, ordered_labels, granularity, row_dim, metric)
     _render_multi_year_seasonality(df_scope, ordered_labels, granularity, metric)
     _render_performance_score(df_scope, ordered_labels, granularity, row_dim, metric)
-
-    st.divider()
-    try:
-        matrix_data = _build_matrix(df_scope, ordered_labels, granularity, row_dim, metric)
-        if not matrix_data.empty:
-            pdf_bytes = make_simple_data_pdf(
-                title=f"Multi Compare Matrix — {granularity}",
-                subtitle=f"Analysis by {row_dim} for {', '.join(ordered_labels[:5])}{'...' if len(ordered_labels) > 5 else ''}",
-                data_df=matrix_data,
-            )
-            if pdf_bytes:
-                st.download_button(
-                    "⬇️ Download Matrix PDF",
-                    data=pdf_bytes,
-                    file_name=f"multi_compare_matrix_{granularity.lower()}.pdf",
-                    mime="application/pdf",
-                    key="download_multicmp_matrix_pdf",
-                )
-    except Exception:
-        pass

@@ -8463,3 +8463,142 @@ def make_standard_intelligence_pdf(
     except Exception as e:
         print(f"Error generating standard intelligence PDF: {e}")
         return b""
+
+
+def generate_context_aware_pdf(ctx: dict) -> bytes:
+    """Generate PDF based on current analysis_view and context.
+    
+    Routes PDF generation to appropriate function based on which tab is active.
+    Used by the centralized PDF export button in the KPI Dashboard.
+    """
+    analysis_view = ctx.get("analysis_view", "")
+    
+    try:
+        if analysis_view == "Standard Intelligence":
+            from .shared_core import drivers, opportunity_detector, first_sale_ever, new_placement
+            
+            dfA = ctx.get("dfA", pd.DataFrame())
+            dfB = ctx.get("dfB", pd.DataFrame())
+            kA = ctx.get("kA", {})
+            kB = ctx.get("kB", {})
+            a_lbl = ctx.get("a_lbl", "Current")
+            b_lbl = ctx.get("b_lbl", "Compare")
+            compare_mode = ctx.get("compare_mode", "None")
+            df_hist_for_new = ctx.get("df_hist_for_new", pd.DataFrame())
+            pA = ctx.get("pA")
+            min_sales = ctx.get("min_sales", 0.0)
+            driver_level = ctx.get("driver_level", "SKU")
+            
+            if compare_mode == "None" or dfA.empty:
+                return b""
+            
+            # Build KPI data
+            kpi_data = {
+                "Sales": float(kA.get("Sales", 0.0)),
+                "Sales_compare": float(kB.get("Sales", 0.0)),
+                "Units": float(kA.get("Units", 0.0)),
+                "Units_compare": float(kB.get("Units", 0.0)),
+                "ASP": float(kA.get("ASP", 0.0)),
+                "ASP_compare": float(kB.get("ASP", 0.0)),
+            }
+            
+            # Build first sales data
+            first_sales_export = None
+            first_ever = first_sale_ever(df_hist_for_new, pA) if pA else pd.DataFrame()
+            if not first_ever.empty:
+                fe = first_ever.copy()
+                fe["FirstWeek"] = pd.to_datetime(fe["FirstWeek"], errors="coerce")
+                if "FirstRetailer" in fe.columns:
+                    fe["Retailer"] = fe["FirstRetailer"]
+                if "Sales" not in fe.columns:
+                    if "FirstSales" in fe.columns:
+                        fe["Sales"] = fe["FirstSales"]
+                    else:
+                        fe["Sales"] = np.nan
+                fe["Date"] = fe["FirstWeek"].dt.date.astype(str)
+                fe["Sales"] = fe["Sales"].map(lambda v: "" if pd.isna(v) else money(v))
+                cols = [c for c in ["SKU", "Retailer", "Date", "Sales"] if c in fe.columns]
+                first_sales_export = fe[cols].copy() if cols else None
+            
+            # Build new placements data
+            new_placements_export = None
+            placements = new_placement(df_hist_for_new, pA) if pA else pd.DataFrame()
+            if not placements.empty:
+                pl = placements.copy()
+                pl["FirstWeek"] = pd.to_datetime(pl["FirstWeek"], errors="coerce")
+                if "Sales" not in pl.columns:
+                    if "FirstSales" in pl.columns:
+                        pl["Sales"] = pl["FirstSales"]
+                    else:
+                        pl["Sales"] = np.nan
+                pl["Date"] = pl["FirstWeek"].dt.date.astype(str)
+                pl["Sales"] = pl["Sales"].map(lambda v: "" if pd.isna(v) else money(v))
+                cols = [c for c in ["SKU", "Retailer", "Date", "Sales"] if c in pl.columns]
+                new_placements_export = pl[cols].copy() if cols else None
+            
+            # Build opportunity data
+            opp_export = {}
+            opp_full = opportunity_detector(df_hist_for_new, dfA, dfB, pA) if pA else {}
+            for opp_name, opp_df in opp_full.items():
+                if opp_df is not None and not opp_df.empty:
+                    opp_export[opp_name] = opp_df.head(10).copy()
+            
+            # Build drivers data
+            drv = drivers(dfA, dfB, driver_level)
+            drv_export = None
+            if not drv.empty:
+                from .shared_core import rename_ab_columns, pct_fmt
+                
+                drv_show = drv.copy()
+                drv_show = drv_show[(drv_show["Sales_A"] >= min_sales) | (drv_show["Sales_B"] >= min_sales)]
+                
+                drv_export = drv_show.copy()
+                drv_export["Sales_A"] = drv_export["Sales_A"].map(money)
+                drv_export["Sales_B"] = drv_export["Sales_B"].map(money)
+                drv_export["Sales_Δ"] = drv_export["Sales_Δ"].map(money)
+                drv_export["Contribution_%"] = drv_export["Contribution_%"].map(pct_fmt)
+                
+                drv_export = rename_ab_columns(drv_export, a_lbl, b_lbl)
+                sales_a_col = f"Sales ({a_lbl})"
+                sales_b_col = f"Sales ({b_lbl})" if b_lbl else "Sales (Comparison)"
+                drv_export = drv_export[[driver_level, sales_a_col, sales_b_col, "Sales_Δ", "Contribution_%"]]
+            
+            return make_standard_intelligence_pdf(
+                title=f"Standard Intelligence — {a_lbl} vs {b_lbl}",
+                subtitle=f"Comprehensive analysis by {driver_level}",
+                kpi_data=kpi_data,
+                current_label=a_lbl,
+                compare_label=b_lbl,
+                first_sales_df=first_sales_export,
+                new_placements_df=new_placements_export,
+                opportunity_data=opp_export if opp_export else None,
+                drivers_df=drv_export,
+            )
+        
+        elif analysis_view in ["Month / Year Compare", "Multi Month / Year Compare"]:
+            # Simple table PDF for compares
+            a_lbl = ctx.get("a_lbl", "Current")
+            b_lbl = ctx.get("b_lbl", "Compare")
+            return make_simple_data_pdf(
+                title=f"{analysis_view} Export",
+                subtitle=f"{a_lbl} vs {b_lbl}",
+                data_df=pd.DataFrame([{"Status": "Export available from tab operations"}]),
+            )
+        
+        elif analysis_view == "Lookup Center":
+            return make_simple_data_pdf(
+                title="Lookup Center Export",
+                subtitle="Export available from lookup operations",
+                data_df=pd.DataFrame([{"Status": "Use the Lookup Center tab to export specific lookups"}]),
+            )
+        
+        elif analysis_view == "Sales Dashboard":
+            # KPI Dashboard doesn't typically need a separate export - the button itself triggers an export
+            return b""
+        
+        else:
+            return b""
+    
+    except Exception as e:
+        print(f"Error generating context-aware PDF: {e}")
+        return b""

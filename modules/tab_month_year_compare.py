@@ -18,8 +18,6 @@ from .shared_core import (
     top_two_card,
     biggest_increase_card,
 )
-from .app_core import make_simple_data_pdf
-
 
 def render(ctx: dict):
     st.markdown(
@@ -1357,25 +1355,3 @@ def render_standard_view(
             render_df(dec[["SKU", f"Sales ({a_lbl})", f"Sales ({b_lbl})", "Difference", "% Change"]], height=360)
         else:
             st.caption("None.")
-
-    st.divider()
-    try:
-        inc_raw = m[m["Difference"] > 0].sort_values("Difference", ascending=False).head(15).copy()
-        dec_raw = m[m["Difference"] < 0].sort_values("Difference", ascending=True).head(15).copy()
-        movers_raw = pd.concat([inc_raw, dec_raw], ignore_index=True) if not inc_raw.empty or not dec_raw.empty else pd.DataFrame()
-        if not movers_raw.empty:
-            pdf_bytes = make_simple_data_pdf(
-                title=f"Month/Year Compare Movers — {a_lbl} vs {b_lbl}",
-                subtitle=f"Top Increasing and Declining SKUs by Sales Difference",
-                data_df=movers_raw[["SKU", "Sales_A", "Sales_B", "Difference", "% Change"]],
-            )
-            if pdf_bytes:
-                st.download_button(
-                    "⬇️ Download Movers PDF",
-                    data=pdf_bytes,
-                    file_name=f"month_year_compare_movers_{a_lbl}_{b_lbl}.pdf".replace(" ", "_").lower(),
-                    mime="application/pdf",
-                    key="download_myc_movers_pdf",
-                )
-    except Exception:
-        pass
