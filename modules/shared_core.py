@@ -88,6 +88,41 @@ def save_store(df: pd.DataFrame) -> None:
     keep = keep[["Retailer","SKU","Units","UnitPrice","StartDate","EndDate","SourceFile"]].copy()
     keep.to_csv(DEFAULT_STORE_CSV, index=False)
 
+def replace_store_rows_for_uploaded_weeks(existing: pd.DataFrame, new_rows: pd.DataFrame) -> pd.DataFrame:
+    if existing is None or existing.empty:
+        return new_rows.copy() if new_rows is not None else pd.DataFrame(columns=BASE_COLUMNS)
+    if new_rows is None or new_rows.empty:
+        return existing.copy()
+
+    current = existing.copy()
+    incoming = new_rows.copy()
+
+    for frame in (current, incoming):
+        for c in ["StartDate", "EndDate"]:
+            if c in frame.columns:
+                frame[c] = pd.to_datetime(frame[c], errors="coerce")
+        if "Retailer" in frame.columns:
+            frame["Retailer"] = frame["Retailer"].map(norm_retailer)
+        if "SKU" in frame.columns:
+            frame["SKU"] = frame["SKU"].map(norm_sku)
+
+    target_keys = incoming[["Retailer", "StartDate", "EndDate"]].drop_duplicates()
+    trimmed = current.merge(
+        target_keys.assign(_replace=True),
+        on=["Retailer", "StartDate", "EndDate"],
+        how="left",
+    )
+    trimmed = trimmed[trimmed["_replace"].isna()].drop(columns=["_replace"])
+
+    combined = pd.concat([trimmed, incoming], ignore_index=True)
+    combined = combined.drop_duplicates(
+        # SourceFile can change between re-uploads of the same week; use business keys
+        # so the latest upload replaces prior rows instead of doubling totals.
+        subset=["Retailer", "SKU", "StartDate", "EndDate"],
+        keep="last",
+    )
+    return combined
+
 def load_vendor_map() -> pd.DataFrame:
     if not DEFAULT_VENDOR_MAP.exists():
         return pd.DataFrame(columns=["Retailer","SKU","Price","Vendor"])
@@ -932,20 +967,18 @@ def render_data_management_center(vm: pd.DataFrame, store: pd.DataFrame):
                 st.error(f"Restore failed: {e}")
     with c2:
         year_ingest = st.number_input("Year hint for new workbook(s)", min_value=2010, max_value=2100, value=date.today().year, step=1, key="dmc_year")
-        replace_year = st.toggle("Replace existing rows for that year before ingest", value=False, key="dmc_replace_year")
+        st.caption("Re-uploading a corrected workbook will automatically replace only that week's data — no duplicates.")
         uploads = st.file_uploader("Upload weekly workbook(s)", type=["xlsx"], accept_multiple_files=True, key="dmc_uploads")
         if uploads and st.button("Ingest Uploaded Workbook(s)", key="dmc_ingest_btn", use_container_width=True):
             try:
                 store_cur = load_store()
-                if replace_year:
-                    sdates = pd.to_datetime(store_cur.get("EndDate"), errors="coerce").fillna(pd.to_datetime(store_cur.get("StartDate"), errors="coerce"))
-                    keep_mask = sdates.dt.year != int(year_ingest)
-                    store_cur = store_cur.loc[keep_mask].copy()
-                added_rows = 0
+                all_raw = []
                 for up in uploads:
                     raw = read_weekly_workbook(up, int(year_ingest))
-                    store_cur = pd.concat([store_cur, raw], ignore_index=True)
-                    added_rows += len(raw)
+                    all_raw.append(raw)
+                raw_merged = pd.concat(all_raw, ignore_index=True) if all_raw else pd.DataFrame()
+                added_rows = len(raw_merged)
+                store_cur = replace_store_rows_for_uploaded_weeks(store_cur, raw_merged)
                 save_store(store_cur)
                 st.success(f"Ingested {added_rows:,} rows from {len(uploads)} workbook(s).")
             except Exception as e:
@@ -1134,7 +1167,7 @@ def run_app():
                 # enrich now so we can persist UnitPrice (legacy) but also show computed
                 new = enrich_sales(raw, vm)
                 # Persist in legacy shape
-                merged = pd.concat([store, raw], ignore_index=True)
+                merged = replace_store_rows_for_uploaded_weeks(store, raw)
                 save_store(merged)
                 st.success(f"Ingested {len(raw):,} rows from {getattr(up,'name','upload.xlsx')}.")
                 store = load_store()
