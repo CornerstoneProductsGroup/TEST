@@ -27,6 +27,47 @@ TIMEFRAME_OPTIONS = [
 ]
 
 
+def _suggest_lookup_defaults(df: pd.DataFrame, lookup_type: str, limit: int = 3) -> list[str]:
+    if df.empty:
+        return []
+
+    column = lookup_type
+    if column not in df.columns:
+        return []
+
+    ranked = (
+        df.dropna(subset=[column])
+        .assign(_lookup_value=df[column].astype(str))
+        .groupby("_lookup_value", as_index=False)
+        .agg(Sales=("Sales", "sum"))
+        .sort_values(["Sales", "_lookup_value"], ascending=[False, True])
+    )
+
+    return ranked["_lookup_value"].head(limit).tolist()
+
+
+def _render_lookup_hero(lookup_type: str, selected_values: list[str], timeframe: str, metric: str):
+    preview = ", ".join(selected_values[:3]) if selected_values else "Auto-seeded top performers"
+    if len(selected_values) > 3:
+        preview += f" +{len(selected_values) - 3} more"
+
+    st.markdown(
+        f"""
+        <div class="lookup-hero">
+            <div class="lookup-hero-eyebrow">Lookup Workspace</div>
+            <div class="lookup-hero-title">Explore by {lookup_type}</div>
+            <div class="lookup-hero-copy">Start with high-performing matches, then widen or narrow the selection to inspect retailer, vendor, SKU, and seasonality behavior in one place.</div>
+            <div class="lookup-hero-chips">
+                <span class="lookup-hero-chip">Selection: {preview}</span>
+                <span class="lookup-hero-chip">Window: {timeframe}</span>
+                <span class="lookup-hero-chip">Metric: {metric}</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def _pick_lookup_period(df: pd.DataFrame, mode: str):
     w = pd.to_datetime(df.get("WeekEnd"), errors="coerce").dropna()
     if w.empty:
@@ -911,9 +952,6 @@ def _render_compare_section(df_base: pd.DataFrame, metric: str, default_period):
 def render(ctx: dict):
     df_scope = ctx["df_scope"].copy()
 
-    st.header("Lookup Center")
-    st.caption("Deep lookup by SKU, Vendor, or Retailer with multi-select and compare mode.")
-
     if df_scope.empty:
         st.info("No data available with the current sidebar filters.")
         return
@@ -935,12 +973,17 @@ def render(ctx: dict):
     else:
         options = sorted(df_scope["Retailer"].dropna().astype(str).unique().tolist())
 
+    last_lookup_type_key = "_lookup_center_last_type"
+    lookup_values_key = "lookup_center_values"
+    if lookup_values_key not in st.session_state or st.session_state.get(last_lookup_type_key) != lookup_type:
+        st.session_state[lookup_values_key] = _suggest_lookup_defaults(df_scope, lookup_type)
+    st.session_state[last_lookup_type_key] = lookup_type
+
     with c2:
         selected_values = st.multiselect(
             f"{lookup_type}(s)",
             options=options,
-            default=[],
-            key="lookup_center_values",
+            key=lookup_values_key,
         )
 
     with c3:
@@ -964,6 +1007,8 @@ def render(ctx: dict):
             index=0,
             key="lookup_center_metric",
         )
+
+    _render_lookup_hero(lookup_type, selected_values, timeframe, metric)
 
     if not options:
         st.info("No lookup values available with the current filters.")

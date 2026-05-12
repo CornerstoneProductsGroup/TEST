@@ -17,7 +17,7 @@ from .quarter_utils import add_quarter_columns
 # Reuse ingestion helpers from the current (legacy) app where possible.
 from modules.app_core import read_weekly_workbook, parse_date_range_from_filename
 
-APP_TITLE = "Cornerstone Sales Intelligence"
+APP_TITLE = "Cornerstone Lookup Center"
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DEFAULT_VENDOR_MAP = DATA_DIR / "vendor_map.xlsx"
 DEFAULT_STORE_CSV = DATA_DIR / "sales_store.csv"

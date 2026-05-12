@@ -70,6 +70,14 @@ def apply_global_styles():
     .sales-new-products-item:first-child{border-top:none;}
     .sales-new-products-item::before{content:'•';position:absolute;left:4px;top:12px;color:#667085;font-size:18px;line-height:1;}
 
+    .lookup-hero{position:relative;overflow:hidden;padding:22px 24px;border:1px solid rgba(18,52,86,0.14);border-radius:22px;background:linear-gradient(135deg, rgba(11,60,93,0.98) 0%, rgba(18,117,146,0.92) 52%, rgba(240,176,62,0.92) 100%);color:#f8fbff;box-shadow:0 16px 36px rgba(11,60,93,0.18);margin:6px 0 18px 0;}
+    .lookup-hero::after{content:'';position:absolute;inset:auto -30px -55px auto;width:180px;height:180px;border-radius:999px;background:rgba(255,255,255,0.10);filter:blur(2px);}
+    .lookup-hero-eyebrow{font-size:11px;font-weight:800;letter-spacing:0.16em;text-transform:uppercase;opacity:0.78;}
+    .lookup-hero-title{font-size:34px;font-weight:800;line-height:1.05;margin-top:8px;max-width:540px;}
+    .lookup-hero-copy{font-size:14px;line-height:1.5;max-width:720px;margin-top:10px;color:rgba(248,251,255,0.92);}
+    .lookup-hero-chips{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;position:relative;z-index:1;}
+    .lookup-hero-chip{display:inline-flex;align-items:center;padding:8px 12px;border-radius:999px;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.18);font-size:12px;font-weight:700;backdrop-filter:blur(4px);}
+
     @media (max-width: 1100px) {
         .sales-dashboard-top-row{justify-content:flex-start;}
         .sales-dashboard-kpi-strip{justify-content:flex-start;}
@@ -82,11 +90,14 @@ def apply_global_styles():
         .sales-exec-kpi-ribbon{grid-template-columns:repeat(2,minmax(150px,1fr));}
         .sales-movers-row{grid-template-columns:minmax(0,1fr) auto;gap:8px;}
         .sales-movers-retailer{grid-column:1 / -1;text-align:left;}
+        .lookup-hero{padding:18px 18px 20px 18px;}
+        .lookup-hero-title{font-size:28px;}
     }
 
     @media (max-width: 540px) {
         .sales-dashboard-kpi-strip{grid-template-columns:1fr;}
         .sales-exec-kpi-ribbon{grid-template-columns:1fr;}
+        .lookup-hero-title{font-size:24px;}
     }
     
     /* Dataframe Header Styling */

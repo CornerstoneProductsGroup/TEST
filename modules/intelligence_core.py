@@ -15,6 +15,7 @@ from .shared_core import (
     load_vendor_map,
     load_store,
     save_store,
+    replace_store_rows_for_uploaded_weeks,
     enrich_sales,
     available_month_labels,
     available_quarter_labels,
@@ -43,25 +44,28 @@ from . import (
 )
 
 
-def render_global_view_mode_toggle():
-    default_mode = st.session_state.get("global_content_view", "Model View")
+def render_global_view_mode_toggle(options=None):
+    options = options or ["Model View", "Visual Analytics"]
+    default_mode = st.session_state.get("global_content_view", options[0])
+    if default_mode not in options:
+        default_mode = options[0]
 
     try:
         selected = st.sidebar.segmented_control(
             "Content View",
-            options=["Model View", "Visual Analytics"],
+            options=options,
             default=default_mode,
             key="global_content_view",
         )
     except Exception:
         selected = st.sidebar.radio(
             "Content View",
-            options=["Model View", "Visual Analytics"],
-            index=0 if default_mode == "Model View" else 1,
+            options=options,
+            index=options.index(default_mode),
             key="global_content_view",
         )
 
-    return selected or st.session_state.get("global_content_view", "Model View")
+    return selected or st.session_state.get("global_content_view", options[0])
 
 
 def get_global_view_mode():
@@ -290,6 +294,7 @@ def run_app():
     apply_global_styles()
 
     st.title(APP_TITLE)
+    st.caption("Lookup-first sales workspace for SKU, vendor, and retailer exploration.")
 
     vm = load_vendor_map()
     store = load_store()
@@ -340,19 +345,25 @@ def run_app():
                     default=[],
                 )
 
+        analysis_options = [
+            "Lookup Center",
+            "Standard Intelligence",
+            "Month / Year Compare",
+            "Multi Month / Year Compare",
+            "Data Management Center",
+        ]
+        default_analysis_view = st.session_state.get("analysis_view", "Lookup Center")
         analysis_view = st.radio(
             "Analysis View",
-            [
-                "Standard Intelligence",
-                "Month / Year Compare",
-                "Multi Month / Year Compare",
-                "Lookup Center",
-                "Data Management Center",
-            ],
-            index=0,
+            analysis_options,
+            index=analysis_options.index(default_analysis_view) if default_analysis_view in analysis_options else 0,
+            key="analysis_view",
         )
 
-        content_view = render_global_view_mode_toggle()
+        content_view_options = ["Model View"] if analysis_view == "Lookup Center" else ["Model View", "Visual Analytics"]
+        content_view = render_global_view_mode_toggle(options=content_view_options)
+        if analysis_view == "Lookup Center":
+            st.caption("Lookup controls live in the main workspace. Visual Analytics is not available for this view yet.")
 
         multi_granularity = "Month"
         current_labels_sel = []
@@ -453,10 +464,16 @@ def run_app():
             current_labels_sel = []
             compare_labels_sel = []
 
-        min_sales = st.number_input("Min Sales ($) for lists", min_value=0.0, value=0.0, step=100.0)
-        min_units = st.number_input("Min Units for lists", min_value=0.0, value=0.0, step=10.0)
-        driver_level = st.selectbox("Driver Level", ["SKU", "Vendor", "Retailer"], index=0)
-        show_full_history_lifecycle = st.toggle("Lifecycle uses full history", value=True)
+        if analysis_view == "Lookup Center":
+            min_sales = 0.0
+            min_units = 0.0
+            driver_level = "SKU"
+            show_full_history_lifecycle = True
+        else:
+            min_sales = st.number_input("Min Sales ($) for lists", min_value=0.0, value=0.0, step=100.0)
+            min_units = st.number_input("Min Units for lists", min_value=0.0, value=0.0, step=10.0)
+            driver_level = st.selectbox("Driver Level", ["SKU", "Vendor", "Retailer"], index=0)
+            show_full_history_lifecycle = st.toggle("Lifecycle uses full history", value=True)
 
         st.divider()
         st.header("Data")
@@ -488,7 +505,7 @@ def run_app():
                     st.info("No rows were ingested from the selected upload(s).")
                 else:
                     _ = enrich_sales(raw_merged, vm)
-                    merged = pd.concat([store, raw_merged], ignore_index=True)
+                    merged = replace_store_rows_for_uploaded_weeks(store, raw_merged)
                     save_store(merged)
                     st.success(
                         f"Ingested {len(raw_merged):,} rows from {len(uploaded_names)} file(s): "
@@ -580,7 +597,12 @@ def run_app():
             a_lbl, b_lbl = ab_labels(timeframe, compare_mode, pA, pB)
 
     st.sidebar.markdown("### Period Definition")
-    if analysis_view == "Multi Month / Year Compare":
+    if analysis_view == "Lookup Center":
+        st.sidebar.markdown(
+            "<span style='opacity:0.75'>Lookup timeframe is set inside the main workspace.</span>",
+            unsafe_allow_html=True,
+        )
+    elif analysis_view == "Multi Month / Year Compare":
         st.sidebar.markdown(
             "<span style='opacity:0.75'>Multi-select analysis mode</span>",
             unsafe_allow_html=True,
@@ -660,7 +682,7 @@ def run_app():
         render_visual_analysis_view(ctx)
         return
 
-    if analysis_view not in ["Sales Dashboard", "Standard Intelligence"]:
+    if analysis_view not in ["Sales Dashboard", "Standard Intelligence", "Lookup Center"]:
         render_model_header_and_summary(
             analysis_view=analysis_view,
             scope=scope,
