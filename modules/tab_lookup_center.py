@@ -46,7 +46,7 @@ def _suggest_lookup_defaults(df: pd.DataFrame, lookup_type: str, limit: int = 3)
     return ranked["_lookup_value"].head(limit).tolist()
 
 
-def _render_lookup_hero(lookup_type: str, selected_values: list[str], timeframe: str, metric: str):
+def _render_lookup_hero(lookup_type: str, selected_values: list[str], timeframe_label: str, metric: str):
     preview = ", ".join(selected_values[:3]) if selected_values else "Auto-seeded top performers"
     if len(selected_values) > 3:
         preview += f" +{len(selected_values) - 3} more"
@@ -59,7 +59,7 @@ def _render_lookup_hero(lookup_type: str, selected_values: list[str], timeframe:
             <div class="lookup-hero-copy">Start with high-performing matches, then widen or narrow the selection to inspect retailer, vendor, SKU, and seasonality behavior in one place.</div>
             <div class="lookup-hero-chips">
                 <span class="lookup-hero-chip">Selection: {preview}</span>
-                <span class="lookup-hero-chip">Window: {timeframe}</span>
+                <span class="lookup-hero-chip">Window: {timeframe_label}</span>
                 <span class="lookup-hero-chip">Metric: {metric}</span>
             </div>
         </div>
@@ -137,7 +137,7 @@ def _render_kpi_card(title: str, value: str, delta: str | None = None):
     )
 
 
-def _render_summary_cards(df_sel: pd.DataFrame):
+def _summary_values(df_sel: pd.DataFrame) -> dict:
     k = calc_kpis(df_sel)
 
     wk = (
@@ -151,34 +151,50 @@ def _render_summary_cards(df_sel: pd.DataFrame):
         best_row = wk.sort_values("Sales", ascending=False).iloc[0]
         best_week = f"{pd.to_datetime(best_row['WeekEnd']).date()} • {money(best_row['Sales'])}"
 
-    active_retailers = int(df_sel.loc[df_sel["Sales"] > 0, "Retailer"].nunique()) if "Retailer" in df_sel.columns else 0
-    active_skus = int(df_sel.loc[df_sel["Sales"] > 0, "SKU"].nunique()) if "SKU" in df_sel.columns else 0
-    active_vendors = int(df_sel.loc[df_sel["Sales"] > 0, "Vendor"].nunique()) if "Vendor" in df_sel.columns else 0
+    latest_week = "—"
+    if not wk.empty:
+        latest_row = wk.sort_values("WeekEnd").iloc[-1]
+        latest_week = f"{pd.to_datetime(latest_row['WeekEnd']).date()} • {money(latest_row['Sales'])}"
+
+    return {
+        "k": k,
+        "best_week": best_week,
+        "latest_week": latest_week,
+        "active_retailers": int(df_sel.loc[df_sel["Sales"] > 0, "Retailer"].nunique()) if "Retailer" in df_sel.columns else 0,
+        "active_skus": int(df_sel.loc[df_sel["Sales"] > 0, "SKU"].nunique()) if "SKU" in df_sel.columns else 0,
+        "active_vendors": int(df_sel.loc[df_sel["Sales"] > 0, "Vendor"].nunique()) if "Vendor" in df_sel.columns else 0,
+    }
+
+
+def _render_summary_row(label: str, stats: dict):
+    st.markdown(f"#### {label}")
 
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1:
-        _render_kpi_card("Total Sales", money(k["Sales"]))
+        _render_kpi_card("Total Sales", money(stats["k"]["Sales"]))
     with c2:
-        _render_kpi_card("Total Units", f"{k['Units']:,.0f}")
+        _render_kpi_card("Total Units", f"{stats['k']['Units']:,.0f}")
     with c3:
-        _render_kpi_card("ASP", money(k["ASP"]))
+        _render_kpi_card("ASP", money(stats["k"]["ASP"]))
     with c4:
-        _render_kpi_card("Active Retailers", f"{active_retailers:,}")
+        _render_kpi_card("Active Retailers", f"{stats['active_retailers']:,}")
     with c5:
-        _render_kpi_card("Active SKUs", f"{active_skus:,}")
+        _render_kpi_card("Active SKUs", f"{stats['active_skus']:,}")
     with c6:
-        _render_kpi_card("Active Vendors", f"{active_vendors:,}")
+        _render_kpi_card("Active Vendors", f"{stats['active_vendors']:,}")
 
     c7, c8 = st.columns(2)
     with c7:
-        _render_kpi_card("Best Week", best_week)
+        _render_kpi_card("Best Week", stats["best_week"])
     with c8:
-        if not wk.empty:
-            latest_row = wk.sort_values("WeekEnd").iloc[-1]
-            latest_week = f"{pd.to_datetime(latest_row['WeekEnd']).date()} • {money(latest_row['Sales'])}"
-        else:
-            latest_week = "—"
-        _render_kpi_card("Latest Week", latest_week)
+        _render_kpi_card("Latest Week", stats["latest_week"])
+
+
+def _render_summary_cards(df_sel: pd.DataFrame, df_compare: pd.DataFrame | None = None, compare_label: str | None = None):
+    _render_summary_row("Current", _summary_values(df_sel))
+
+    if df_compare is not None and not df_compare.empty:
+        _render_summary_row(f"Compare ({compare_label or 'Selected compare period'})", _summary_values(df_compare))
 
 
 def _compare_delta_text(cur, prev, money_mode=False):
@@ -949,14 +965,27 @@ def _render_compare_section(df_base: pd.DataFrame, metric: str, default_period):
         render_df(show, height=360)
 
 
+def _filter_lookup_values(df: pd.DataFrame, lookup_type: str, selected_values: list[str]) -> pd.DataFrame:
+    if lookup_type == "SKU":
+        return df[df["SKU"].astype(str).isin(selected_values)].copy()
+    if lookup_type == "Vendor":
+        return df[df["Vendor"].astype(str).isin(selected_values)].copy()
+    return df[df["Retailer"].astype(str).isin(selected_values)].copy()
+
+
 def render(ctx: dict):
     df_scope = ctx["df_scope"].copy()
+    df_current_period = ctx["dfA"].copy()
+    df_compare_period = ctx["dfB"].copy()
+    compare_mode = ctx.get("compare_mode", "None")
+    a_lbl = ctx.get("a_lbl", "Current")
+    b_lbl = ctx.get("b_lbl", "Compare")
 
     if df_scope.empty:
         st.info("No data available with the current sidebar filters.")
         return
 
-    c1, c2, c3, c4, c5 = st.columns([1.1, 2.7, 1.2, 1.0, 1.0])
+    c1, c2, c3, c4 = st.columns([1.1, 2.9, 1.2, 1.0])
 
     with c1:
         lookup_type = st.selectbox(
@@ -976,7 +1005,7 @@ def render(ctx: dict):
     last_lookup_type_key = "_lookup_center_last_type"
     lookup_values_key = "lookup_center_values"
     if lookup_values_key not in st.session_state or st.session_state.get(last_lookup_type_key) != lookup_type:
-        st.session_state[lookup_values_key] = _suggest_lookup_defaults(df_scope, lookup_type)
+        st.session_state[lookup_values_key] = options
     st.session_state[last_lookup_type_key] = lookup_type
 
     with c2:
@@ -987,20 +1016,13 @@ def render(ctx: dict):
         )
 
     with c3:
-        select_all = st.checkbox("Select All", value=False, key="lookup_center_select_all")
+        select_all = st.checkbox("Select All", value=True, key="lookup_center_select_all")
 
     if select_all:
         selected_values = options
+        st.session_state[lookup_values_key] = options
 
     with c4:
-        timeframe = st.selectbox(
-            "Timeframe",
-            TIMEFRAME_OPTIONS,
-            index=1,
-            key="lookup_center_timeframe",
-        )
-
-    with c5:
         metric = st.selectbox(
             "Metric",
             ["Sales", "Units"],
@@ -1008,7 +1030,7 @@ def render(ctx: dict):
             key="lookup_center_metric",
         )
 
-    _render_lookup_hero(lookup_type, selected_values, timeframe, metric)
+    _render_lookup_hero(lookup_type, selected_values, a_lbl, metric)
 
     if not options:
         st.info("No lookup values available with the current filters.")
@@ -1018,38 +1040,24 @@ def render(ctx: dict):
         st.info(f"Select one or more {lookup_type.lower()} values to continue.")
         return
 
-    if lookup_type == "SKU":
-        df_lookup_all = df_scope[df_scope["SKU"].astype(str).isin(selected_values)].copy()
-    elif lookup_type == "Vendor":
-        df_lookup_all = df_scope[df_scope["Vendor"].astype(str).isin(selected_values)].copy()
-    else:
-        df_lookup_all = df_scope[df_scope["Retailer"].astype(str).isin(selected_values)].copy()
-
-    period, df_sel = _pick_lookup_period(df_lookup_all, timeframe)
-
-    if period is None or df_sel.empty:
-        st.info("No data for that lookup in the selected timeframe.")
-        return
-
-    label_preview = ", ".join(selected_values[:5])
-    if len(selected_values) > 5:
-        label_preview += f" +{len(selected_values) - 5} more"
-
-    st.markdown(
-        f"""
-        <div style='padding:8px 12px;border:1px solid rgba(128,128,128,0.22);border-radius:12px;
-        background:var(--secondary-background-color);display:inline-block;font-weight:700;'>
-        {lookup_type}: {label_preview} &nbsp; • &nbsp; {timeframe} &nbsp; • &nbsp;
-        {period[0].date()} → {period[1].date()} &nbsp; • &nbsp; Metric: {metric}
-        </div>
-        """,
-        unsafe_allow_html=True,
+    df_lookup_all = _filter_lookup_values(df_scope, lookup_type, selected_values)
+    df_sel = _filter_lookup_values(df_current_period, lookup_type, selected_values)
+    df_compare_sel = (
+        _filter_lookup_values(df_compare_period, lookup_type, selected_values)
+        if compare_mode != "None"
+        else df_compare_period.iloc[0:0].copy()
     )
 
-    st.write("")
+    if df_sel.empty:
+        st.info("No data for that lookup in the selected current period.")
+        return
 
     st.markdown("### Quick Intelligence Summary")
-    _render_summary_cards(df_sel)
+    _render_summary_cards(
+        df_sel,
+        df_compare=df_compare_sel,
+        compare_label=b_lbl if compare_mode != "None" else None,
+    )
 
     if lookup_type == "SKU":
         _render_retailer_breakdown(df_sel, metric)

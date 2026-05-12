@@ -360,10 +360,7 @@ def run_app():
             key="analysis_view",
         )
 
-        content_view_options = ["Model View"] if analysis_view == "Lookup Center" else ["Model View", "Visual Analytics"]
-        content_view = render_global_view_mode_toggle(options=content_view_options)
-        if analysis_view == "Lookup Center":
-            st.caption("Lookup controls live in the main workspace. Visual Analytics is not available for this view yet.")
+        content_view = render_global_view_mode_toggle()
 
         multi_granularity = "Month"
         current_labels_sel = []
@@ -373,7 +370,7 @@ def run_app():
             timeframe = "YTD"
             compare_mode = "None"
 
-        elif analysis_view in ["Standard Intelligence"]:
+        elif analysis_view in ["Standard Intelligence", "Lookup Center"]:
             timeframe = st.selectbox(
                 "Timeframe",
                 [
@@ -453,10 +450,6 @@ def run_app():
 
             compare_mode = "Custom selection" if compare_labels_sel else "None"
 
-        elif analysis_view == "Lookup Center":
-            timeframe = "Last 8 weeks"
-            compare_mode = "None"
-
         else:
             timeframe = "Multi Selection"
             compare_mode = "None"
@@ -464,16 +457,10 @@ def run_app():
             current_labels_sel = []
             compare_labels_sel = []
 
-        if analysis_view == "Lookup Center":
-            min_sales = 0.0
-            min_units = 0.0
-            driver_level = "SKU"
-            show_full_history_lifecycle = True
-        else:
-            min_sales = st.number_input("Min Sales ($) for lists", min_value=0.0, value=0.0, step=100.0)
-            min_units = st.number_input("Min Units for lists", min_value=0.0, value=0.0, step=10.0)
-            driver_level = st.selectbox("Driver Level", ["SKU", "Vendor", "Retailer"], index=0)
-            show_full_history_lifecycle = st.toggle("Lifecycle uses full history", value=True)
+        min_sales = st.number_input("Min Sales ($) for lists", min_value=0.0, value=0.0, step=100.0)
+        min_units = st.number_input("Min Units for lists", min_value=0.0, value=0.0, step=10.0)
+        driver_level = st.selectbox("Driver Level", ["SKU", "Vendor", "Retailer"], index=0)
+        show_full_history_lifecycle = st.toggle("Lifecycle uses full history", value=True)
 
         st.divider()
         st.header("Data")
@@ -597,12 +584,7 @@ def run_app():
             a_lbl, b_lbl = ab_labels(timeframe, compare_mode, pA, pB)
 
     st.sidebar.markdown("### Period Definition")
-    if analysis_view == "Lookup Center":
-        st.sidebar.markdown(
-            "<span style='opacity:0.75'>Lookup timeframe is set inside the main workspace.</span>",
-            unsafe_allow_html=True,
-        )
-    elif analysis_view == "Multi Month / Year Compare":
+    if analysis_view == "Multi Month / Year Compare":
         st.sidebar.markdown(
             "<span style='opacity:0.75'>Multi-select analysis mode</span>",
             unsafe_allow_html=True,
