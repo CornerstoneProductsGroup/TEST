@@ -973,6 +973,12 @@ def _filter_lookup_values(df: pd.DataFrame, lookup_type: str, selected_values: l
     return df[df["Retailer"].astype(str).isin(selected_values)].copy()
 
 
+def _apply_entity_exclusions(df: pd.DataFrame, exclude_dim: str, exclude_values: list[str]) -> pd.DataFrame:
+    if df.empty or not exclude_values or exclude_dim not in df.columns:
+        return df
+    return df[~df[exclude_dim].astype(str).isin(exclude_values)].copy()
+
+
 def render(ctx: dict):
     df_scope = ctx["df_scope"].copy()
     df_current_period = ctx["dfA"].copy()
@@ -1047,6 +1053,39 @@ def render(ctx: dict):
         if compare_mode != "None"
         else df_compare_period.iloc[0:0].copy()
     )
+
+    st.markdown("#### Exclusions")
+    ex1, ex2 = st.columns([1.2, 3.8])
+    with ex1:
+        exclude_dim = st.selectbox(
+            "Exclude by",
+            ["Retailer", "Vendor"],
+            index=0,
+            key="lookup_exclude_dim",
+        )
+    exclude_options = (
+        sorted(df_lookup_all[exclude_dim].dropna().astype(str).unique().tolist())
+        if exclude_dim in df_lookup_all.columns
+        else []
+    )
+    with ex2:
+        exclude_values = st.multiselect(
+            f"Hide {exclude_dim}(s)",
+            options=exclude_options,
+            default=[],
+            key="lookup_exclude_values",
+            help="Hidden values are removed from KPIs and detail tables until you remove them here.",
+        )
+
+    df_lookup_all = _apply_entity_exclusions(df_lookup_all, exclude_dim, exclude_values)
+    df_sel = _apply_entity_exclusions(df_sel, exclude_dim, exclude_values)
+    df_compare_sel = _apply_entity_exclusions(df_compare_sel, exclude_dim, exclude_values)
+
+    if exclude_values:
+        preview = ", ".join(exclude_values[:4])
+        if len(exclude_values) > 4:
+            preview += f" +{len(exclude_values) - 4} more"
+        st.caption(f"Excluding {exclude_dim}: {preview}")
 
     if df_sel.empty:
         st.info("No data for that lookup in the selected current period.")
